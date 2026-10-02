@@ -140,10 +140,19 @@ export async function runTrafficQuery(sql: string, name: string): Promise<Rows> 
     cache: "no-store", signal: AbortSignal.timeout(30_000),
   });
   if (!response.ok) {
-    // Upstream bodies may contain SQL, identifiers or credentials. Keep them server-side.
+    // Upstream bodies may contain SQL, identifiers or credentials. Keep them
+    // server-side — except the one line that says WHY a query was refused
+    // (HTTP 400 is HogQL rejecting our own SQL): that goes to the server log
+    // in full and to the admin, trimmed, so a broken query names itself
+    // (2026-10-02: the analyst's first query failed as a bare "HTTP 400").
+    let why = "";
+    if (response.status === 400) {
+      try { const b = await response.json(); why = String(b?.detail ?? b?.error ?? b?.message ?? "").replace(/\s+/g, " ").trim(); } catch { /* no body */ }
+      console.warn(`[traffic] PostHog refused the ${name} query: ${why || "no detail"}`);
+    }
     throw new Error(response.status === 401 || response.status === 403 ? "PostHog denied access. Check the project ID and query:read permission."
       : response.status === 429 ? "PostHog query limit reached. Try again shortly."
-      : `PostHog query failed (HTTP ${response.status}).`);
+      : `PostHog query failed (HTTP ${response.status})${why ? `: ${why.slice(0, 220)}` : "."}`);
   }
   const body = await response.json();
   if (!Array.isArray(body.results)) throw new Error("PostHog has not returned a completed result yet.");

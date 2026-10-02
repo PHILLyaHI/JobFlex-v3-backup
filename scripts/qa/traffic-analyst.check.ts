@@ -25,7 +25,7 @@ const find = (r: ReturnType<typeof analyse>, id: string) => r.findings.find((f) 
 
 // ── the query and the row
 const sql = buildAnalystQuery();
-check("the query reads a week, one row per session, with the landing's leave numbers and the sections", /INTERVAL 7 DAY/.test(sql) && /GROUP BY session/.test(sql) && /\$pageleave/.test(sql) && /\$prev_pageview_max_scroll_percentage/.test(sql) && /landing_section/.test(sql) && /jf_signup_completed/.test(sql) && /www\.jobflex\.app/.test(sql) && /LIMIT 6000/.test(sql));
+check("the query reads a week, one row per session, with the landing's leave numbers and the sections", /INTERVAL 7 DAY/.test(sql) && /GROUP BY sid/.test(sql) && /\$pageleave/.test(sql) && /\$prev_pageview_max_scroll_percentage/.test(sql) && /landing_section/.test(sql) && /jf_signup_completed/.test(sql) && /www\.jobflex\.app/.test(sql) && /LIMIT 6000/.test(sql));
 check("the query keeps the admin out and needs a session id", /NOT startsWith\(.*'\/admin\/'\)/.test(sql) && /\$session_id\), ''\) != ''/.test(sql));
 const row = ["sess-1", "person-1", 1_700_000_000_000, 1_700_000_060_000, "", "https://www.jobflex.app/?industry=fencing&utm_source=fb", "fb", "paid", "C9", "A9", "l.facebook.com", 1, "Mobile", "Mobile Safari", "iOS", 1, 2, 1, 42.5, 0.73, "hero,compare,showcase", 1, "hero", 1, 2, "standard", 1, 1, 0, "trial_rejected", 1, "trial_started", "starter"];
 const parsed = analystSessionFromRow(row)!;

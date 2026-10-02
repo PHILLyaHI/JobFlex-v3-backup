@@ -99,8 +99,11 @@ export interface AnalystReport {
 
 /** The last `days` of events, one row per session, in the order
  *  analystSessionFromRow reads them. Arrays travel as comma-joined strings
- *  (groupUniqArray over an `if(…, NULL)`: the aggregate skips the nulls).
- *  The visitor rule is the page's one rule (traffic-visitor). */
+ *  (groupUniqArrayIf). HogQL, not ClickHouse: the alias cannot be `session`
+ *  (HogQL's own sessions table), only its whitelisted functions exist
+ *  (toFloat64OrNull yes; the Int variants are not relied on), and the sort
+ *  key must be a selected column. The visitor rule is the page's one rule
+ *  (traffic-visitor). */
 export function buildAnalystQuery(days = ANALYST_DAYS): string {
   const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
   const num = (name: string) => `toFloat64OrNull(toString(properties.${name}))`;
@@ -108,10 +111,10 @@ export function buildAnalystQuery(days = ANALYST_DAYS): string {
   const events = ["'$pageview'", "'$pageleave'", ...[E.landingView, E.landingSection, E.ctaClick, E.step, E.attempt, E.opened, E.error, E.completed].map((e) => `'${e}'`)].join(", ");
   // The landing's own numbers ride on the event that leaves it: $pageleave, or the next $pageview on an in-app navigation.
   const left = `((event = '$pageleave' OR event = '$pageview') AND ${prop("$prev_pageview_pathname")} = '/')`;
-  const joined = (value: string, when: string) => `arrayStringConcat(groupUniqArray(if(${when}, nullIf(${value}, ''), NULL)), ',')`;
+  const joined = (value: string, when: string) => `arrayStringConcat(groupUniqArrayIf(${value}, ${when} AND ${value} != ''), ',')`;
   const d = Math.max(1, Math.min(30, Math.round(days)));
-  return `SELECT ${prop("$session_id")} AS session, toString(any(person_id)),
-    toUnixTimestamp(min(timestamp)) * 1000, toUnixTimestamp(max(timestamp)) * 1000,
+  return `SELECT ${prop("$session_id")} AS sid, any(toString(person_id)),
+    toUnixTimestamp(min(timestamp)) * 1000 AS started, toUnixTimestamp(max(timestamp)) * 1000,
     anyIf(${prop("industry")}, event = '${E.landingView}'),
     argMinIf(${prop("$current_url")}, timestamp, event = '$pageview' AND ${path} = '/'),
     anyIf(${prop("utm_source")}, ${prop("utm_source")} != ''), anyIf(${prop("utm_medium")}, ${prop("utm_medium")} != ''),
@@ -124,7 +127,7 @@ export function buildAnalystQuery(days = ANALYST_DAYS): string {
     ${joined(prop("section"), `event = '${E.landingSection}'`)},
     countIf(event = '${E.ctaClick}'), ${joined(prop("placement"), `event = '${E.ctaClick}'`)},
     countIf(event = '$pageview' AND startsWith(${path}, '/auth/register')),
-    maxIf(toInt32OrNull(${prop("step")}), event = '${E.step}'), anyIf(${prop("flow")}, event = '${E.step}'),
+    maxIf(${num("step")}, event = '${E.step}'), anyIf(${prop("flow")}, event = '${E.step}'),
     countIf(event = '${E.attempt}'), countIf(event = '${E.attempt}' AND ${prop("card")} = 'false'), countIf(event = '${E.opened}'),
     ${joined(prop("reason"), `event = '${E.error}'`)},
     countIf(event = '${E.completed}' AND ${prop("verified")} IN ('true', '1', '')),
@@ -133,7 +136,7 @@ export function buildAnalystQuery(days = ANALYST_DAYS): string {
     WHERE timestamp > now() - INTERVAL ${d} DAY AND timestamp <= now() AND event IN (${events})
       AND ${prop("$session_id")} != '' AND ${path} != '/admin' AND NOT startsWith(${path}, '/admin/')
       AND ${visitorRuleSql({ host: HOST_SQL, ua: UA_SQL, browserType: BROWSER_TYPE_SQL, event: "event" }, "production")}
-    GROUP BY session ORDER BY min(timestamp) DESC LIMIT 6000`;
+    GROUP BY sid ORDER BY started DESC LIMIT 6000`;
 }
 
 const text = (v: unknown) => (v == null ? "" : String(v));
