@@ -23,18 +23,6 @@ import { db } from "@/lib/db";
 import { advanceCascade } from "./cascade";
 import { buildRanking } from "./matching";
 
-/**
- * How long after a match the homeowner's "find me another contractor" button
- * stays locked (owner's rule #1: give the shop time to make the call). The
- * page shows the unlock moment; the action enforces it.
- */
-export const CLIENT_REROUTE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-
-/** When the button unlocks for a match made at `matchedAt`; null = no match. */
-export function clientRerouteUnlocksAt(matchedAt: Date | null | undefined): Date | null {
-  return matchedAt ? new Date(matchedAt.getTime() + CLIENT_REROUTE_COOLDOWN_MS) : null;
-}
-
 export interface UnmatchOptions {
   /** What the pass is recorded as on the LeadOffer history row. */
   offerStatus: "DECLINED" | "REJECTED_BY_CLIENT";

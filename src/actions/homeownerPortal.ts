@@ -7,7 +7,7 @@
 // resolves the lead through the token and nothing else.
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { clientRerouteUnlocksAt, unmatchAndAdvance } from "@/lib/leadCenter/unmatch";
+import { unmatchAndAdvance } from "@/lib/leadCenter/unmatch";
 import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
 
 const rerouteInput = z.object({
@@ -42,16 +42,9 @@ export async function requestAnotherContractor(raw: unknown): Promise<RerouteRes
     return { ok: true, status: pl.status, rerouted: false };
   }
 
-  // Owner's rule #1, enforced server-side (the page's disabled button is UX,
-  // not a guard): the shop gets its 24 hours to make the call.
-  const unlockAt = clientRerouteUnlocksAt(pl.matchedAt);
-  if (unlockAt && Date.now() < unlockAt.getTime()) {
-    return {
-      ok: false,
-      error:
-        "Give the contractor a little more time to reach you — this option unlocks 24 hours after the match.",
-    };
-  }
+  // No waiting period (owner, 2026-10-02: "the client can request another
+  // contractor at any time") — the 24-hour lock after a match is gone; the
+  // rate limits above are the only brake.
 
   const prevOrgId = pl.matchedOrgId;
   const res = await unmatchAndAdvance(pl.id, {
