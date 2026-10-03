@@ -18,7 +18,7 @@ export function CompareSection() {
   return <div className="lp-cmp-body">
     {mobile ? <MobileComparison /> : <div className="lp-compare-plate">
       <table className="lp-compare-table">
-        <caption className="sr-only">JobFlex compared with Jobber, Housecall Pro and Roofr. Shared features first, followed by priority features.</caption>
+        <caption className="sr-only">JobFlex compared with Jobber, Housecall Pro, Joist and ServiceTitan. Shared features first, followed by priority features.</caption>
         <thead><tr>
           <th scope="col"><FeatureHeading /></th>
           <th scope="col" className="lp-compare-us"><CompareBrand id="jobflex" /></th>

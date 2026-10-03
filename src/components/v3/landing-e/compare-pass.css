@@ -1,11 +1,27 @@
 /* Phone comparison, compact (owner, 2026-09-26): one line per feature, the
    vendors' marks small, answers as a tick / cross (the words stay for screen
-   readers), first rows only until "Show all". */
-.jf-lp .lp-compare-mobile .lp-compare-picker { margin-bottom: 14px; }
-.jf-lp .lp-compare-mobile .lp-compare-picker button { min-height: 44px; font-size: 14px; }
+   readers), first rows only until "Show all".
+   ALL FIVE COLUMNS (owner, 2026-10-02): the table keeps its own width and
+   scrolls sideways inside the plate; Features and JobFlex are pinned at the
+   left (sticky cells need `separate` borders and opaque grounds), and a soft
+   edge on JobFlex's right shows where the others slide under. */
+.jf-lp .lp-compare-mobile .lp-compare-scroll { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+.jf-lp .lp-compare-mobile .lp-compare-scroll:focus-visible { outline: 3px solid var(--accent, #1854a0); outline-offset: -3px; }
+.jf-lp .lp-compare-mobile .lp-compare-table-mobile { width: 556px; min-width: 100%; border-collapse: separate; border-spacing: 0; }
 .jf-lp .lp-compare-mobile .lp-compare-table-mobile th,
-.jf-lp .lp-compare-mobile .lp-compare-table-mobile td { padding: 10px 8px; }
-.jf-lp .lp-compare-mobile .lp-compare-table-mobile th:first-child { width: 52%; padding-left: 14px; }
+.jf-lp .lp-compare-mobile .lp-compare-table-mobile td { padding: 10px 6px; }
+.jf-lp .lp-compare-mobile .lp-compare-table-mobile th:first-child {
+  position: sticky; left: 0; z-index: 2; width: 132px; padding-left: 12px; background: var(--paper-deep, #fff);
+}
+.jf-lp .lp-compare-mobile .lp-compare-table-mobile .lp-compare-us {
+  position: sticky; left: 132px; z-index: 2; width: 72px;
+  border-right: 1px solid var(--ink-line);
+  box-shadow: 6px 0 8px -6px rgba(10, 10, 10, 0.28);
+}
+.jf-lp .lp-compare-mobile .lp-compare-table-mobile thead .lp-compare-us {
+  box-shadow: inset 0 4px var(--emerald), 6px 0 8px -6px rgba(10, 10, 10, 0.28);
+}
+.jf-lp .lp-compare-mobile .lp-compare-table-mobile thead th:not(:first-child):not(.lp-compare-us) { width: 88px; }
 .jf-lp .lp-compare-mobile .lp-compare-table-mobile thead th { padding-block: 12px; font-size: 14px; }
 .jf-lp .lp-compare-mobile .lp-compare-table-mobile .lp-compare-brand { gap: 4px; font-size: 12px; }
 .jf-lp .lp-compare-mobile .lp-compare-table-mobile .lp-compare-brand .lp-mark-box { --lp-mark-size: 36px; }
@@ -16,7 +32,7 @@
   width: 32px; height: 32px; min-width: 0; padding: 0; gap: 0; font-size: 0; line-height: 0;
 }
 .jf-lp .lp-compare-mobile .lp-compare-table-mobile .lp-compare-qualified { font-size: 13px; }
-.jf-lp .lp-compare-mobile .lp-compare-table-mobile .lp-compare-qualified small { font-size: 10.5px; margin-top: 2px; }
+.jf-lp .lp-compare-mobile .lp-compare-table-mobile .lp-compare-qualified small { font-size: 10.5px; margin-top: 2px; white-space: nowrap; }
 .jf-lp .lp-compare-mobile .lp-compare-more {
   display: flex; align-items: center; justify-content: center;
   width: 100%; min-height: 48px;
@@ -26,9 +42,16 @@
 }
 .jf-lp .lp-compare-mobile .lp-compare-more:focus-visible { outline: 3px solid var(--accent, #1854a0); outline-offset: -3px; }
 
-/* Owner, 2026-09-27: a narrower comparison card on the desk. */
+/* Owner, 2026-09-27: a narrower comparison card on the desk; 2026-10-02:
+   wide enough for five answer columns side by side, no scrolling. */
 @media (min-width: 769px) {
-  .jf-lp .lp-cmp-body > .lp-compare-plate { max-width: 960px; }
+  .jf-lp .lp-cmp-body > .lp-compare-plate { max-width: 1120px; }
+  .jf-lp .lp-cmp-body > .lp-compare-plate .lp-compare-table th:first-child { width: 26%; }
 }
+
+/* A yes with a catch (2026-10-02): the tick, and a few words under it. */
+.jf-lp .lp-compare-caveated { display: inline-flex; flex-direction: column; align-items: center; gap: 4px; }
+.jf-lp .lp-compare-caveated > small { font-size: 11px; font-weight: 500; line-height: 1.3; color: var(--ink-soft); }
+.jf-lp .lp-compare-mobile .lp-compare-caveated > small { font-size: 10.5px; }
 /* The heading opens the section now (no eyebrow, no intro line). */
 .jf-lp .lp-compare-heading > h2:first-child { margin-top: 0; }

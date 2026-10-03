@@ -16,7 +16,9 @@ export function CompareAnswer({ cell }: { cell?: CompareCell }) {
   const status = cell?.status ?? "yes";
   if (status === "yes" || status === "no") {
     const Icon = status === "yes" ? Check : X;
-    return <span className={'lp-compare-answer is-' + status}><Icon size={18} strokeWidth={2.5} aria-hidden="true" />{status === "yes" ? "Yes" : "No"}</span>;
+    const answer = <span className={'lp-compare-answer is-' + status}><Icon size={18} strokeWidth={2.5} aria-hidden="true" />{status === "yes" ? "Yes" : "No"}</span>;
+    // The catch on a yes ("single user", "in preview"), in our own words.
+    return cell?.label ? <span className="lp-compare-caveated">{answer}<small>{cell.label}</small></span> : answer;
   }
   return <span className="lp-compare-qualified">{status === "soon" ? "Coming soon" : "Paid"}{cell?.label && <small>{cell.label}</small>}</span>;
 }
