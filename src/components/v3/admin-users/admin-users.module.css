@@ -205,3 +205,13 @@
   :global(.jf-blueprint .content) .au-cmp-arrow { transform: rotate(90deg); }
   :global(.jf-blueprint .content) .au-apply > button { flex: 1 1 100%; }
 }
+
+/* "Internal" (2026-10-03): the filter in the head, the stamp on the org cell. */
+:global(.jf-blueprint .content) .au-internal-filter { flex-shrink: 0; }
+:global(.jf-blueprint .content) .au-internal-stamp { margin-left: 6px; vertical-align: 1px; }
+@media (max-width: 860px) {
+  /* The search keeps the full row; the Internal filter goes under it. */
+  :global(.jf-blueprint .content) .au-head-actions { flex-wrap: wrap; }
+  :global(.jf-blueprint .content) .au-head-actions > :global(label) { flex: 1 1 100%; min-width: 0; order: 1; }
+  :global(.jf-blueprint .content) .au-internal-filter { order: 2; min-height: 44px; }
+}

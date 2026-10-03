@@ -61,6 +61,7 @@ import {
 } from "@/components/v3/admin-influencers/admin-ui";
 import ui from "@/components/v3/admin-influencers/admin-ui.module.css";
 import { StarsInline } from "@/components/reviews/StarsInline";
+import { haversineMiles } from "@/lib/geo";
 import styles from "./lead-center.module.css";
 
 /* ============================================================
@@ -1202,7 +1203,17 @@ function DetailSheet({
   };
   /** The small line on a hand-send row: how far, and why it sits where it does. */
   const assignNote = (o: OrgPickDTO): string => {
-    if (lead?.isTest) return [milesLabel(o), "internal"].filter(Boolean).join(" · ");
+    if (lead?.isTest) {
+      // Every internal organization is listed for a test lead — whatever its
+      // trade, radius, offers switch or pin — so the row says, for
+      // information, what it takes and how far it is when both pins exist.
+      const trades = o.trades.length ? o.trades.join(", ") : o.otherTrade || "no trades";
+      const miles =
+        lead.lat != null && lead.lng != null && o.lat != null && o.lng != null
+          ? `${Math.round(haversineMiles({ lat: lead.lat, lng: lead.lng }, { lat: o.lat, lng: o.lng })).toLocaleString("en-US")} mi`
+          : "no distance";
+      return [trades, miles, o.offersEnabled ? null : "offers off"].filter(Boolean).join(" · ");
+    }
     if (!isMatchable(o)) return eligibility(o);
     const s = order.get(o.id);
     const miles = milesLabel(o);

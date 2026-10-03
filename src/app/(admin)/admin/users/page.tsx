@@ -24,10 +24,13 @@ export const metadata: Metadata = {
 export default async function AdminUsersPage() {
   const me = await requirePlatformAdmin();
 
-  const [data, plans] = await Promise.all([
+  const [data, plans, internalOrgs] = await Promise.all([
     getAdminUsersData(),
     db.pricingPlan.findMany({ orderBy: { order: "asc" }, select: { slug: true, name: true } }),
+    // JobFlex's own organizations (Lead Center test leads go only to these).
+    db.organization.findMany({ where: { isInternal: true }, select: { id: true } }),
   ]);
+  const internal = new Set(internalOrgs.map((o) => o.id));
 
   const rows: AdminUserDTO[] = data.rows.map((u) => ({
     ...u,
@@ -35,6 +38,7 @@ export default async function AdminUsersPage() {
     trialEndsAt: u.trialEndsAt?.toISOString() ?? null,
     canceledAt: u.canceledAt?.toISOString() ?? null,
     createdAt: u.createdAt.toISOString(),
+    orgInternal: u.orgId ? internal.has(u.orgId) : false,
   }));
 
   return (

@@ -31,6 +31,7 @@ import type { PlanGrant, SyncingMark } from "@/lib/planGrant";
 import { STRIPE_SCAN_CEILING_LABEL } from "@/components/v3/admin-subscribers/billing-metrics";
 import { SubscriptionEditor } from "./admin-subscription-editor";
 import { UsageReset } from "./admin-usage-reset";
+import { setOrganizationInternal } from "@/actions/adminLeadCenter";
 import shared from "./admin-shared.module.css";
 import s from "./admin-users.module.css";
 import {
@@ -81,6 +82,9 @@ export interface AdminUserDTO {
   trialEndsAt: string | null;
   canceledAt: string | null;
   orgMemberCount: number;
+  /** The organization is JobFlex's own — the only kind a Lead Center test
+   *  lead can be sent to (Organization.isInternal). */
+  orgInternal: boolean;
   createdAt: string;
 }
 
@@ -112,6 +116,11 @@ export function AdminUsersContent({
   const router = useRouter();
 
   const [query, setQuery] = useState("");
+  const [internalOnly, setInternalOnly] = useState(false);
+  const internalCount = useMemo(
+    () => new Set(users.filter((u) => u.orgInternal && u.orgId).map((u) => u.orgId)).size,
+    [users],
+  );
   const [selected, setSelected] = useState<AdminUserDTO | null>(null);
   // The sheet reads the LATEST row for the account it opened on: the
   // subscription editor refreshes the server data after a change and the
@@ -159,9 +168,10 @@ export function AdminUsersContent({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const pool = internalOnly ? users.filter((u) => u.orgInternal) : users;
     const matched = !q
-      ? users
-      : users.filter(
+      ? pool
+      : pool.filter(
           (u) =>
             (u.name ?? "").toLowerCase().includes(q) ||
             u.email.toLowerCase().includes(q) ||
@@ -170,7 +180,7 @@ export function AdminUsersContent({
         );
     // The signed-in admin first, so "where am I?" is always answerable.
     return [...matched].sort((a, b) => (b.id === meId ? 1 : 0) - (a.id === meId ? 1 : 0));
-  }, [users, query, meId]);
+  }, [users, query, meId, internalOnly]);
 
   const openRow = useCallback(
     (u: AdminUserDTO) => {
@@ -203,6 +213,16 @@ export function AdminUsersContent({
           <h1 className={cx("page-title")}>Users &amp; subscriptions</h1>
         </div>
         <div className={cx("au-head-actions")}>
+          {/* JobFlex's own organizations — the Lead Center's test-lead
+              targets. A filter, so they can be found and checked. */}
+          <button
+            type="button"
+            className={cx("btn", internalOnly ? "btn-primary" : "btn-ghost", "au-internal-filter")}
+            aria-pressed={internalOnly}
+            onClick={() => setInternalOnly((v) => !v)}
+          >
+            Internal{internalCount ? ` · ${internalCount}` : ""}
+          </button>
           <label className={cx("search")}>
             <Search className={cx("ic")} aria-hidden="true" />
             <input
@@ -344,6 +364,8 @@ export function AdminUsersContent({
                           </div>
                           <div className={cx("t-mono")}>
                             {u.orgMemberCount} member{u.orgMemberCount === 1 ? "" : "s"}
+                            {/* On the members line: the name above ellipsises, the stamp must not. */}
+                            {u.orgInternal ? <span className={cx("stamp", "au-internal-stamp")}>Internal</span> : null}
                           </div>
                         </>
                       ) : (
@@ -542,6 +564,10 @@ function UserForm({
         )}
       </div>
 
+      {user.orgId ? (
+        <OrgInternal key={user.orgId + String(user.orgInternal)} orgId={user.orgId} orgName={user.orgName} initial={user.orgInternal} />
+      ) : null}
+
       {/* The meters and the admin's reset (owner, 2026-09-22). Reads on open,
           so the table lists people without a COUNT per limit per row. */}
       {user.orgId ? <UsageReset key={user.orgId} orgId={user.orgId} orgName={user.orgName} /> : null}
@@ -589,5 +615,45 @@ function UserForm({
         </button>
       </SheetFoot>
     </>
+  );
+}
+
+/**
+ * "Internal organization" — JobFlex's own (Organization.isInternal), the only
+ * kind a Lead Center test lead can be sent to. Saved the moment it flips, on
+ * its own: it is the organization's flag, not part of this account's form.
+ */
+function OrgInternal({ orgId, orgName, initial }: { orgId: string; orgName: string | null; initial: boolean }) {
+  const router = useRouter();
+  const [on, setOn] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  async function flip(next: boolean) {
+    if (busy) return;
+    setBusy(true);
+    setOn(next);
+    try {
+      await setOrganizationInternal(orgId, next);
+      toast.success(next ? "Marked internal" : "No longer internal", next ? `${orgName ?? "The organization"} can receive Lead Center test leads.` : `${orgName ?? "The organization"} gets no test leads.`);
+      router.refresh();
+    } catch (err) {
+      setOn(!next);
+      toast.error("Couldn't change it", err instanceof Error ? err.message : "Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={cx("sec")}>
+      <div className={cx("sec-h")}>
+        <span className={cx("sec-t")}>Lead Center</span>
+      </div>
+      <Toggle
+        on={on}
+        onChange={(next) => void flip(next)}
+        disabled={busy}
+        label="Internal organization"
+        sub="JobFlex's own. Test leads go to internal organizations only."
+      />
+    </div>
   );
 }
