@@ -32,6 +32,14 @@ export function prefersReducedMotion(): boolean {
   );
 }
 
+/** The referral code a shared link carried (`/homeowner?ref=CODE`), read at
+ *  send time from the address bar and handed to submitHomeownerRequest as
+ *  `referralCode` — what the retired classic form did (2026-10-02). */
+export function referralCodeFromUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  return new URLSearchParams(window.location.search).get("ref")?.trim() || undefined;
+}
+
 function subscribeReducedMotion(onChange: () => void) {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
   const mq = window.matchMedia(REDUCED_QUERY);

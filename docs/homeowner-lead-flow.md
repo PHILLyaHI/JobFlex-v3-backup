@@ -6,8 +6,10 @@ contractor pricing it, and where each piece lives.
 ## The homeowner's side
 
 1. The homeowner types the project and answers a few clarifying questions
-   (the wizards in `components/v3/homeowner-blueprint`, `mobile-homeowner`
-   and `homeowner-landing`; the older form at `/homeowners`). The answers
+   (the wizard at `/homeowner` — `components/v3/homeowner-landing` above
+   768px, `mobile-homeowner` at or below it; it is the only homeowner page
+   since 2026-10-02). A `?ref=CODE` in the address is sent along as the
+   referral code. The answers
    ride along in the description as "question answer" lines.
 2. **The street address is required when the job is measured at the
    property** — a roof, a fence, siding, gutters, solar, a driveway, a deck,
@@ -25,6 +27,14 @@ contractor pricing it, and where each piece lives.
    the homeowner stated, then what must be confirmed on site. Nothing
    invented, no prices. It is stored on `PlatformLead.scope`; when the model
    is off or fails the request goes out with the homeowner's words only.
+4. **City and state come from the geocode.** The wizard asks for a street
+   and a ZIP only; the same geocode that pins the lead (`lib/maps`
+   `geocodeAddress`) also returns the town and the two-letter state, and
+   `submitHomeownerRequest` stores them on the lead. A caller that sends its
+   own city/state (the JSON route) wins; a failed geocode leaves them empty
+   and the request still goes.
+5. The done step links the **status page** (`/request/<token>`), the same
+   link the confirmation email carries.
 
 ## The contractor's side
 

@@ -69,3 +69,14 @@ export const STEP_NAMES = ["Describe", "Clarify", "Scope", "Contact"];
 // or the lot — roof, fence, siding, gutters, driveway, deck — and the wizard
 // says so; optional for everything else. The estimators read it.
 export const CONTACT_FIELDS = ["Full name", "Email", "Phone (optional)", "ZIP code", "Street address"];
+
+// The keyboard and the autofill for each CONTACT_FIELDS entry, by position —
+// a phone gets the email keyboard for the email and digits for the ZIP. Taken
+// over from the retired portal wizard (2026-10-02).
+export const CONTACT_INPUTS = [
+  { type: "text", autoComplete: "name" },
+  { type: "email", autoComplete: "email", inputMode: "email" },
+  { type: "tel", autoComplete: "tel", inputMode: "tel" },
+  { type: "text", autoComplete: "postal-code", inputMode: "numeric" },
+  { type: "text", autoComplete: "street-address" },
+] as const;

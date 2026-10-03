@@ -90,8 +90,8 @@ export function LandingBuilder({ org }: { org: OrgLanding }) {
             <div>
               <CardTitle>Public profile</CardTitle>
               <CardSubtitle>
-                Drives the homeowner request form at{" "}
-                <code className="font-mono text-[11px]">/homeowners</code>.
+                Homeowners send requests from{" "}
+                <code className="font-mono text-[11px]">/homeowner</code>.
               </CardSubtitle>
             </div>
             <Globe className="h-4 w-4 text-[color:var(--ink-muted)]" />
@@ -214,13 +214,13 @@ export function LandingBuilder({ org }: { org: OrgLanding }) {
             Save landing
           </Button>
           <a
-            href="/homeowners"
+            href="/homeowner"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 h-9 px-3 rounded-[var(--r-md)] hairline text-[12px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)] hover:bg-black/[0.04]"
           >
             <Eye className="h-3.5 w-3.5" />
-            View public form
+            View homeowner page
           </a>
         </div>
       </div>
@@ -301,8 +301,8 @@ export function LandingBuilder({ org }: { org: OrgLanding }) {
           </div>
         </div>
         <p className="mt-3 text-[10.5px] text-[color:var(--ink-muted)] leading-relaxed">
-          Save to publish. The form at <code className="font-mono">/homeowners</code> reads these
-          fields when public profile is on.
+          Save to keep these fields. The homeowner page at{" "}
+          <code className="font-mono">/homeowner</code> is the same for every company.
         </p>
       </Card>
     </div>

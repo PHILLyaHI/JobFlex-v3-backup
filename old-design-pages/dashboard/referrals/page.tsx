@@ -38,7 +38,7 @@ export default async function ReferralsPage() {
   const creditedUsd = (credited._sum.rewardCents ?? 0) / 100;
   const appUrl = await appBaseUrl();
   const shareUrl = `${appUrl}/auth/register?ref=${code.code}`;
-  const homeownerUrl = `${appUrl}/homeowners?ref=${code.code}`;
+  const homeownerUrl = `${appUrl}/homeowner?ref=${code.code}`;
 
   return (
     <>

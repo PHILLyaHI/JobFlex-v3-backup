@@ -213,24 +213,6 @@ export const V3_PORTED_ROUTES = {
   // count.
   mobileProposalClientV2: "/mobile-proposal-client-v2",
   // jobflex-page-styler + mobile-app-ui-design — handheld rebuild of the
-  // PUBLIC homeowner marketing page, responsive 320–768px. Standalone: its own
-  // sticky ink nav and footer, no blueprint-shell, no MobileNav.
-  // Composition: hero + the four-step intake wizard on a sticky bottom action
-  // bar (category picker re-laid-out as a bottom sheet) → trust strip → four
-  // stacked live vignettes → the ink band with the four full-width blueprint
-  // drawings and the count-up → a two-column photo board + three reviews →
-  // ink CTA → footer.
-  //
-  // Styles are a PLAIN stylesheet with a uniform `.jf-mobile-homeowner` root
-  // class prefix, NOT a CSS Module — see the header of
-  // src/components/v3/mobile-homeowner/mobile-homeowner.css.
-  //
-  // ALSO SERVES THE LIVE /homeowner URL at ≤768px, through the media-query
-  // switch in src/app/(marketing)/homeowner/homeowner-responsive.tsx. Above
-  // 768px that URL still serves the untouched desktop build. Both entry points
-  // import one implementation and cannot drift.
-  mobileHomeownerV2: "/mobile-homeowner-v2",
-  // jobflex-page-styler + mobile-app-ui-design — handheld rebuild of the
   // SUBSCRIPTION / BILLING surface, responsive 320–768px, on the shared
   // MobileNav chrome. Composition: page head → plan-limit banner (raised only
   // by a real cap at ≥90%) → ink plan hero with the rotated status stamp →

@@ -43,10 +43,8 @@ const MobileHold = () => (
   <div style={{ position: "fixed", inset: 0, zIndex: 20, background: "#f2f0eb" }} />
 );
 
-// Imported out of the (mobile) group rather than copied, so /homeowner and
-// /mobile-homeowner-v2 cannot drift apart — one implementation, two entry
-// points. Lazy and `ssr: false` so a desktop visitor never downloads the
-// handheld bundle or its stylesheet for a page they will not render.
+// Lazy and `ssr: false` so a desktop visitor never downloads the handheld
+// bundle or its stylesheet for a page they will not render.
 const MobileHomeowner = dynamic(
   () =>
     import("@/components/v3/mobile-homeowner/mobile-homeowner").then((m) => m.MobileHomeowner),

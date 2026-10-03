@@ -14,6 +14,9 @@ const PROTECTED_PREFIXES = ["/dashboard", "/admin", "/influencer", "/v3", "/mobi
 // Handheld surfaces that are public by design (marketing, homeowner intake,
 // the customer's proposal view, the auth screens, the estimator picker).
 const PUBLIC_MOBILE_PREFIXES = [
+  // Removed 2026-10-02 (the homeowner page is /homeowner alone). Left here so
+  // the old address answers 404 to everyone — under "/mobile-" a visitor
+  // without a session would otherwise be sent to sign in for a page that is gone.
   "/mobile-homeowner-v2",
   "/mobile-proposal-client-v2",
   "/mobile-estimator-picker-v2",

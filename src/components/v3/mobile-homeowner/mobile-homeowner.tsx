@@ -2,12 +2,11 @@
 
 // MOBILE HOMEOWNER MARKETING — the handheld build of /homeowner.
 //
-// One implementation, two entry points: the preview route
-// `src/app/(mobile)/mobile-homeowner-v2/page.tsx`, and `/homeowner` itself at
-// ≤768px through the media-query switch in
-// `src/app/(marketing)/homeowner/homeowner-responsive.tsx`. The desktop build
-// (src/components/v3/homeowner-landing/*) is untouched and still serves every
-// viewport above 768px. Exactly one of the two trees is ever mounted.
+// Served at `/homeowner` at ≤768px through the media-query switch in
+// `src/app/(marketing)/homeowner/homeowner-responsive.tsx`; the desktop build
+// (src/components/v3/homeowner-landing/*) serves every viewport above 768px.
+// Exactly one of the two trees is ever mounted. (The standalone preview route
+// was removed 2026-10-02 — /homeowner is the one address.)
 //
 // ── COPY IS VERBATIM ───────────────────────────────────────────────────────
 // Every headline, sub, trust line, step title, card caption, review, CTA and

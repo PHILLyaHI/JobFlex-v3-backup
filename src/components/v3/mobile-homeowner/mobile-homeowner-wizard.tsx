@@ -7,7 +7,7 @@
 // desktop build (src/components/v3/homeowner-landing/wizard/homeowner-wizard.tsx):
 //   describe → (thinking 850ms) → clarify → (thinking 850ms) → scope →
 //   contact → done, with `‹ Back` jumps to 0 / 1 / 2 and `restart` back to 0.
-//   `canRefine()` is `desc.trim().length > 12`; `go()` collapses its delay to 0
+//   `canRefine()` is `desc.trim().length > 0` (was `> 12`); `go()` collapses its delay to 0
 //   under reduced motion; the simulated upload pump ticks every 160ms at
 //   12 + rand(18)% and rebuilds the pane only when a file COMPLETES.
 //
@@ -42,6 +42,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { DictateButton, MicIcon, setTextareaValue } from "@/components/estimator/DictateButton";
 import {
   CONTACT_FIELDS,
+  CONTACT_INPUTS,
   QUESTIONS,
   STEP_NAMES,
   type Question,
@@ -51,7 +52,7 @@ import { needsAddressFor } from "@/lib/leadRules";
 /** The street address is CONTACT_FIELDS[4]; required only when lib/leadRules says the job is measured at the property. */
 const ADDRESS_FIELD = 4;
 import { submitHomeownerRequest, suggestHomeownerQuestions, suggestHomeownerScope } from "@/actions/homeowner";
-import { prefersReducedMotion } from "../homeowner-landing/use-homeowner-behavior";
+import { prefersReducedMotion, referralCodeFromUrl } from "../homeowner-landing/use-homeowner-behavior";
 import { usePlaceholderCycle } from "../homeowner-landing/wizard/use-placeholder-cycle";
 
 type Upload = { name: string; kind: "pdf" | "photo"; progress: number };
@@ -91,6 +92,9 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
      nothing — no lead, no confirmation email, nothing in the Lead Center. */
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState("");
+  /* The status page (/request/[token]) the submission hands back — the done
+     pane links it, as the confirmation email does. */
+  const [statusPath, setStatusPath] = useState<string | null>(null);
   const uploadsRef = useRef<Upload[]>([]);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -115,7 +119,9 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
   /* The category picker/sheet are gone (owner, 2026-09-04): the description
      is the one source, the TRADE is detected server-side by AI at submit. */
   const questions: Question[] = aiQs ?? QUESTIONS["default"];
-  const canRefine = desc.trim().length > 12;
+  /* One character wakes "Continue" — the donor's `> 12` read as a broken
+     button (owner's call on the retired portal wizard, carried here). */
+  const canRefine = desc.trim().length > 0;
 
   const headLabel = step < 4 ? STEP_NAMES[step] : "Done";
   const tickClass = (i: number) => "tick" + (i < step ? " past" : i === step ? " now" : "");
@@ -304,7 +310,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
     const description = extra ? desc.trim() + NEWLINE + NEWLINE + extra : desc.trim();
     // The answers can reveal a roof or a fence the first words did not: the
     // same rule the server applies, said here first.
-    if (needsAddressFor(description) && !address) {
+    if (needsAddressFor(description) && address.length < 5) {
       setSendErr("This job is measured at the property — please add the street address.");
       return;
     }
@@ -319,11 +325,14 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         address: address || undefined,
         scope: scope ?? undefined,
         description,
+        // A shared link's ?ref=CODE — recorded as a referral conversion.
+        referralCode: referralCodeFromUrl(),
       });
       if (!res.ok) {
         setSendErr(res.error);
         return;
       }
+      setStatusPath(res.statusPath ?? null);
       setStep(4);
       bump();
     } catch (err) {
@@ -339,6 +348,8 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
 
   const onRestart = () => {
     setStep(0);
+    setStatusPath(null);
+    setSendErr("");
     setDesc("");
     uploadsRef.current = [];
     setUploads([]);
@@ -555,7 +566,8 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
                 <label className="fld-l" htmlFor={id}>
                   {label}
                 </label>
-                <input className="q-in c-in" id={id} placeholder={label} autoComplete={i === ADDRESS_FIELD ? "street-address" : undefined} />
+                <input className="q-in c-in" id={id} placeholder={label} {...CONTACT_INPUTS[i]}
+                  aria-required={i === ADDRESS_FIELD ? needsAddress : !/\(optional\)/i.test(field)} />
               </div>
             );
           })}
@@ -599,6 +611,14 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         Verified local contractors are reviewing your scope now. Expect 3–5 line-item proposals in
         your inbox — the first usually lands within 4 hours.
       </p>
+      {/* The same link the confirmation email carries — where the request is
+          followed and, later, re-matched. A plain anchor: the path is a runtime
+          token that typedRoutes has no literal for. */}
+      {statusPath ? (
+        <a className="done-link" href={statusPath}>
+          Track your request →
+        </a>
+      ) : null}
       <button className="restart" type="button" onClick={onRestart}>
         Start another project
       </button>

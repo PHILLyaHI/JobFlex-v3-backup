@@ -1,14 +1,12 @@
 /* ============================================================================
-   MOBILE HOMEOWNER MARKETING  —  /mobile-homeowner-v2  and  /homeowner ≤calc(768px * var(--s))
+   MOBILE HOMEOWNER MARKETING  —  /homeowner at ≤768px
    ============================================================================
 
-   A handheld-first Blueprint rebuild of the public homeowner intake page. It
-   serves two entry points from ONE implementation:
-     · /mobile-homeowner-v2                 — the preview route
-     · /homeowner at ≤calc(768px * var(--s))                 — via the media-query switch in
-       src/app/(marketing)/homeowner/homeowner-responsive.tsx
-   Above calc(768px * var(--s)) /homeowner keeps serving the untouched desktop build
-   (src/components/v3/homeowner-landing/*). Exactly one tree ever mounts.
+   A handheld-first Blueprint rebuild of the public homeowner intake page,
+   served at /homeowner at ≤768px via the media-query switch in
+   src/app/(marketing)/homeowner/homeowner-responsive.tsx. Above 768px
+   /homeowner serves the desktop build (src/components/v3/homeowner-landing/*).
+   Exactly one tree ever mounts.
 
    ── PLAIN STYLESHEET, NOT A CSS MODULE (non-negotiable) ────────────────────
    CSS Modules hash CLASS names and leave bare element selectors alone —
@@ -904,6 +902,19 @@ body:has(.jf-mobile-homeowner)::before { content: none; }
   transition: color 0.15s var(--ease), border-color 0.15s var(--ease);
 }
 .jf-mobile-homeowner .restart:active { color: var(--ink); border-color: var(--ink); }
+/* The status page link — the one way back to the request besides the email. */
+.jf-mobile-homeowner .done-link {
+  margin-top: calc(12px * var(--s));
+  display: inline-flex;
+  align-items: center;
+  min-height: calc(44px * var(--s));
+  padding: 0 calc(8px * var(--s));
+  font-size: calc(14px * var(--s));
+  font-weight: 800;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 
 /* ── category picker: a bottom sheet, not a dropdown ──────────────────────
    CLAUDE.md prefers bottom sheets over dialogs on handheld, and the donor's

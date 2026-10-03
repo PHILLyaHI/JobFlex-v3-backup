@@ -242,8 +242,9 @@ export async function updateLanding(raw: unknown) {
       ...(data.services !== undefined && { servicesJson: JSON.stringify(data.services) }),
     },
   });
+  // No public page reads these fields — /homeowner is the one homeowner page
+  // and it is the same for every company — so only the editor is revalidated.
   revalidatePath("/dashboard/company/landing");
-  revalidatePath("/homeowners");
   await logActivity({
     organizationId,
     actorId: user.id,

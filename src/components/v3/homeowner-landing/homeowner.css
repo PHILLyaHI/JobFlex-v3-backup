@@ -284,7 +284,8 @@ body:has(.jf-homeowner-landing)::before { content: none; }
 .jf-homeowner-landing .tool .ic { width: calc(15px * var(--s)); height: calc(15px * var(--s)); }
 .jf-homeowner-landing .tool.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .jf-homeowner-landing .tool:focus-visible, .jf-homeowner-landing .go:focus-visible, .jf-homeowner-landing .chip:focus-visible, .jf-homeowner-landing .cat:focus-visible,
-.jf-homeowner-landing .q-in:focus-visible, .jf-homeowner-landing .desc:focus-visible, .jf-homeowner-landing .back:focus-visible, .jf-homeowner-landing .restart:focus-visible
+.jf-homeowner-landing .q-in:focus-visible, .jf-homeowner-landing .desc:focus-visible, .jf-homeowner-landing .back:focus-visible, .jf-homeowner-landing .restart:focus-visible,
+.jf-homeowner-landing .done-link:focus-visible
   { outline: calc(2px * var(--s)) solid var(--blueprint); outline-offset: calc(2px * var(--s)); }
 /* The ring is drawn by the WRAPPER, inset, so it encloses the field and the
    category chip that appears under it — one live input, one box. The textarea
@@ -378,6 +379,10 @@ body:has(.jf-homeowner-landing)::before { content: none; }
 .jf-homeowner-landing .restart { margin-top: calc(22px * var(--s)); font-size: calc(11px * var(--s)); font-weight: 800; letter-spacing: 0.16em;
   text-transform: uppercase; color: var(--muted); transition: color .15s var(--ease); }
 .jf-homeowner-landing .restart:hover { color: var(--ink); }
+/* The status page link — the one way back to the request besides the email. */
+.jf-homeowner-landing .done-link { margin-top: calc(14px * var(--s)); display: inline-flex; align-items: center; min-height: 44px;
+  font-size: calc(13.5px * var(--s)); font-weight: 800; color: var(--ink);
+  text-decoration: underline; text-underline-offset: 3px; }
 
 .jf-homeowner-landing .trust-row { display: flex; gap: calc(12px * var(--s));
   max-width: calc(760px * var(--s)); margin: clamp(calc(34px * var(--s)), 6vh, calc(70px * var(--s))) auto 0; }
