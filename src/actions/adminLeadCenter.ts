@@ -6,6 +6,7 @@ import { startCascade } from "@/lib/leadCenter/cascade";
 import { offerPlatformLeadToOrg } from "@/lib/leadCenter/route";
 import { buildRanking } from "@/lib/leadCenter/matching";
 import { getRoutingMode, setRoutingMode, type RoutingMode } from "@/lib/leadCenter/routingMode";
+import { adminRefund, dollars, MAX_LEAD_PRICE_CENTS, MIN_LEAD_PRICE_CENTS } from "@/lib/leadCenter/purchase";
 
 // Platform-admin Lead Center controls. Manual assignment is the escape hatch
 // for MANUAL_QUEUE leads (and can override a pending offer: cancelling it
@@ -111,4 +112,46 @@ export async function routeAllWaitingLeads(): Promise<{
 
   revalidatePath("/admin/lead-center");
   return { ok: true, routed, skipped };
+}
+
+// ── Lead price (2026-10-02) ────────────────────────────────────────────────
+// Optional: a lead with no price is free exactly as before. A price is the
+// lead's — every offer of it carries the same one, the open offer included —
+// and it can change until a shop has accepted (paid for) the lead.
+
+export async function setPlatformLeadPrice(
+  platformLeadId: string,
+  priceCents: number | null,
+): Promise<{ ok: true; priceCents: number | null }> {
+  await requirePlatformAdmin();
+  if (priceCents != null) {
+    if (!Number.isInteger(priceCents) || priceCents < MIN_LEAD_PRICE_CENTS || priceCents > MAX_LEAD_PRICE_CENTS) {
+      throw new Error(`A lead price is ${dollars(MIN_LEAD_PRICE_CENTS)} to ${dollars(MAX_LEAD_PRICE_CENTS)}, or empty for a free lead.`);
+    }
+  }
+  const price = priceCents && priceCents > 0 ? priceCents : null;
+  await db.$transaction(async (tx) => {
+    const pl = await tx.platformLead.findUnique({ where: { id: platformLeadId }, select: { status: true } });
+    if (!pl) throw new Error("Lead not found");
+    if (pl.status === "MATCHED") throw new Error("A shop has already accepted this lead — its price can no longer change.");
+    await tx.platformLead.update({ where: { id: platformLeadId }, data: { priceCents: price } });
+    // The open offer (not yet paid) takes the new price; the shop's card shows
+    // it on its next read, and an Accept already under way pays what it was shown.
+    await tx.leadOffer.updateMany({
+      where: { platformLeadId, status: "OFFERED", unlockedAt: null },
+      data: { priceCents: price },
+    });
+  });
+  revalidatePath("/admin/lead-center");
+  return { ok: true, priceCents: price };
+}
+
+/** Refund a paid lead — platform admin only, with a reason (lib/leadCenter/purchase). */
+export async function refundLeadPurchase(offerId: string, reason: string): Promise<{ ok: true }> {
+  const admin = await requirePlatformAdmin();
+  const why = reason.trim();
+  if (why.length < 3) throw new Error("Write the reason for the refund.");
+  await adminRefund(offerId, why.slice(0, 400), { id: admin.id, email: admin.email });
+  revalidatePath("/admin/lead-center");
+  return { ok: true };
 }

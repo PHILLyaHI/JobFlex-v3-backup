@@ -92,9 +92,11 @@ export type LeadDetailProps = {
   /** A Lead Center lead not accepted yet: the homeowner's contacts are withheld
    *  (lib/leadCenter/contacts) and the card says when they open. */
   contactsLocked?: boolean;
+  /** A Lead Center lead the shop paid to open (lib/leadCenter/purchase). */
+  paid?: { amount: string; when: string } | null;
 };
 
-export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLocked = false }: LeadDetailProps) {
+export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLocked = false, paid = null }: LeadDetailProps) {
   const primary = estimatorFor(lead.aiCategory, lead.description);
   const fullAddress = [lead.address, lead.city, [lead.state, lead.zip].filter(Boolean).join(" ")]
     .filter((s) => s && s.trim())
@@ -150,6 +152,26 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLock
             <dd>{source}</dd>
             <dt>Created</dt>
             <dd className={cx("mono")}>{lead.created}</dd>
+            {paid ? (
+              <>
+                <dt>Paid</dt>
+                <dd data-lead-paid>
+                  <span className={cx("mono")}>
+                    {paid.amount} · {paid.when}
+                  </span>
+                  {/* No refunds by policy; a dud contact is a support case,
+                      and the lead's id in the subject finds the payment. */}
+                  <span className={cx("soft", "paid-help")}>
+                    Contact not real?{" "}
+                    <a
+                      href={`mailto:support@jobflex.app?subject=${encodeURIComponent(`Lead ${lead.id} — contact not real`)}`}
+                    >
+                      Contact support
+                    </a>
+                  </span>
+                </dd>
+              </>
+            ) : null}
           </dl>
         </section>
 

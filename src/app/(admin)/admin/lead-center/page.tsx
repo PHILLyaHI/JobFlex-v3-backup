@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { isTradeType, orgCoversTrade, parseTradeTypes } from "@/lib/tradeTypes";
 import { getRoutingMode } from "@/lib/leadCenter/routingMode";
 import { loadRankingInputs, rankWith } from "@/lib/leadCenter/matching";
+import { purchasesByPlatformLead } from "@/lib/leadCenter/purchase";
 import { orgRatingsByIds } from "@/lib/reviews/publicSummary";
 import {
   AdminLeadCenterContent,
@@ -104,6 +105,8 @@ export default async function AdminLeadCenterPage() {
     loadRankingInputs(),
   ]);
   const tradesByOrg = new Map(rankingInputs.orgs.map((o) => [o.id, parseTradeTypes(o.tradeTypesJson)]));
+  // What shops paid for their leads (lib/leadCenter/purchase) — the Paid column.
+  const purchases = await purchasesByPlatformLead(platformLeads.map((p) => p.id));
 
   // ── ledger DTO ──────────────────────────────────────────────────────────
   const orgName = new Map(orgs.map((o) => [o.id, o.name]));
@@ -186,6 +189,21 @@ export default async function AdminLeadCenterPage() {
       createdAt: p.createdAt.toISOString(),
       ranking,
       shopOrder,
+      priceCents: p.priceCents && p.priceCents > 0 ? p.priceCents : null,
+      paid: (() => {
+        const rec = purchases.get(p.id);
+        if (!rec) return null;
+        return {
+          offerId: rec.offerId,
+          amountCents: rec.amountCents,
+          paidAt: rec.paidAt,
+          orgName: orgName.get(rec.organizationId) ?? "a shop",
+          paymentIntentId: rec.paymentIntentId,
+          mode: rec.mode,
+          via: rec.via,
+          refund: rec.refund ? { amountCents: rec.refund.amountCents, reason: rec.refund.reason, at: rec.refund.at } : null,
+        };
+      })(),
       offers: p.offers.map((o) => ({
         id: o.id,
         orgName: o.organization.name,

@@ -83,6 +83,8 @@ export async function offerPlatformLeadToOrg(
         adminId,
       }),
       expiresAt: new Date(now.getTime() + OFFER_TTL_MS),
+      // The lead's price, when an admin set one (lib/leadCenter/purchase).
+      priceCents: pl.priceCents && pl.priceCents > 0 ? pl.priceCents : null,
     };
     // (platformLeadId, organizationId) is unique: a shop that passed on this
     // lead before has a row already, and a person sending it back to them on

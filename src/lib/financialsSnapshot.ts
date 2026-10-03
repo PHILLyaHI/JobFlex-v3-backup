@@ -137,7 +137,9 @@ export async function getFinancialsSnapshot(
   const expenses: Expense[] = expenseRows.map((e) => ({
     id: e.id,
     jobId: e.jobId,
-    job: e.job?.title ?? "Stock purchase",
+    // No job: a purchase for stock, or a Lead Center lead the shop paid for
+    // (purpose LEAD, lib/leadCenter/purchase).
+    job: e.job?.title ?? (e.purpose === "LEAD" ? "Lead purchase" : "Stock purchase"),
     category: e.category,
     amount: e.amount,
     note: e.note ?? "",

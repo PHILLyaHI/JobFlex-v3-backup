@@ -50,6 +50,8 @@ export type Offer = {
   mins: number;
   age: string;
   desc: string;
+  /** The lead's price in cents when an admin set one; the contacts open on payment. */
+  priceCents: number | null;
 };
 
 export type StagedRow = {

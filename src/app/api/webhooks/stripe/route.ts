@@ -19,6 +19,7 @@ import { processReferralEffectsForInvoice } from "@/lib/referralRewards";
 import { metaOnCheckoutCompleted, metaOnInvoicePaid } from "@/lib/metaSignupEvents";
 import { trackActivation } from "@/lib/activation-events";
 import { finishCardCheckout, noteCardlessTrialEnded } from "@/lib/cardlessTrial";
+import { completeFromCheckoutSession, completeFromPaymentIntent } from "@/lib/leadCenter/purchase";
 
 export const runtime = "nodejs";
 
@@ -53,6 +54,9 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+      // A Lead Center lead paid through Checkout (lib/leadCenter/purchase):
+      // the contacts open here, or on the return page if it got there first.
+      if (await completeFromCheckoutSession(session)) break;
       // A card added to a card-less trial (setup mode), or the plan restarted
       // after one ended (subscription mode) — lib/cardlessTrial. The return
       // page usually got there first; both are safe to run twice.
@@ -108,6 +112,19 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
       await processReferralEffectsForInvoice(invoice);
       // Meta Purchase + Subscribe on the first paid invoice, once per organization.
       await metaOnInvoicePaid(invoice).catch((err) => console.warn("[meta:capi] Purchase failed", err));
+      break;
+    }
+    // A lead paid through Checkout with a method that settles later (a Link
+    // bank debit): the session completes unpaid and this is the "paid".
+    case "checkout.session.async_payment_succeeded": {
+      await completeFromCheckoutSession(event.data.object as Stripe.Checkout.Session);
+      break;
+    }
+    // The backstop for a lead charged to the card on file: the synchronous
+    // "succeeded" opens it at once, and this repairs the rare charge whose
+    // answer never got written. Ignores every PaymentIntent that is not a lead's.
+    case "payment_intent.succeeded": {
+      await completeFromPaymentIntent(event.data.object as Stripe.PaymentIntent);
       break;
     }
     case "invoice.payment_failed": {

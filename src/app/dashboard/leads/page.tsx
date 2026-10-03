@@ -106,6 +106,7 @@ export default async function LeadsPage() {
     mins: Math.max(0, Math.round((o.expiresAt.getTime() - now) / 60000)),
     age: relative(o.createdAt),
     desc: o.platformLead.scope ?? o.platformLead.description ?? "",
+    priceCents: o.priceCents && o.priceCents > 0 ? o.priceCents : null,
   }));
 
   return (

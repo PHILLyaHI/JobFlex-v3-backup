@@ -97,6 +97,7 @@ export async function loadMobileLeads(): Promise<MobileLeadsSnapshot> {
     age: relative(o.createdAt),
     // The scope written for a contractor, as on the desk edition.
     desc: o.platformLead.scope ?? o.platformLead.description ?? "",
+    priceCents: o.priceCents && o.priceCents > 0 ? o.priceCents : null,
   }));
 
   return { leads, offers, me: user.name || user.email || "You" };

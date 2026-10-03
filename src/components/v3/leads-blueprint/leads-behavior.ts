@@ -24,6 +24,7 @@
 
 import { claimLead, deleteLead, importLeads, updateLeadStatus } from "@/actions/leads";
 import { acceptLeadOffer, declineLeadOffer, declineRoutedLead } from "@/actions/leadOffers";
+import { buyLead, priceLabel } from "@/components/leads/LeadPurchase";
 import { closeMdl, openMdl } from "@/components/v3/blueprint-shell/mdl-motion";
 import { leaveRow, staggerIn } from "@/components/v3/blueprint-shell/list-motion";
 import {
@@ -736,10 +737,15 @@ export function initLeadsContent(
           '<div class="icard-desc">' +
           esc(o.desc) +
           "</div>" +
-          // The homeowner's contacts open on Accept — the offer has none.
-          '<div class="icard-contact">Contact details open when you accept</div>' +
+          // The homeowner's contacts open on Accept — the offer has none. A
+          // priced lead says what opening it costs (LeadPurchase).
+          '<div class="icard-contact">' +
+          (o.priceCents ? esc(priceLabel(o.priceCents)) + " to unlock contact" : "Contact details open when you accept") +
+          "</div>" +
           '<div class="icard-act">' +
-          '<button class="btn btn-primary btn--sm" type="button" data-act="offer-yes"><svg class="ic"><use href="#i-check"/></svg>Accept lead</button>' +
+          '<button class="btn btn-primary btn--sm" type="button" data-act="offer-yes"><svg class="ic"><use href="#i-check"/></svg>' +
+          (o.priceCents ? "Accept · " + esc(priceLabel(o.priceCents)) : "Accept lead") +
+          "</button>" +
           '<button class="btn btn-ghost btn--sm" type="button" data-act="offer-no">Pass</button>' +
           "</div>" +
           "</div></div>"
@@ -911,6 +917,18 @@ export function initLeadsContent(
     const idx = offersData.findIndex((o) => o.id === offerId);
     if (idx === -1 || lstate.busy.has(offerId)) return;
     const offer = offersData[idx];
+    // A priced offer is a purchase (components/leads/LeadPurchase): the card
+    // stays put, its buttons held, until the lead opens or the shop backs out.
+    if (kind === "accept" && offer.priceCents) {
+      lstate.busy.add(offerId);
+      const btns = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-offer="' + offerId + '"] button'));
+      btns.forEach((b) => (b.disabled = true));
+      const out = await buyLead(offerId);
+      lstate.busy.delete(offerId);
+      if (out === "unlocked") refresh();
+      else if (out !== "redirect") btns.forEach((b) => (b.disabled = false));
+      return;
+    }
     lstate.busy.add(offerId);
     offersData.splice(idx, 1);
     renderCounts();

@@ -37,9 +37,11 @@ import { toast } from "@/components/ui/Toast";
 import { relative, shortDate } from "@/lib/format";
 import {
   manualAssignPlatformLead,
+  refundLeadPurchase,
   requeuePlatformLead,
   routeAllWaitingLeads,
   setLeadRoutingMode,
+  setPlatformLeadPrice,
 } from "@/actions/adminLeadCenter";
 import type { RoutingMode } from "@/lib/leadCenter/routingMode";
 import { LeadMap, type MapFilter } from "./lead-map";
@@ -124,6 +126,19 @@ export interface PlatformLeadDTO {
    *  leads, scored now, marked whether it covers this lead's trade. Empty once
    *  the lead is matched. */
   shopOrder: { orgId: string; score: number; coversTrade: boolean }[];
+  /** The admin's price for the lead, in cents; null = free (2026-10-02). */
+  priceCents: number | null;
+  /** What the shop paid to open it (lib/leadCenter/purchase), when it did. */
+  paid: {
+    offerId: string;
+    amountCents: number;
+    paidAt: string;
+    orgName: string;
+    paymentIntentId: string;
+    mode: "live" | "test";
+    via: "card-on-file" | "checkout";
+    refund: { amountCents: number; reason: string; at: string } | null;
+  } | null;
   offers: OfferDTO[];
   activeOffer: {
     orgName: string;
@@ -295,6 +310,10 @@ function destinationNote(l: PlatformLeadDTO): string {
     return `${offers} offer${offers === 1 ? "" : "s"}, no takers`;
   }
   return match;
+}
+
+function usd(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
 }
 
 function place(l: PlatformLeadDTO): string {
@@ -516,6 +535,7 @@ export function AdminLeadCenterContent({
               <span>Lead</span>
               <span>Homeowner</span>
               <span>Went to</span>
+              <span>Paid</span>
               <span>Status</span>
             </div>
             {rows.map((l) => (
@@ -698,6 +718,28 @@ function LedgerRow({
           </div>
         )}
         <div className={ui.tdSub}>{destinationNote(lead)}</div>
+      </div>
+
+      {/* PAID — what the shop paid to open it; a priced lead nobody has paid
+          for yet shows its price, a free one a dash. */}
+      <div className={styles.paidCell}>
+        <span className={ui.tdLbl}>Paid</span>
+        {lead.paid ? (
+          <>
+            <span className={cx(styles.paidAmt, lead.paid.refund && styles.paidRefunded)}>{usd(lead.paid.amountCents)}</span>
+            <span className={styles.paidSub}>
+              {lead.paid.refund ? "refunded" : shortDate(lead.paid.paidAt)}
+              {lead.paid.mode === "test" ? " · test" : ""}
+            </span>
+          </>
+        ) : lead.priceCents ? (
+          <>
+            <span className={styles.paidNone}>—</span>
+            <span className={styles.paidSub}>price {usd(lead.priceCents)}</span>
+          </>
+        ) : (
+          <span className={styles.paidNone}>—</span>
+        )}
       </div>
 
       <div className={styles.statusCell}>
@@ -1268,6 +1310,12 @@ function DetailSheet({
             </>
           ) : null}
 
+          {/* A paid lead: the payment, and the admin's refund. */}
+          {lead.paid ? <PaidBlock key={`paid-${lead.id}`} lead={lead} /> : null}
+
+          {/* THE PRICE sits with the hand-send: set it, then send. */}
+          {lead.status !== "MATCHED" ? <PriceBlock key={`price-${lead.id}`} lead={lead} /> : null}
+
           {lead.status !== "MATCHED" ? (
             <>
               <div className={styles.dSec}>Send it by hand</div>
@@ -1304,6 +1352,177 @@ function DetailSheet({
         </>
       )}
     </Sheet>
+  );
+}
+
+/* ============================================================
+   PAID LEADS (2026-10-02) — the price an admin sets, and the
+   payment a shop made (lib/leadCenter/purchase)
+   ============================================================ */
+
+/** "Lead price, $" — optional; empty is free. Changes until a shop accepts. */
+function PriceBlock({ lead }: { lead: PlatformLeadDTO }) {
+  const router = useRouter();
+  const [saved, setSaved] = useState<number | null>(lead.priceCents);
+  const [draft, setDraft] = useState(lead.priceCents ? String(lead.priceCents / 100) : "");
+  const [busy, setBusy] = useState(false);
+  const id = `lcPrice-${lead.id}`;
+
+  const trimmed = draft.trim();
+  const parsed = trimmed === "" ? null : Math.round(Number(trimmed) * 100);
+  const invalid = parsed != null && (!Number.isFinite(parsed) || parsed < 100 || parsed > 100_000);
+  const dirty = parsed !== saved;
+
+  async function save() {
+    if (busy || invalid || !dirty) return;
+    setBusy(true);
+    try {
+      const res = await setPlatformLeadPrice(lead.id, parsed);
+      setSaved(res.priceCents);
+      toast.success(
+        res.priceCents ? `Price set · ${usd(res.priceCents)}` : "Price removed",
+        res.priceCents ? "The open offer and every next one ask this to unlock the contacts." : "This lead is free again.",
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error("Couldn't save the price", actionError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className={styles.dSec}>Lead price</div>
+      <div className={styles.priceRow}>
+        <div className="mf">
+          <label className="mf-lbl" htmlFor={id}>
+            Lead price, $
+          </label>
+          <input
+            className="mf-in"
+            id={id}
+            type="number"
+            inputMode="decimal"
+            min={1}
+            max={1000}
+            step="1"
+            placeholder="Free"
+            value={draft}
+            aria-invalid={invalid}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void save();
+            }}
+          />
+        </div>
+        <button
+          className={cx("btn btn-ghost", ui.btnSm, busy && ui.btnBusy)}
+          type="button"
+          disabled={busy || invalid || !dirty}
+          onClick={() => void save()}
+        >
+          {busy ? "Saving…" : "Save price"}
+        </button>
+      </div>
+      <div className={cx(ui.hint, styles.priceHint, invalid && styles.hintBad)}>
+        {invalid
+          ? "A price is $1 to $1,000 — or leave it empty for a free lead."
+          : saved
+            ? `Shops pay ${usd(saved)} to open the homeowner's contacts. Change it any time before one accepts.`
+            : "Empty = free, as before. With a price, the contacts open only after the shop pays."}
+      </div>
+    </>
+  );
+}
+
+/** The payment a shop made for this lead, and the refund (admin only, with a reason). */
+function PaidBlock({ lead }: { lead: PlatformLeadDTO }) {
+  const router = useRouter();
+  const paid = lead.paid!;
+  const [refund, setRefund] = useState(paid.refund);
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const id = `lcRefund-${lead.id}`;
+
+  async function doRefund() {
+    if (busy || reason.trim().length < 3) return;
+    setBusy(true);
+    try {
+      await refundLeadPurchase(paid.offerId, reason.trim());
+      setRefund({ amountCents: paid.amountCents, reason: reason.trim(), at: new Date().toISOString() });
+      setAsking(false);
+      toast.success(`Refunded ${usd(paid.amountCents)}`, `${paid.orgName} gets it back on the card; the reason is in their activity log.`);
+      router.refresh();
+    } catch (err) {
+      toast.error("Couldn't refund", actionError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <div className={styles.dSec}>Payment</div>
+      <div className={styles.fields}>
+        <Field label="Paid">
+          <span className={styles.payVal}>{usd(paid.amountCents)}</span>
+          <span className={styles.dim}> · {shortDate(paid.paidAt)}</span>
+        </Field>
+        <Field label="By">{paid.orgName}</Field>
+        <Field label="How">{paid.via === "checkout" ? "Stripe Checkout" : "Card on file"}</Field>
+        <Field label="Stripe">
+          {/* Exact case: a PaymentIntent id is what support searches Stripe for. */}
+          <span className={styles.payVal} title={paid.paymentIntentId}>
+            {paid.paymentIntentId}
+          </span>
+          {paid.mode === "test" ? <span className={styles.dim}> · test mode</span> : null}
+        </Field>
+      </div>
+      {refund ? (
+        <div className={styles.refundDone}>
+          Refunded {usd(refund.amountCents)} on {shortDate(refund.at)} — {refund.reason}
+        </div>
+      ) : asking ? (
+        <div className={styles.refundForm}>
+          <div className="mf">
+            <label className="mf-lbl" htmlFor={id}>
+              Reason for the refund
+            </label>
+            <textarea
+              className={cx("mf-in", ui.area)}
+              id={id}
+              rows={2}
+              maxLength={400}
+              value={reason}
+              placeholder="e.g. phone number disconnected, homeowner never asked"
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+          <div className={ui.hint}>
+            Goes back to the shop&apos;s card through Stripe and into their activity log. It cannot be undone.
+          </div>
+          <div className={styles.refundAct}>
+            <button
+              className={cx("btn", ui.btnSm, ui.btnBad, busy && ui.btnBusy)}
+              type="button"
+              disabled={busy || reason.trim().length < 3}
+              onClick={() => void doRefund()}
+            >
+              {busy ? "Refunding…" : `Refund ${usd(paid.amountCents)}`}
+            </button>
+            <button className={cx("btn btn-ghost", ui.btnSm)} type="button" disabled={busy} onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button className={cx("btn", ui.btnSm, ui.btnBad, styles.refundOpen)} type="button" onClick={() => setAsking(true)}>
+          Refund
+        </button>
+      )}
+    </>
   );
 }
 

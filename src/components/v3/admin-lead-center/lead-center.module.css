@@ -62,10 +62,16 @@
 }
 
 /* ── Leads ledger ─────────────────────────────────────────────────────────
-   Four columns: which lead, who it is, where it went, what state it is in. */
+   Five columns: which lead, who it is, where it went, what the shop paid
+   for it (paid leads, 2026-10-02), what state it is in. */
 :global(.jf-blueprint .content) .cols {
-  grid-template-columns: 150px minmax(0, 1.3fr) minmax(0, 1.3fr) 150px;
+  grid-template-columns: 150px minmax(0, 1.3fr) minmax(0, 1.3fr) 104px 150px;
 }
+:global(.jf-blueprint .content) .paidCell { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+:global(.jf-blueprint .content) .paidAmt { font-family: var(--font-mono); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+:global(.jf-blueprint .content) .paidRefunded { color: var(--muted); text-decoration: line-through; }
+:global(.jf-blueprint .content) .paidNone { font-family: var(--font-mono); font-size: 13px; color: var(--muted-light); }
+:global(.jf-blueprint .content) .paidSub { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; color: var(--muted); white-space: nowrap; }
 :global(.jf-blueprint .content) .lid { display: flex; align-items: center; gap: 11px; min-width: 0; }
 :global(.jf-blueprint .content) .lidIc {
   width: 32px; height: 32px;
@@ -268,6 +274,24 @@
   padding-bottom: 14px; margin-bottom: 4px;
   border-bottom: 1.5px solid var(--hair-soft);
   font-size: 14px; font-weight: 600; color: var(--ink-soft); line-height: 1.45;
+}
+/* Paid leads: the price row (input + save), the refund. */
+:global(.jf-blueprint .content .pmdl) .priceRow { display: flex; align-items: flex-end; gap: 10px; }
+:global(.jf-blueprint .content .pmdl) .priceRow :global(.mf) { flex: 1; min-width: 0; margin: 0; }
+:global(.jf-blueprint .content .pmdl) .priceRow :global(.btn) { flex-shrink: 0; min-height: 36px; }
+:global(.jf-blueprint .content .pmdl) .hintBad { color: var(--danger); }
+:global(.jf-blueprint .content .pmdl) .priceHint { margin-top: 8px; }
+:global(.jf-blueprint .content .pmdl) .payVal {
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 600;
+  letter-spacing: 0; text-transform: none; color: var(--ink); overflow-wrap: anywhere;
+}
+:global(.jf-blueprint .content .pmdl) .refundOpen { margin-top: 10px; }
+:global(.jf-blueprint .content .pmdl) .refundForm { margin-top: 10px; }
+:global(.jf-blueprint .content .pmdl) .refundAct { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+:global(.jf-blueprint .content .pmdl) .refundDone {
+  margin-top: 10px; padding: 9px 12px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  font-size: 13px; color: var(--ink-soft); overflow-wrap: anywhere;
 }
 :global(.jf-blueprint .content .pmdl) .dSec {
   font-size: 10.5px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase;

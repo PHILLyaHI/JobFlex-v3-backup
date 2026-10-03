@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { requireSalesOrManager } from "@/lib/orgContext";
 import { advanceCascade } from "@/lib/leadCenter/cascade";
 import { unmatchAndAdvance } from "@/lib/leadCenter/unmatch";
+import { acceptOfferTx, afterOfferAccepted } from "@/lib/leadCenter/accept";
 
 // Contractor responses to Lead Center offers. Guard parity with claimLead
 // (sales + managers). Every terminal transition is a CONDITIONAL updateMany on
@@ -25,6 +26,8 @@ export async function pendingLeadOffers(): Promise<
     description: string | null;
     attempt: number;
     expiresAt: string;
+    /** The lead's price in cents; null = free. Contacts open on payment. */
+    priceCents: number | null;
   }[]
 > {
   const ctx = await requireSalesOrManager();
@@ -59,6 +62,7 @@ export async function pendingLeadOffers(): Promise<
     description: o.platformLead.scope ?? o.platformLead.description,
     attempt: o.attempt,
     expiresAt: o.expiresAt.toISOString(),
+    priceCents: o.priceCents && o.priceCents > 0 ? o.priceCents : null,
   }));
 }
 
@@ -77,92 +81,17 @@ async function loadOwnOffer(offerId: string) {
 
 export async function acceptLeadOffer(offerId: string): Promise<{ ok: true; leadId: string }> {
   const { ctx, offer } = await loadOwnOffer(offerId);
-  const pl = offer.platformLead;
+  // A priced lead opens only by payment (lib/leadCenter/purchase): the free
+  // accept refuses it, whatever a stale card or a hand-made call sends.
+  if (offer.priceCents && offer.priceCents > 0 && !offer.unlockedAt) {
+    throw new Error("This lead has a price — unlock it to accept.");
+  }
   const now = new Date();
 
-  const leadId = await db.$transaction(async (tx) => {
-    const won = await tx.leadOffer.updateMany({
-      where: { id: offerId, status: "OFFERED", expiresAt: { gt: now } },
-      data: { status: "ACCEPTED", respondedAt: now, respondedById: ctx.user.id },
-    });
-    if (won.count === 0) {
-      throw new Error("This offer is no longer available.");
-    }
-
-    // Quota: ALLOW-BUT-COUNT, same policy as the homeowner form — a routed
-    // lead is the contractor's revenue and is never blocked by their plan cap.
-    const lead = await tx.lead.create({
-      data: {
-        organizationId: ctx.organizationId,
-        name: pl.name,
-        email: pl.email,
-        phone: pl.phone,
-        address: pl.address,
-        city: pl.city,
-        state: pl.state,
-        zip: pl.zip,
-        projectType: pl.projectType,
-        description: pl.description,
-        scope: pl.scope,
-        photos: pl.photos ?? "[]",
-        source: "LEAD_CENTER",
-        status: "CLAIMED",
-        claimedById: ctx.user.id,
-        claimedAt: now,
-        aiCategory: pl.detectedTrade,
-        aiConfidence: pl.aiConfidence,
-      },
-    });
-
-    await tx.platformLead.update({
-      where: { id: pl.id },
-      data: {
-        status: "MATCHED",
-        matchedOrgId: ctx.organizationId,
-        matchedLeadId: lead.id,
-        matchedAt: now,
-        // The queue note described a state this lead has just left (see the
-        // same clear in lib/leadCenter/route.ts).
-        queueReason: null,
-      },
-    });
-
-    // The raw submission now points at the lead it became — see route.ts.
-    if (pl.homeownerRequestId) {
-      await tx.homeownerRequest.updateMany({
-        where: { id: pl.homeownerRequestId },
-        data: { convertedLeadId: lead.id, organizationId: ctx.organizationId },
-      });
-    }
-
-    // Defensive: normally there is exactly one open offer per platform lead.
-    await tx.leadOffer.updateMany({
-      where: { platformLeadId: pl.id, status: "OFFERED", id: { not: offerId } },
-      data: { status: "CANCELLED" },
-    });
-
-    return lead.id;
-  });
-
-  try {
-    await db.activityEvent.create({
-      data: {
-        organizationId: ctx.organizationId,
-        actorId: ctx.user.id,
-        leadId,
-        kind: "ACCEPTED",
-        summary: `Accepted platform lead: ${pl.name} · ${pl.detectedTrade ?? pl.projectType ?? "project"}`,
-      },
-    });
-  } catch {
-    /* non-fatal */
-  }
-  try {
-    const { notifyHomeownerMatched } = await import("@/lib/notify");
-    await notifyHomeownerMatched(pl.id);
-  } catch (err) {
-    console.warn("[lead-offers] matched notify failed:", err);
-  }
+  const { leadId, platformLeadId } = await db.$transaction((tx) =>
+    acceptOfferTx(tx, { offerId, organizationId: ctx.organizationId, userId: ctx.user.id, now, unlock: false }),
+  );
+  await afterOfferAccepted({ organizationId: ctx.organizationId, userId: ctx.user.id, leadId, platformLeadId });
 
   revalidatePath("/dashboard/leads");
   return { ok: true, leadId };

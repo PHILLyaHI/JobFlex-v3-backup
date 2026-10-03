@@ -144,6 +144,9 @@ async function offerToNext(platformLeadId: string): Promise<void> {
           score: cand.score,
           scoreBreakdownJson: JSON.stringify(cand),
           expiresAt: new Date(Date.now() + OFFER_TTL_MS),
+          // The lead's price, when an admin set one, travels with every offer
+          // of it (lib/leadCenter/purchase) — the next shop pays the same.
+          priceCents: pl.priceCents && pl.priceCents > 0 ? pl.priceCents : null,
         },
       });
       await tx.platformLead.update({

@@ -14,6 +14,7 @@ import {
   declineRoutedLead,
 } from "@/actions/leadOffers";
 import { claimLead } from "@/actions/leads";
+import { buyLead, LeadPurchaseHost, priceLabel, PURCHASED_EVENT } from "./LeadPurchase";
 
 /**
  * A platform lead can reach a contractor two ways, and both have to announce
@@ -38,6 +39,8 @@ interface Offer {
   attempt: number;
   /** Offers only — a routed lead has no deadline. */
   expiresAt: string | null;
+  /** A priced offer opens by payment (LeadPurchase); null = free. */
+  priceCents: number | null;
 }
 
 const POLL_MS = 45_000;
@@ -77,6 +80,7 @@ export function LeadOfferPopup() {
           description: l.description,
           attempt: 0,
           expiresAt: null,
+          priceCents: null,
         })),
       ];
       setOffers(list.filter((o) => !dismissed.current.has(o.id)));
@@ -90,9 +94,13 @@ export function LeadOfferPopup() {
     const t = setInterval(load, POLL_MS);
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
+    // A lead paid for anywhere (this card, the Leads page, back from Stripe)
+    // leaves the queue at once, not at the next poll.
+    window.addEventListener(PURCHASED_EVENT, onFocus);
     return () => {
       clearInterval(t);
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(PURCHASED_EVENT, onFocus);
     };
   }, [load]);
 
@@ -108,6 +116,12 @@ export function LeadOfferPopup() {
     if (resolving) return;
     setResolving("accept");
     try {
+      // A priced offer is a purchase: the card on file or Stripe Checkout.
+      if (offer.kind === "offer" && offer.priceCents) {
+        const out = await buyLead(offer.id);
+        if (out === "unlocked") setOffers((os) => os.filter((o) => o.id !== offer.id));
+        return;
+      }
       // A routed lead is already a Lead row: accepting it is a claim, not an
       // offer response.
       if (offer.kind === "routed") await claimLead(offer.id);
@@ -151,81 +165,90 @@ export function LeadOfferPopup() {
   }
 
   return (
-    <AnimatePresence mode="wait">
-      {current && (
-        <motion.div
-          key={current.id}
-          className="jflp"
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 12, transition: { duration: 0.14 } }}
-          transition={{ duration: 0.2, ease: [0.22, 0.61, 0.36, 1] }}
-          role="status"
-        >
-          <div className="jflp-card">
-            <div className="jflp-head">
-              {/* The label says what arrived; the name below says who. The old
-                  card put both in a coloured banner and the homeowner's name
-                  came third, under a pill. */}
-              <span className="jflp-kick">
-                {current.kind === "routed" ? "New lead · sent to you" : "New lead · reserved for you"}
-              </span>
-              {current.expiresAt ? (
-                <span className="jflp-clock">
-                  <Countdown expiresAt={current.expiresAt} /> left
+    <>
+      {/* Pays for priced offers wherever this pop-up is mounted (LeadPurchase). */}
+      <LeadPurchaseHost />
+      <AnimatePresence mode="wait">
+        {current && (
+          <motion.div
+            key={current.id}
+            className="jflp"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12, transition: { duration: 0.14 } }}
+            transition={{ duration: 0.2, ease: [0.22, 0.61, 0.36, 1] }}
+            role="status"
+          >
+            <div className="jflp-card">
+              <div className="jflp-head">
+                {/* The label says what arrived; the name below says who. The old
+                    card put both in a coloured banner and the homeowner's name
+                    came third, under a pill. */}
+                <span className="jflp-kick">
+                  {current.kind === "routed" ? "New lead · sent to you" : "New lead · reserved for you"}
                 </span>
-              ) : null}
-              <button
-                type="button"
-                className="jflp-x"
-                aria-label="Dismiss"
-                onClick={() => dismiss(current.id)}
-              >
-                <X />
-              </button>
-            </div>
-
-            <div className="jflp-body">
-              <div className="jflp-name">{current.name}</div>
-              <div className="jflp-meta">
-                <b>{current.detectedTrade ?? current.projectType ?? "Project"}</b>
-                {locationOf(current) ? ` · ${locationOf(current)}` : ""}
-              </div>
-              {current.description ? <p className="jflp-desc">{current.description}</p> : null}
-
-              <div className="jflp-act">
+                {current.expiresAt ? (
+                  <span className="jflp-clock">
+                    <Countdown expiresAt={current.expiresAt} /> left
+                  </span>
+                ) : null}
                 <button
                   type="button"
-                  className="jflp-btn jflp-primary"
-                  disabled={resolving !== null}
-                  onClick={() => accept(current)}
+                  className="jflp-x"
+                  aria-label="Dismiss"
+                  onClick={() => dismiss(current.id)}
                 >
-                  <Check />
-                  {resolving === "accept" ? "Accepting…" : "Accept"}
+                  <X />
                 </button>
-                <button
-                  type="button"
-                  className="jflp-btn jflp-ghost"
-                  disabled={resolving !== null}
-                  onClick={() => decline(current)}
-                >
-                  {resolving === "decline" ? "Passing…" : "Pass"}
-                </button>
-                <Link href={"/dashboard/leads" as never} className="jflp-btn jflp-ghost" onClick={() => dismiss(current.id)}>
-                  Open
-                </Link>
               </div>
 
-              {offers.length > 1 ? (
-                <div className="jflp-more">
-                  +{offers.length - 1} more waiting
+              <div className="jflp-body">
+                <div className="jflp-name">{current.name}</div>
+                <div className="jflp-meta">
+                  <b>{current.detectedTrade ?? current.projectType ?? "Project"}</b>
+                  {locationOf(current) ? ` · ${locationOf(current)}` : ""}
                 </div>
-              ) : null}
+                {current.description ? <p className="jflp-desc">{current.description}</p> : null}
+                {current.priceCents ? (
+                  <div className="jflp-price">{priceLabel(current.priceCents)} to unlock contact</div>
+                ) : null}
+
+                <div className="jflp-act">
+                  <button
+                    type="button"
+                    className="jflp-btn jflp-primary"
+                    disabled={resolving !== null}
+                    onClick={() => accept(current)}
+                  >
+                    <Check />
+                    {resolving === "accept"
+                      ? current.priceCents ? "Opening…" : "Accepting…"
+                      : current.priceCents ? `Accept · ${priceLabel(current.priceCents)}` : "Accept"}
+                  </button>
+                  <button
+                    type="button"
+                    className="jflp-btn jflp-ghost"
+                    disabled={resolving !== null}
+                    onClick={() => decline(current)}
+                  >
+                    {resolving === "decline" ? "Passing…" : "Pass"}
+                  </button>
+                  <Link href={"/dashboard/leads" as never} className="jflp-btn jflp-ghost" onClick={() => dismiss(current.id)}>
+                    Open
+                  </Link>
+                </div>
+
+                {offers.length > 1 ? (
+                  <div className="jflp-more">
+                    +{offers.length - 1} more waiting
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 

@@ -103,6 +103,10 @@
 :global(.jf-blueprint .content) .kv dd { margin: 0; font-size: 15px; line-height: 1.5; color: var(--ink); overflow-wrap: anywhere; }
 :global(.jf-blueprint .content) .kv .mono { font-family: var(--font-mono); font-size: 14px; }
 :global(.jf-blueprint .content) .soft { color: var(--ink-soft); }
+/* A paid lead's support line: under the amount, the link in the house blue. */
+:global(.jf-blueprint .content) .paid-help { display: block; margin-top: 4px; font-size: 13px; }
+:global(.jf-blueprint .content) .paid-help a { color: var(--blueprint); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+:global(.jf-blueprint .content) .paid-help a:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
 /* plates */
 :global(.jf-blueprint .content) .plates { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }

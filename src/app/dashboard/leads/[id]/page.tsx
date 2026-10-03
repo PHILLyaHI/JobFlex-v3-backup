@@ -48,6 +48,14 @@ export default async function LeadDetailPage({
   // A legacy hand-routed lead the shop has not claimed: city and scope only,
   // and nothing to price yet — the estimators would carry the street with them.
   const locked = contactsLocked(lead);
+  // A lead this shop paid to open: the amount, the date, and the support line.
+  const paidOffer =
+    lead.source === "LEAD_CENTER"
+      ? await db.leadOffer.findFirst({
+          where: { organizationId, unlockedAt: { not: null }, priceCents: { gt: 0 }, platformLead: { matchedLeadId: lead.id } },
+          select: { priceCents: true, unlockedAt: true },
+        })
+      : null;
   return (
     <LeadDetailContent
       lead={{
@@ -71,6 +79,11 @@ export default async function LeadDetailPage({
       }}
       canEstimate={!locked && !isSalesRole(role) && !isWorkerRole(role)}
       contactsLocked={locked}
+      paid={
+        paidOffer?.priceCents && paidOffer.unlockedAt
+          ? { amount: `$${(paidOffer.priceCents / 100).toFixed(2)}`, when: longDate(paidOffer.unlockedAt) }
+          : null
+      }
       scopeFailed={scopeFailed}
     />
   );

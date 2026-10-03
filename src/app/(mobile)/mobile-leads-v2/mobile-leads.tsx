@@ -83,6 +83,7 @@ import { lockScroll } from "@/lib/scrollLock";
 import { claimLead, deleteLead, importLeads, updateLeadStatus } from "@/actions/leads";
 import { LeadProfileNudge } from "@/components/dashboard/LeadProfileNudge";
 import { acceptLeadOffer, declineLeadOffer } from "@/actions/leadOffers";
+import { buyLead, LeadPurchaseHost, priceLabel, PURCHASED_EVENT } from "@/components/leads/LeadPurchase";
 // The classic import bench's CSV parser, shared with the desktop sheet rather
 // than re-written: same quote handling, same header sniffing, same column
 // guesses, so a file that stages five rows there stages the same five here.
@@ -580,6 +581,28 @@ export function MobileLeads() {
     }
   };
 
+  /** A priced offer is a purchase (components/leads/LeadPurchase): the card
+      stays until the lead opens; the re-read then brings the paid lead in. */
+  const buyOffer = async (o: Offer) => {
+    if (!claim(o.id)) return;
+    try {
+      const out = await buyLead(o.id);
+      if (out === "unlocked") {
+        await reload();
+        setTab("all");
+      }
+    } finally {
+      release(o.id);
+    }
+  };
+
+  // A lead paid for from the pop-up (or back from Stripe) — re-read the lists.
+  useEffect(() => {
+    const onPaid = () => void reload();
+    window.addEventListener(PURCHASED_EVENT, onPaid);
+    return () => window.removeEventListener(PURCHASED_EVENT, onPaid);
+  }, [reload]);
+
   /** Accepting a platform offer materializes the org Lead server-side, so the
       new row can only come back from a re-read. */
   const acceptOffer = (o: Offer) =>
@@ -860,6 +883,8 @@ export function MobileLeads() {
       {/* Shared handheld nav: topbar + drawer + sprite. Owns its own open
           state, its own Escape and its own indicator, so the page holds none. */}
       <MobileNav />
+      {/* Pays for priced offers — a sales rep's phone has no pop-up to host it. */}
+      <LeadPurchaseHost />
 
       {/* ============ SCROLLER ============ */}
       <main className={styles.scroll} ref={scrollRef}>
@@ -1178,11 +1203,13 @@ export function MobileLeads() {
                         </span>
                       </div>
                       <div className={styles.icardDesc}>{o.desc}</div>
-                      <div className={styles.icardContact}>Contact details open when you accept</div>
+                      <div className={styles.icardContact}>
+                        {o.priceCents ? `${priceLabel(o.priceCents)} to unlock contact` : "Contact details open when you accept"}
+                      </div>
                       <div className={styles.icardAct}>
                         <button className={`${styles.icardBtn} ${styles.icardBtnGo}`} type="button"
-                          onClick={() => acceptOffer(o)}>
-                          <Icon id="i-check" />Accept lead
+                          onClick={() => (o.priceCents ? void buyOffer(o) : acceptOffer(o))}>
+                          <Icon id="i-check" />{o.priceCents ? `Accept · ${priceLabel(o.priceCents)}` : "Accept lead"}
                         </button>
                         <button className={styles.icardBtn} type="button" onClick={() => passOffer(o)}>
                           Pass
