@@ -90,6 +90,106 @@ What changed so the number is truthfully JobFlex's own:
   until 2026-10-16. Resubmit only after this is deployed: the reviewers
   compare the registration with the live site.
 
+## A company's own texting number (2026-10-02)
+
+Owner: "we need to set the Twilio number in JobFlex admin and contractors can
+use it for their own SMS … JobFlex will pay it." Twilio allows one business
+per toll-free number (errors 30474, 30478), so each company gets its own,
+bought on JobFlex's account and registered in the company's name. Paid plans
+only (an ACTIVE or PAST_DUE subscription on a plan other than FREE).
+
+- **Settings → Texting → The company → Your texting number** (desk) and the
+  same card on the phone settings page (`components/v3/texting-people/own-number.tsx`):
+  Get your texting number → the business form (legal name, trade name, kind
+  of business, EIN, address, website, contact; prefilled from the company,
+  a missing website becomes its `/r/<slug>` page) → Register my number.
+  States: waiting for Twilio (Check now), approved (sending), sent back
+  (Twilio's reasons, the form again while the edit window is open), failed
+  (our own step, in Twilio's words). Release asks twice.
+- **`lib/sms/registration.ts`** buys a toll-free number once (kept across a
+  resubmission), adds it to the platform Messaging Service, and creates — or,
+  after a rejection, updates — the toll-free verification with
+  `verificationFields` (`lib/sms/registrationShared.ts`: the contractor's
+  details, its own three sample texts made by the templates, the booking-page
+  opt-in picture `public/twilio/opt-in-booking.png`, its live booking link).
+  State is SyncState `smsreg:<orgId>`; no schema change. The number is put on
+  `Organization.smsFromNumber` only when Twilio approves: the settings page
+  asks at most every 10 minutes, the hourly `/api/cron/sms-crew` asks for
+  every pending company. The old instant local-number purchase
+  (`lib/sms/numbers.ts`, unregistered numbers) is gone.
+- **Consent (`lib/sms/consent.ts`).** The booking page has "Text me about my
+  visit and estimate from <company>" (unticked, with frequency, rates,
+  STOP/HELP, not a condition of booking). A tick keeps SyncState
+  `smsok:<orgId>:<E.164>` and a trail row. `send.ts` lets a company's own
+  number text its team (members' mobiles, crew phones, extra numbers,
+  compared as E.164) and anyone else only with that yes; otherwise a SKIPPED
+  row `no-consent`. Codes and HELP answers always go.
+- **HELP** on a company's own number is answered by the company, from that
+  number (`companyHelpText`).
+- Checks: `scripts/qa/sms.check.ts` (registration words, prefill, fields,
+  limits, HELP); stand walk recipe in the session notes (`own-walk.js`).
+
+## No JobFlex number (2026-10-02, the owner's "option 2")
+
+Twilio rejected the JobFlex number a second time for 30474 alone, eleven
+minutes after the resubmission. The account's primary business profile is an
+**ISV reseller** (`isv_reseller_or_partner`), and Twilio attached an
+auto-created starter customer profile named Jobflex LLC to the verification:
+a reseller listed as its own customer is exactly what 30474 describes. So
+JobFlex stopped needing a number of its own:
+
+- **Sign-in codes go through Twilio Verify** (`lib/sms/verify.ts`), which
+  sends from Twilio's pre-registered senders and needs no registration (5¢ per
+  approved code plus the text). The service named "JobFlex" is found or made
+  on first use and remembered in SyncState `twilio:verify-service`
+  (`TWILIO_VERIFY_SERVICE_SID` overrides). `PhoneVerification.codeHash` is
+  `"verify"` when Twilio holds the code; without Twilio (the stand) the old
+  own-code path prints the code to the server log. The admin page's "Send
+  test" now sends a Verify code.
+- **Every other text leaves from the company's own registered number.**
+  `send.ts` has no fallback: no number → SKIPPED `no-number`; the result
+  carries `why` (`no-number`, `no-consent`, `not-configured`).
+  `sdk/twilio.sendSMS` refuses a text without `from` — with only contractor
+  numbers in the Messaging Service pool, a pool pick would send one company's
+  text from another company's number.
+- **Six senders that went straight to Twilio now go through `sendText`:**
+  the client message action, change orders, proposal follow-ups (a text that
+  cannot leave falls back to the email), invoices, payment reminders, and the
+  lead center's texts (`notify.ts sendLeadSms`). The lead center's texts are
+  JobFlex's own (to homeowners and to shops' business phones) and stay
+  SKIPPED `no-number`; their emails carry them. A JobFlex number would need a
+  separate Twilio account registered as a direct business.
+- The shared-number helpers (`asSharedSender`, `sharedNumberMay`) are gone.
+  The JobFlex toll-free number (+1 866 897 5760) is still on the account (its
+  voice webhook points at /api/twilio/voice); releasing it is the owner's call.
+
+## The JobFlex number's one job: lead alerts to shops that opt in (2026-10-02)
+
+The owner wanted the JobFlex number approved anyway. Its honest job is JobFlex's
+OWN messages to its OWN subscribers: lead-center alerts to a shop's business
+phone (offer reserved, offer expiring, new lead). Homeowners are not texted
+(the homeowner request form does not ask them yet; their emails carry it).
+
+- **Opt-in:** Settings → Texting → The company → "Lead texts from JobFlex"
+  (desk + phone): On/Off, the company phone, the consent words with Terms and
+  Privacy. Stored as `leadsSettingsJson.instantSms` (the old classic-form key,
+  never read before); default is now **off**. Turning it on sends the
+  confirmation `leadTextsOnText` with STOP/HELP.
+- **`notify.ts sendLeadSms`:** homeowner texts skipped; shop texts only when
+  `instantSms === true`; sent as kind `jobflex-…` with no organization.
+- **`send.ts`:** kind `jobflex-…` without an organization leaves from
+  `jobflexSender()` (`lib/sms/jobflexSender.ts`: the number of the platform
+  verification with external reference `jobflex-platform-tollfree`, once
+  TWILIO_APPROVED, asked hourly, SyncState `twilio:jobflex-sender`;
+  `TWILIO_JOBFLEX_FROM` overrides). Until then `no-number`. HELP on the
+  JobFlex number is kind `jobflex-help`.
+- **Resubmission:** ACCOUNT_NOTIFICATIONS only, the four real lead texts as
+  samples, opt-in picture `public/twilio/opt-in-lead-texts.png`, a statement
+  that subscribers' own texts use their own separately verified numbers.
+  Send it only after the deploy. If Twilio still answers 30474 because the
+  account is an ISV reseller, the remaining route is a separate Twilio account
+  registered as a direct business for JobFlex's own texts.
+
 ## What the contractor does
 
 - Settings → Notifications: the matrix has a third column, **Text**. The

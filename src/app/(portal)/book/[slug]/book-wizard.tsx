@@ -19,7 +19,7 @@ export function BookWizard({ slug, orgName, services, intro, arrivalWindow }: { 
   const [day, setDay] = useState<string | null>(null);
   const [slot, setSlot] = useState<{ iso: string; label: string } | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
-  const [form, setForm] = useState({ name: "", email: "", phone: "", address: "", notes: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", address: "", notes: "", smsOk: false });
   const [err, setErr] = useState("");
   const [receipt, setReceipt] = useState<{ when: string; serviceLabel: string; member: boolean; priceText: string; manageToken: string } | null>(null);
   const [pending, start] = useTransition();
@@ -54,6 +54,7 @@ export function BookWizard({ slug, orgName, services, intro, arrivalWindow }: { 
         phone: form.phone,
         address: form.address,
         notes: form.notes,
+        smsOk: form.smsOk,
         answers: (service.questions ?? []).map((q) => ({ key: q.key, label: q.label, value: answers[q.key] ?? "" })).filter((a) => a.value),
       });
       if (r.ok) setReceipt(r);
@@ -149,6 +150,13 @@ export function BookWizard({ slug, orgName, services, intro, arrivalWindow }: { 
             <label className="text-[12px] font-medium">Email<input className={IN} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoComplete="email" placeholder="for the confirmation" /></label>
             <label className="text-[12px] font-medium">Phone<input className={IN} type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} autoComplete="tel" /></label>
           </div>
+          {/* Texting consent (2026-10-02): the opt-in every contractor's own texting number is registered on (lib/sms/consent). */}
+          <label className="flex items-start gap-2 text-[12px] leading-snug" data-sms-optin>
+            <input type="checkbox" className="mt-[2px] h-4 w-4 shrink-0" checked={form.smsOk} onChange={(e) => setForm({ ...form, smsOk: e.target.checked })} />
+            <span>
+              <b className="font-medium">Text me about my visit and estimate from {orgName}.</b> Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out, HELP for help. Agreeing is not a condition of booking.
+            </span>
+          </label>
           <label className="text-[12px] font-medium">Address of the visit<input className={IN} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} autoComplete="street-address" /></label>
           <label className="text-[12px] font-medium">Anything else?<textarea className={IN} rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
           <p className="text-[12px] text-[color:var(--ink-muted,#666)]">On a service plan? Use the email on your plan — your member price applies automatically.</p>

@@ -9,11 +9,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/orgContext";
+import { sendVerifyCode } from "@/lib/sms/verify";
 import { toE164 } from "@/lib/phone";
 import { canStoreIntegrations, clearTwilioIntegration, getTwilioIntegration, saveTwilioIntegration } from "@/lib/platformIntegrations";
 import { invalidateTwilioSettings, twilioClient, twilioSettings } from "@/lib/sdk/twilio";
-import { testText } from "@/lib/sms/format";
-import { sendText } from "@/lib/sms/send";
 
 const PAGE = "/admin/integrations/twilio";
 
@@ -77,11 +76,12 @@ export async function sendAdminTestText(rawTo: string): Promise<AdminTwilioResul
   await requirePlatformAdmin();
   const to = toE164(rawTo);
   if (!to) return { ok: false, error: "That doesn't look like a US or Canadian number." };
-  const r = await sendText({ organizationId: null, to, body: testText("JobFlex"), kind: "admin-test" });
-  if (!r.ok) return { ok: false, error: r.reason === "duplicate" ? "The same test just went out — give it a minute." : r.reason === "opted-out" ? "That number replied STOP." : `Not sent: ${r.reason}. The row on this page has the error.` };
-  if (r.status === "SKIPPED") return { ok: false, error: "Texting is not set up — nothing was sent." };
+  // JobFlex has no texting number of its own (2026-10-02): the test is a Twilio
+  // Verify code, which proves the credentials and the Verify service at once.
+  const r = await sendVerifyCode(to);
+  if (!r.ok) return { ok: false, error: r.notConfigured ? "Texting is not set up — nothing was sent." : `Not sent: ${r.error}` };
   revalidatePath(PAGE);
-  return { ok: true, note: `Test text sent to ${to}. Twilio's delivery status lands on this page in a moment.` };
+  return { ok: true, note: `A JobFlex verification code went to ${to} through Twilio Verify — the account and the Verify service work.` };
 }
 
 export async function clearTwilioSettings(): Promise<AdminTwilioResult> {

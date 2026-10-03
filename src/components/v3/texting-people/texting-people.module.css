@@ -110,3 +110,18 @@
   .root .preview p { grid-template-columns: 1fr; gap: 4px; }
 }
 
+
+/* The company's own texting number (2026-10-02, own-number.tsx) */
+.own { gap: 12px; }
+.ownHead { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.ownHead b { font-size: 18px; font-variant-numeric: tabular-nums; }
+.root .form { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px 14px; border: 1.5px solid var(--ink, #0a0a0a); background: #fff; padding: 14px; }
+.root .form label { display: grid; gap: 5px; align-content: start; font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted, #6b6760); }
+.root .form .wide { grid-column: 1 / -1; }
+.root .form input, .root .form select { height: 38px; padding: 0 10px; border: 1.5px solid var(--ink, #0a0a0a); border-radius: var(--radius, 0); font-family: var(--font, "Inter", system-ui, sans-serif); font-size: 16px; letter-spacing: normal; text-transform: none; color: var(--ink, #0a0a0a); background: #fff; min-width: 0; width: 100%; }
+.root .form input:focus, .root .form select:focus { outline: 2px solid var(--blue, #1854a0); outline-offset: 1px; }
+.root .form .bad input, .root .form .bad select { border-color: var(--danger, #a83232); }
+.root .form .why, .root .form .hint { font-family: var(--font, "Inter", system-ui, sans-serif); font-size: 12px; letter-spacing: normal; text-transform: none; line-height: 1.4; }
+.root .form .why { color: var(--danger, #a83232); }
+.root .form .hint { color: var(--muted, #6b6760); }
+.reasons { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: var(--danger, #a83232); }

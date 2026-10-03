@@ -16,7 +16,8 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildPaymentReminder } from "@/lib/email/build/client";
 import { sendOrgEmail } from "@/lib/email/orgSend";
-import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
+import { isTwilioEnabled } from "@/lib/sdk/twilio";
+import { sendText } from "@/lib/sms/send";
 import { toE164 } from "@/lib/phone";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { contractSchedule, contractTotal } from "@/lib/contractTotal";
@@ -108,11 +109,9 @@ export async function sendPaymentReminder(input: { proposalId: string; installme
     else if (await trialBlocksText(proposal.organizationId, "payment-reminder")) report.sms = "disabled";
     else {
       try {
-        await sendSMS(
-          phone,
-          `${org.name}: ${label.toLowerCase()} of $${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })} on ${proposal.title} is due. Pay online or see the details: ${href}`,
-        );
-        report.sms = "sent";
+        // From the company's own number to a client who said yes (lib/sms/send, 2026-10-02).
+        const sent = await sendText({ organizationId: proposal.organizationId, to: phone, body: `${org.name}: ${label.toLowerCase()} of $${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })} on ${proposal.title} is due. Pay online or see the details: ${href}`, kind: "payment-reminder" });
+        report.sms = !sent.ok ? "failed" : sent.status === "SKIPPED" ? "disabled" : "sent";
       } catch (err) {
         console.warn("[reminders] sms failed:", err);
         report.sms = "failed";

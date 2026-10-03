@@ -12,7 +12,7 @@ import { contractSchedule } from "@/lib/contractTotal";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
 import { noteGmailFallback, sendOrgEmail } from "@/lib/email/orgSend";
-import { sendSMS, isTwilioEnabled } from "@/lib/sdk/twilio";
+import { isTwilioEnabled } from "@/lib/sdk/twilio";
 import { toE164 } from "@/lib/phone";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { renderEmail } from "@/lib/email/renderEmail";
@@ -34,10 +34,10 @@ import {
   buildAdminNewLead,
   buildSupportTicket,
 } from "@/lib/email/build/operator";
-import { parsePaymentSettings } from "@/lib/settings";
+import { parsePaymentSettings, parseLeadsSettings } from "@/lib/settings";
 import { resolveSchedule, fromMinor } from "@/lib/paymentSchedule";
 import { resolveEmailRecipients, sendToMembersByPref, sendToUserByPref } from "@/lib/notificationPrefs";
-import { textOffice } from "@/lib/sms/send";
+import { textOffice, sendText } from "@/lib/sms/send";
 import { fireTextRules, jobContext, leadContext, proposalContext } from "@/lib/sms/rulesEngine";
 import { acceptedLine, dayLabel, money as smsMoney, jobBackLine, jobCompletedLine, jobMediaLine, jobStartedLine, leadLine, leadOfferLine, paymentLine, workerRespondedLine } from "@/lib/sms/format";
 import type { ProgressWhat } from "@/lib/jobProgressShared";
@@ -606,6 +606,21 @@ async function sendLeadSms(
     .join(" ");
 
   if (!raw) return "invalid-number";
+  // Who may get JobFlex's own texts (2026-10-02, the opt-in the JobFlex number
+  // is registered on): a shop that turned on "Text new leads to the company
+  // phone" in Settings → Texting. Homeowners are not texted until the request
+  // form asks them; their emails carry the news.
+  if (ctx.what.startsWith("homeowner-")) {
+    console.info(`[notify] ${tag}: SMS skipped — homeowners are not asked for texts yet`);
+    return "disabled";
+  }
+  const optedIn = ctx.orgId
+    ? parseLeadsSettings((await db.organization.findUnique({ where: { id: ctx.orgId }, select: { leadsSettingsJson: true } }).catch(() => null))?.leadsSettingsJson).instantSms
+    : false;
+  if (!optedIn) {
+    console.info(`[notify] ${tag}: SMS skipped — the shop has not turned on lead texts`);
+    return "disabled";
+  }
   if (!await isTwilioEnabled()) {
     // Not a failure: the provider is off by configuration, which is the
     // documented local/dev state. Said once, quietly, so a missing text during
@@ -629,8 +644,11 @@ async function sendLeadSms(
   }
 
   try {
-    await sendSMS(to, body);
-    return "sent";
+    // JobFlex's own text: it leaves from JobFlex's number once Twilio approved
+    // it (lib/sms/jobflexSender), until then a SKIPPED row and the email.
+    const r = await sendText({ organizationId: null, to, body, kind: `jobflex-${ctx.what}` });
+    if (!r.ok) return r.reason === "invalid-number" ? "invalid-number" : "failed";
+    return r.status === "SKIPPED" ? "disabled" : "sent";
   } catch (err) {
     console.error(`[notify] ${tag}: SMS failed`, err);
     return "failed";

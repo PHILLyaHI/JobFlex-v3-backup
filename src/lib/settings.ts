@@ -109,7 +109,10 @@ export interface LeadsSettings {
 export const LEADS_DEFAULTS: LeadsSettings = {
   strategy: "round-robin",
   aiCategorize: true,
-  instantSms: true,
+  // "Text new leads to the company phone" — JobFlex's own lead alerts, sent only
+  // after the company turns them on (Settings → Texting; 2026-10-02, the opt-in
+  // the JobFlex number is registered on). Off until then.
+  instantSms: false,
   businessHours: true,
   autoDeclineDupes: false,
   zips: "78701, 78702, 78703, 78704",

@@ -12,6 +12,7 @@ import { clientIp, enforceRateLimit, MINUTE, rateLimitShared } from "@/lib/rateL
 import { availabilityFor, bookingByToken, cancelBooking, createBooking, loadBookingDashboard, orgBySlug, rescheduleBooking, saveSettings, settingsOf, type BookingReceipt } from "@/lib/bookingBook";
 import { defaultServicesFor, slotLabel, type BookingService, type BookingSettings } from "@/lib/booking";
 import { parseTradeTypes } from "@/lib/tradeTypes";
+import { recordTextConsent } from "@/lib/sms/consent";
 
 export interface PublicDay {
   day: string;
@@ -41,6 +42,8 @@ const bookInput = z.object({
   phone: z.string().trim().max(40).optional(),
   address: z.string().trim().max(240).optional(),
   notes: z.string().trim().max(1500).optional(),
+  /** "Text me about my visit and estimate" (2026-10-02, lib/sms/consent). */
+  smsOk: z.boolean().optional(),
   answers: z.array(z.object({ key: z.string().max(40), label: z.string().max(120), value: z.string().max(200) })).max(8).default([]),
 });
 
@@ -51,8 +54,11 @@ export async function createBookingPublic(slug: string, raw: unknown): Promise<B
   await enforceRateLimit(`booking:${await clientIp()}`, 6, 10 * MINUTE, "bookings");
   const org = await orgBySlug(String(slug ?? "").slice(0, 80));
   if (!org) return { ok: false, error: "Not found." };
-  const r = await createBooking(org, { ...parsed.data, email: parsed.data.email || null });
+  const { smsOk, ...booking } = parsed.data;
+  const r = await createBooking(org, { ...booking, email: booking.email || null });
   if (r.ok) {
+    // The client's yes to texts, kept for the company's own number (lib/sms/consent).
+    if (smsOk && booking.phone) await recordTextConsent(org.id, booking.phone, { source: "booking", name: booking.name }).catch(() => false);
     revalidatePath("/dashboard/booking");
     revalidatePath("/dashboard/calendar");
     revalidatePath("/dashboard/leads");

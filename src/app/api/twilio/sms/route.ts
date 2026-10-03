@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { verifyTwilioSignature } from "@/lib/sdk/twilioVoice";
-import { clip, helpText, isHelpWord, isStartWord, isStopWord, replyForwardLine } from "@/lib/sms/format";
+import { clip, companyHelpText, helpText, isHelpWord, isStartWord, isStopWord, replyForwardLine } from "@/lib/sms/format";
 import { sendText, textOfficeNow } from "@/lib/sms/send";
 
 export const runtime = "nodejs";
@@ -46,7 +46,12 @@ export async function POST(req: Request) {
     return twiml();
   }
   if (isHelpWord(body)) {
-    await sendText({ organizationId: null, to: from, body: helpText(), kind: "help" });
+    // HELP always gets an answer (the carriers require it). On a company's own
+    // number the company answers, from that number (2026-10-02).
+    const company = to ? await db.organization.findFirst({ where: { smsFromNumber: to }, select: { id: true, name: true, phone: true } }) : null;
+    await sendText(company
+      ? { organizationId: company.id, to: from, body: companyHelpText(company.name, company.phone), kind: "help" }
+      : { organizationId: null, to: from, body: helpText(), kind: "jobflex-help" });
     return twiml();
   }
 

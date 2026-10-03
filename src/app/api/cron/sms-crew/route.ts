@@ -3,6 +3,7 @@ import { isCronAuthorized } from "@/lib/cronAuth";
 import { runCrewTexts } from "@/lib/sms/crew";
 import { runClientReminders } from "@/lib/sms/clients";
 import { runTimedTextRules } from "@/lib/sms/rulesEngine";
+import { refreshPendingRegistrations } from "@/lib/sms/registration";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -19,5 +20,8 @@ export async function GET(req: Request) {
   // The company's own timed texts (2026-09-29): hours before a visit or a crew
   // day, days with no answer on a proposal.
   const ownTexts = await runTimedTextRules(now).catch(() => 0);
-  return NextResponse.json({ ok: true, ...r, clientReminders, ownTexts });
+  // Companies' own numbers waiting on Twilio (2026-10-02): an approval puts
+  // the number on the company within the hour, with nobody opening Settings.
+  const registrations = await refreshPendingRegistrations().catch(() => 0);
+  return NextResponse.json({ ok: true, ...r, clientReminders, ownTexts, registrations });
 }

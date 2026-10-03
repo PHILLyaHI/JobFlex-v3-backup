@@ -88,13 +88,19 @@ export async function sendSMS(to: string, body: string, opts: { statusCallback?:
   if (!/^\+[1-9]\d{6,14}$/.test(to)) {
     throw new Error("SMS destination must be an E.164 number");
   }
+  // Every text names its number (2026-10-02): the company's own registered
+  // number (lib/sms/registration). Without one, the Messaging Service would
+  // pick any number in its pool — another company's — so nothing is sent.
+  if (!opts.from) {
+    console.warn(`[sms] no sending number — a text leaves only from the company's own number (…${to.slice(-4)})`);
+    return { sid: "no-number", skipped: true as const };
+  }
   const client = await twilioClient(s);
-  // A company's own number rides inside the Messaging Service when there is
-  // one (it was added to the service's pool when claimed), so the
-  // registration still applies; without a service it is the bare From.
-  const from = opts.from || s.fromNumber;
+  // The company's number rides inside the Messaging Service when there is one
+  // (it was added to the service's pool when bought); without a service it is
+  // the bare From.
   const msg = await client.messages.create({
-    ...(s.messagingServiceSid ? { messagingServiceSid: s.messagingServiceSid, ...(opts.from ? { from: opts.from } : {}) } : { from: from! }),
+    ...(s.messagingServiceSid ? { messagingServiceSid: s.messagingServiceSid, from: opts.from } : { from: opts.from }),
     to,
     body,
     ...(opts.statusCallback ? { statusCallback: opts.statusCallback } : {}),
