@@ -32,6 +32,8 @@
 // layer) is unchanged — this is an editing pass, not a re-skin.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/Toast";
 import { relative, shortDate } from "@/lib/format";
@@ -510,6 +512,11 @@ export function AdminLeadCenterContent({
               </button>
             ))}
           </div>
+          {/* Who hears that a request came in, and when (2026-10-03). */}
+          <Link className="btn btn-ghost" href={"/admin/lead-center/alerts" as Route}>
+            <Ic name="bell" />
+            Alerts
+          </Link>
           <button className="btn btn-ghost" type="button" onClick={() => router.refresh()}>
             <Ic name="undo" />
             Refresh

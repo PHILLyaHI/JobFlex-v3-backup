@@ -1,0 +1,50 @@
+/* ADMIN · LEAD ALERTS — /admin/lead-center/alerts (2026-10-03).
+   Only what this page adds to the shared admin dress: the rows and chips
+   come from admin-overview/admin-shared.module.css, the form fields from
+   admin-integrations/integrations.module.css (the Twilio page's). Tokens only. */
+
+/* A card head wraps its chip under the title on a phone instead of squeezing
+   the subtitle into a sliver beside it. (0,3,0) beats the shell's .card-head. */
+:global(.jf-blueprint .content) .head { flex-wrap: wrap; row-gap: 8px; }
+:global(.jf-blueprint .content) .head > :first-child { flex: 1 1 240px; min-width: 0; }
+
+.intro { margin: 0 0 18px; max-width: 72ch; font-size: 14px; line-height: 1.55; color: var(--muted); }
+.ok { margin: 8px 0 0; font-size: 12.5px; line-height: 1.45; color: var(--success); }
+.fine { margin: 8px 0 0; max-width: 72ch; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+
+/* ── when: one rule per row, its control inline ── */
+.when { display: grid; margin: 0; padding: 4px 0 2px; }
+.when > div { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 4px 16px; padding: 11px 0; border-top: 1px solid var(--hair-soft); }
+.when > div:first-child { border-top: 0; }
+.when dt { padding-top: 3px; font-size: 11px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
+.when dd { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+.select {
+  margin: 0 2px; padding: 4px 8px;
+  border: var(--border); border-radius: var(--radius); background: #fff; color: var(--ink);
+  font: inherit; font-size: 13px; font-weight: 700;
+}
+.select:focus-visible { outline: 2px solid var(--sky); outline-offset: 1px; }
+
+/* ── texts ── */
+.switch { padding: 14px 0 2px; font-weight: 700; }
+.phones { margin-top: 14px; border-top: 1px solid var(--hair-soft); }
+.phone { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 0; border-bottom: 1px solid var(--hair-soft); }
+.who { flex: 1 1 180px; min-width: 0; display: grid; gap: 3px; }
+.who b { font-size: 14px; overflow-wrap: anywhere; }
+.who > span { justify-self: start; }
+.toggles { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.code { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.code input {
+  width: 110px; padding: 8px 10px;
+  border: var(--border); border-radius: var(--radius); background: #fff; color: var(--ink);
+  font-family: var(--font-mono); font-size: 14px; letter-spacing: 0.2em;
+}
+.remove { margin-left: auto; }
+.phone > p { flex: 1 0 100%; margin: 0; }
+.add { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 10px; padding-top: 16px; }
+
+@media (max-width: 640px) {
+  .when > div { grid-template-columns: 1fr; }
+  .add { grid-template-columns: 1fr; }
+  .remove { margin-left: 0; }
+}

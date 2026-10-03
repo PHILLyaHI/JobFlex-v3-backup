@@ -230,27 +230,79 @@ export interface AdminNewLeadInput {
   scope: string;
   /** "#LD-WHPK". */
   ref: string;
-  /** Waiting in the manual queue (manual mode). */
+  /** Waiting in the manual queue for a person to place it. */
   queued: boolean;
+  href: string;
+  /** What happened (lib/leadCenter/alerts): a new request (default), one that
+   *  came back to the queue, or one still waiting after the reminder delay. */
+  event?: "new" | "back" | "reminder";
+  /** One line on why — "Sarah asked for another contractor: “too pricey”",
+   *  "Offered to Ridgeline Roofing automatically", "Waiting 1 h". */
+  note?: string | null;
+  /** The homeowner's first name, when they gave one. */
+  firstName?: string | null;
+  /** Requests waiting in the queue right now, this one included. */
+  waiting?: number;
+}
+
+/** A homeowner request that needs (or may need) a person, to the platform
+ *  admin (lib/leadCenter/alerts). The kicker says whether to act. */
+export function buildAdminNewLead(i: AdminNewLeadInput): EmailDoc {
+  const trade = i.trade ?? "Unclassified";
+  const event = i.event ?? "new";
+  const subject =
+    event === "back"
+      ? `Back in the queue — ${trade} · ${i.where}`
+      : event === "reminder"
+        ? `Still waiting — ${trade} · ${i.where}`
+        : `New homeowner request — ${trade} · ${i.where}`;
+  const box: BoxRow[] = [
+    { type: "field", label: "Trade", value: trade },
+    { type: "field", label: "Where", value: i.where },
+  ];
+  if (i.firstName) box.push({ type: "field", label: "Homeowner", value: i.firstName });
+  box.push({ type: "field", label: "Request", value: i.ref });
+  if (i.queued && i.waiting && i.waiting > 1) box.push({ type: "field", label: "In the queue", value: `${i.waiting} waiting` });
+  return {
+    subject,
+    lockup: PLATFORM_LOCKUP,
+    kicker: i.queued ? { text: "Take action", tone: "warn" } : { text: "Lead Center" },
+    headline: `${trade} in ${i.where}`,
+    prose: [
+      ...(i.note ? [i.note] : []),
+      i.queued
+        ? "Nobody has this request yet. Open it in the Lead Center and send it to a shop."
+        : "Nothing to do unless the shop passes — it comes back to the queue if they do.",
+    ],
+    box,
+    after: i.scope ? [truncate(i.scope, 420)] : [],
+    cta: { label: i.queued ? "Place it in the Lead Center" : "Open in Lead Center", href: i.href },
+    footer: { name: "JobFlex", ref: i.ref },
+  };
+}
+
+export interface AdminLeadsWaitingInput {
+  /** Oldest first; the email lists at most ten. */
+  leads: { trade: string | null; where: string; waited: string }[];
   href: string;
 }
 
-/** A new homeowner request, to the platform admin (lib/notify notifyAdminNewLeadRequest). */
-export function buildAdminNewLead(i: AdminNewLeadInput): EmailDoc {
-  const trade = i.trade ?? "Unclassified";
+/** The reminder sweep's one email: every request still waiting past the
+ *  reminder delay, in one list (lib/leadCenter/alerts). */
+export function buildAdminLeadsWaiting(i: AdminLeadsWaitingInput): EmailDoc {
+  const n = i.leads.length;
+  const shown = i.leads.slice(0, 10);
+  const box: BoxRow[] = shown.map((l) => ({ type: "field", label: `${l.trade ?? "Unclassified"} · ${l.where}`, value: `waiting ${l.waited}` }));
+  if (n > shown.length) box.push({ type: "field", label: "And more", value: `${n - shown.length} more waiting` });
   return {
-    subject: `New homeowner request — ${trade} · ${i.where}`,
+    subject: n === 1 ? `Still waiting — ${i.leads[0].trade ?? "Unclassified"} · ${i.leads[0].where}` : `${n} homeowner requests still waiting`,
     lockup: PLATFORM_LOCKUP,
-    kicker: { text: i.queued ? "Waiting for you" : "Lead Center" },
-    headline: `${trade} in ${i.where}`,
-    box: [
-      { type: "field", label: "Trade", value: trade },
-      { type: "field", label: "Where", value: i.where },
-      { type: "field", label: "Request", value: i.ref },
-    ],
-    after: i.scope ? [truncate(i.scope, 420)] : [],
-    cta: { label: "Open in Lead Center", href: i.href },
-    footer: { name: "JobFlex", ref: i.ref },
+    kicker: { text: "Take action", tone: "warn" },
+    headline: n === 1 ? "A request still has no contractor" : `${n} requests still have no contractor`,
+    prose: ["They are in the Lead Center queue and nobody has sent them to a shop yet. The homeowner was told a pro would reach out within 24 hours."],
+    box,
+    cta: { label: "Open the Lead Center", href: i.href },
+    footer: { name: "JobFlex" },
   };
 }
 

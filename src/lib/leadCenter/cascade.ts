@@ -49,6 +49,15 @@ async function parkInManualQueue(
     where: { id: platformLeadId },
     data: { status: "MANUAL_QUEUE", queueReason: reason },
   });
+  // A request that had been offered or matched is a person's job again: the
+  // admins hear it (lib/leadCenter/alerts — never for a test lead, and never
+  // for a new one, which the intake's own alert covers).
+  try {
+    const { alertBackInQueue } = await import("./alerts");
+    await alertBackInQueue(platformLeadId);
+  } catch (err) {
+    console.warn("[lead-center] admin alert failed:", err);
+  }
   if (!opts.tellHomeowner) return;
   try {
     const { notifyHomeownerManualQueue } = await import("@/lib/notify");

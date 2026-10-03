@@ -31,7 +31,6 @@ import {
   buildOwnerAccepted,
   buildOwnerPaymentReceived,
   buildPaymentIssue,
-  buildAdminNewLead,
   buildSupportTicket,
 } from "@/lib/email/build/operator";
 import { parsePaymentSettings, parseLeadsSettings } from "@/lib/settings";
@@ -909,35 +908,11 @@ export async function notifyHomeownerManualQueue(platformLeadId: string) {
  * throws; one send per address, each failure logged.
  */
 export async function notifyAdminNewLeadRequest(platformLeadId: string) {
-  const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
-  if (!pl || pl.isTest) return { skipped: true as const };
-  const to = (process.env.SUPPORT_NOTIFY_EMAIL?.trim() || "support@jobflex.app")
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s && !undeliverable(s));
-  if (!to.length) return { skipped: true as const };
-  const appUrl = await appBaseUrl();
-  const where = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || "no location";
-  const { subject, html } = renderEmail(
-    buildAdminNewLead({
-      trade: pl.detectedTrade ?? pl.projectType ?? null,
-      where,
-      scope: pl.scope ?? pl.description ?? "",
-      ref: "#LD-" + pl.id.slice(-4).toUpperCase(),
-      queued: pl.status === "MANUAL_QUEUE",
-      href: `${appUrl}/admin/lead-center?lead=${encodeURIComponent(pl.id)}`,
-    }),
-  );
-  let delivered = 0;
-  for (const address of to) {
-    try {
-      await sendEmail({ to: address, subject, html });
-      delivered += 1;
-    } catch (err) {
-      console.error(`[lead-center] new-request alert to ${address} failed for ${pl.id}:`, err);
-    }
-  }
-  return { skipped: false as const, delivered, enabled: isEmailEnabled() };
+  // The email and the admins' texts, with their reminders, live in one place
+  // since 2026-10-03 (lib/leadCenter/alerts): who gets them is set on
+  // /admin/lead-center/alerts. Test leads stay silent there too.
+  const { alertNewRequest } = await import("@/lib/leadCenter/alerts");
+  return alertNewRequest(platformLeadId);
 }
 
 // ── Support tickets ───────────────────────────────────────────────────────────
