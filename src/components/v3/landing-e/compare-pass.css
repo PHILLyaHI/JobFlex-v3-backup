@@ -52,7 +52,7 @@
 /* THE PARTIAL STATE (owner, 2026-10-02): a yes with a catch is neither a
    tick nor a cross — a half-filled mark in amber on a faint amber wash, the
    caveat's name in ink beside it (ink, not amber: amber text on paper is
-   under 4.5:1), and the footnote number. */
+   under 4.5:1). */
 .jf-lp .lp-compare-partial {
   display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   padding: 6px 10px; border-radius: var(--r-sm);
@@ -62,16 +62,6 @@
 }
 .jf-lp .lp-compare-partial > span { white-space: nowrap; }
 .jf-lp .lp-compare-partial > svg { flex-shrink: 0; color: color-mix(in srgb, var(--amber) 70%, #000); }
-.jf-lp .lp-compare-partial sup { margin-left: 2px; font-size: 10px; font-weight: 800; vertical-align: super; line-height: 0; }
 /* On a phone the same badge, smaller: the mark over the words, one line. */
 .jf-lp .lp-compare-mobile .lp-compare-partial { padding: 5px 4px; font-size: 11px; }
 
-/* The footnotes under the table. */
-.jf-lp .lp-compare-notes { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; max-width: 1120px; }
-.jf-lp .lp-compare-notes li { display: flex; gap: 10px; font-size: 14px; line-height: 1.5; color: var(--ink-soft); }
-.jf-lp .lp-compare-notes li > b {
-  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
-  width: 22px; height: 22px; border-radius: 50%; font-size: 12px; font-weight: 800; color: var(--ink);
-  background: color-mix(in srgb, var(--amber) 16%, transparent);
-}
-.jf-lp .lp-compare-notes strong { color: var(--ink); font-weight: 700; }

@@ -1,8 +1,8 @@
 "use client";
 import dynamic from "next/dynamic";
 import { useSyncExternalStore } from "react";
-import { COMPARE_COMPETITORS, COMPARE_ROWS, noteNumber } from "./landing-compare";
-import { CompareAnswer, CompareBrand, CompareNotes, FeatureHeading } from "./compare-elements";
+import { COMPARE_COMPETITORS, COMPARE_ROWS } from "./landing-compare";
+import { CompareAnswer, CompareBrand, FeatureHeading } from "./compare-elements";
 import "./compare-pass.css";
 const MobileComparison = dynamic(() => import("./compare-mobile"));
 const query = "(max-width: 768px)";
@@ -27,10 +27,9 @@ export function CompareSection() {
         <tbody>{COMPARE_ROWS.map((row) => <tr key={row.id}>
           <th scope="row"><span>{row.label}</span>{row.detail && <small>{row.detail}</small>}</th>
           <td className="lp-compare-us"><CompareAnswer /></td>
-          {COMPARE_COMPETITORS.map((brand) => <td key={brand.id}><CompareAnswer cell={row.them[brand.id]} n={noteNumber(row.id, brand.id)} /></td>)}
+          {COMPARE_COMPETITORS.map((brand) => <td key={brand.id}><CompareAnswer cell={row.them[brand.id]} /></td>)}
         </tr>)}</tbody>
       </table>
     </div>}
-    {mobile ? null : <CompareNotes />}
   </div>;
 }

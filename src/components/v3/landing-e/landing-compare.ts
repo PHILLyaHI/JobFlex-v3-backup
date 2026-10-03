@@ -46,7 +46,7 @@
  *
  * THE CAVEAT PASS (owner, 2026-10-02). Every competitor "yes" was read again
  * against the vendor's own pricing grid and help centre; where a source shows
- * a catch the cell is "partial" with its caveat and a footnote (see below),
+ * a catch the cell is "partial" with its caveat (see below),
  * and where none does it stays "yes". Each partial cell's comment names its
  * source. Plan gates are judged against the cheapest paid plan: Jobber Core,
  * Housecall Pro Basic, Joist Basics, ServiceTitan Starter. */
@@ -61,8 +61,9 @@ export type CompareStatus = "yes" | "no" | "paid" | "soon" | "partial";
      integration   only through a third party / a separate account;
      limited       there, but less than our row says (manual not automatic,
                    invoices only, preview, single user…).
-   The page shows the caveat's short name and a footnote number; `note` is
-   the footnote under the table, in our own words. */
+   The page shows the caveat's short name and nothing more (owner,
+   2026-10-02: no footnotes under the table); the source and a one-line
+   explanation in our own words sit in the comment above each cell. */
 export type CompareCaveat = "higher-plans" | "add-on" | "integration" | "limited";
 
 export const CAVEAT_LABEL: Record<CompareCaveat, string> = {
@@ -79,8 +80,6 @@ export interface CompareCell {
   label?: string;
   /** "partial" only: which caveat. */
   caveat?: CompareCaveat;
-  /** "partial" only: the footnote, our words, one short sentence. */
-  note?: string;
 }
 
 export type CompetitorId = "jobber" | "housecall" | "joist" | "servicetitan";
@@ -115,7 +114,8 @@ const EXISTING_ROWS: CompareRow[] = [
          https://support.joistapp.com/en/articles/9212990-is-joist-setup-for-teams (2026-10-02).
          Flat per account (Basics $10, Pro $17, Elite $32, Run $70 a month), monthly, no setup fee. No seat
          fee because there are no seats: one user, not unlimited users. */
-      joist: { status: "partial", caveat: "limited", note: "One user per account; there is no team to add." },
+      // In short: One user per account; there is no team to add.
+      joist: { status: "partial", caveat: "limited" },
       /* paid · "Our per-technician pricing is designed to fit your business and goals" —
          https://www.servicetitan.com/pricing (2026-10-02). 10-K: "primarily on a per technician per month
          basis"; contracts of 12–36 months; onboarding invoiced separately. Price not published. */
@@ -174,7 +174,8 @@ const EXISTING_ROWS: CompareRow[] = [
          OVERTURNED ON CHALLENGE: "Automatic Draft Quotes" turn a request's free text into a priced draft.
          HIGHER PLANS (2026-10-02 caveat pass): "Automatically create draft quotes from new requests" —
          https://www.getjobber.com/pricing/ — the plan grid marks "Auto-drafted quotes" "Not Available with Core". */
-      jobber: { status: "partial", caveat: "higher-plans", note: "Auto-drafted quotes are not on Core; they start on Connect." },
+      // In short: Auto-drafted quotes are not on Core; they start on Connect.
+      jobber: { status: "partial", caveat: "higher-plans" },
       /* no · "Create clear, professional service descriptions in seconds." —
          https://www.housecallpro.com/features/ai-team/ (2026-09-18).
          Marketing AI writes prose; none of the four AI teammates produces a priced, line-itemed estimate. */
@@ -183,7 +184,8 @@ const EXISTING_ROWS: CompareRow[] = [
          https://support.joistapp.com/en/articles/16760523-estimate-and-invoice-with-ai (2026-10-02).
          The AI does not price: "mentioning quantity and rates will allow the AI to populate". Since
          2026-08-28 "rolling out with limited availability". */
-      joist: { status: "partial", caveat: "limited", note: "The AI fills in prices only when you say them, and is still a limited rollout." },
+      // In short: The AI fills in prices only when you say them, and is still a limited rollout.
+      joist: { status: "partial", caveat: "limited" },
       /* no* · "answers a short set of guided questions about a job and automatically generates" —
          https://help.servicetitan.com/docs/new-article-estimate-builder-fma (2026-10-02).
          AI Estimate Builder builds from answers to questions, not free text; HVAC replacement only,
@@ -223,7 +225,8 @@ const EXISTING_ROWS: CompareRow[] = [
          HIGHER PLANS (2026-10-02 caveat pass): "If you're on the Plus plan, or on any plan with the Bookkeeping add-on" —
          https://help.getjobber.com/en/articles/expenses-in-the-jobber-app/ (updated 2026-10-01); the pricing grid
          has receipt capture "Available with Plus" only. */
-      jobber: { status: "partial", caveat: "higher-plans", note: "Receipt Capture is on Plus only, or on any plan with the paid Bookkeeping add-on." },
+      // In short: Receipt Capture is on Plus only, or on any plan with the paid Bookkeeping add-on.
+      jobber: { status: "partial", caveat: "higher-plans" },
       /* no · "Expense Cards users have the option to upload receipts directly to transactions." —
          https://help.housecallpro.com/en/articles/8429845-expense-cards-uploading-receipts (2026-09-19).
          Receipts only attach on their own Expense Cards product, and nothing is read out of the image. */
@@ -231,7 +234,8 @@ const EXISTING_ROWS: CompareRow[] = [
       /* yes · "Joist will scan your receipt and automatically fill in the essential details" —
          https://support.joistapp.com/en/articles/9681149-joist-expenses (2026-10-02).
          HIGHER PLANS (2026-10-02 caveat pass): "With Joist Expense Tracking in Joist Pro" — same article; Basics has no expenses. */
-      joist: { status: "partial", caveat: "higher-plans", note: "Receipt scanning comes with expense tracking, from the Pro plan." },
+      // In short: Receipt scanning comes with expense tracking, from the Pro plan.
+      joist: { status: "partial", caveat: "higher-plans" },
       /* no · "Uploading a receipt to a manual expense does not scan the image" —
          https://help.servicetitan.com/docs/ramp-expense-management-integration (2026-10-02).
          OCR exists only on Ramp's cards, a separate third-party account. */
@@ -251,7 +255,8 @@ const EXISTING_ROWS: CompareRow[] = [
          OVERTURNED ON CHALLENGE: HomeServe work arrives in Job Inbox, opted in by default.
          LIMITED (2026-10-02 caveat pass): "passed to your inbox if the job is in your area and industry" —
          https://help.housecallpro.com/en/articles/5761498-job-inbox-integration-with-homeserve */
-      housecall: { status: "partial", caveat: "limited", note: "Only HomeServe's jobs, and only when one falls in your area and trade." },
+      // In short: Only HomeServe's jobs, and only when one falls in your area and trade.
+      housecall: { status: "partial", caveat: "limited" },
       /* no · "answers missed calls, captures new leads you can follow up on later" —
          https://www.joist.com/pricing/ (2026-10-02). That is the AI Receptionist add-on catching the
          contractor's own calls; help search for leads / marketplace → financing and the client-source field. */
@@ -271,22 +276,26 @@ const EXISTING_ROWS: CompareRow[] = [
          "Request a change" is a status: the contractor edits the original quote or makes a new one.
          LIMITED (owner, 2026-10-02): the same as Housecall Pro's — a change goes through a new estimate, and
          there is no change order of its own. One footnote wording for both. */
-      jobber: { status: "partial", caveat: "limited", note: "No separate change order: changes go through a new estimate." },
+      // In short: No separate change order: changes go through a new estimate.
+      jobber: { status: "partial", caveat: "limited" },
       /* yes · "Easily update change orders and price additional work on-site without slowing down the job." —
          https://www.housecallpro.com/features/estimating-software/ (2026-09-18).
          LIMITED (2026-10-02 caveat pass): "manage change orders and diagnostic calls by creating an estimate on an ongoing job" —
          same page. A change order there is a new estimate on the job, not a document of its own. */
-      housecall: { status: "partial", caveat: "limited", note: "No separate change order: changes go through a new estimate." },
+      // In short: No separate change order: changes go through a new estimate.
+      housecall: { status: "partial", caveat: "limited" },
       /* yes · "You can also request a separate signature on the change order" —
          https://support.joistapp.com/en/articles/9212730-change-orders (2026-10-02).
          HIGHER PLANS (2026-10-02 caveat pass): "change orders are for invoices only and a Joist Elite subscription is required" —
          same article. */
-      joist: { status: "partial", caveat: "higher-plans", note: "Elite plan and up, and on invoices only." },
+      // In short: Elite plan and up, and on invoices only.
+      joist: { status: "partial", caveat: "higher-plans" },
       /* yes · "generate homeowner- or builder-facing approvals" —
          https://www.servicetitan.com/market/construction-software/residential (2026-10-02).
          LIMITED (2026-10-02 caveat pass): "Primarily for Residential Construction, Commercial Service and Replacement, and
          Commercial Construction business types." — https://help.servicetitan.com/docs/create-a-change-order */
-      servicetitan: { status: "partial", caveat: "limited", note: "Project accounts only, mainly for construction business types." },
+      // In short: Project accounts only, mainly for construction business types.
+      servicetitan: { status: "partial", caveat: "limited" },
     },
   },
   {
@@ -302,7 +311,8 @@ const EXISTING_ROWS: CompareRow[] = [
       /* yes · "Once a payment is complete, Joist sends a Google review request to your customer" —
          https://www.joist.com/features/client-reviews/ (2026-10-02). US/CA; needs a Google Business Profile.
          HIGHER PLANS (2026-10-02 caveat pass): https://www.joist.com/pricing/ lists client review requests in the Elite column only. */
-      joist: { status: "partial", caveat: "higher-plans", note: "Elite plan and up: a Google review request once the client pays." },
+      // In short: Elite plan and up: a Google review request once the client pays.
+      joist: { status: "partial", caveat: "higher-plans" },
       /* paid · "Automate your emails, direct mail and review requests" —
          https://www.servicetitan.com/features/pro/marketing (2026-10-02). Needs Marketing Pro
          (https://help.servicetitan.com/docs/manage-review-requests-1); the base completion survey only
@@ -327,7 +337,8 @@ const EXISTING_ROWS: CompareRow[] = [
       /* yes* · "You can also view your plan as a Gantt chart" —
          https://help.servicetitan.com/docs/project-plan-overview (2026-10-02).
          "currently in Private Preview and available for specific accounts". */
-      servicetitan: { status: "partial", caveat: "limited", note: "In private preview, for selected accounts only." },
+      // In short: In private preview, for selected accounts only.
+      servicetitan: { status: "partial", caveat: "limited" },
     },
   },
   {
@@ -367,7 +378,8 @@ const CORE_ROWS: CompareRow[] = [
       /* yes · "Customers view and sign estimates online, so work can start sooner." —
          https://www.joist.com/features/estimates/ (2026-10-02). Signing works on every plan.
          LIMITED (2026-10-02 caveat pass): "Up to 5 documents per month" — https://www.joist.com/pricing/ (the Basics plan). */
-      joist: { status: "partial", caveat: "limited", note: "Base plan: up to 5 documents per month." },
+      // In short: Base plan: up to 5 documents per month.
+      joist: { status: "partial", caveat: "limited" },
       /* yes · "Customers using a mobile device have the option to sign using their touchscreen" —
          https://help.servicetitan.com/docs/use-online-estimates (2026-10-02).
          The Starter pricing card greys out "Mobile Estimates", but the help centre names no tier for office
@@ -388,7 +400,8 @@ const CORE_ROWS: CompareRow[] = [
          https://support.joistapp.com/en/articles/11889962-reports (2026-10-02).
          HIGHER PLANS (2026-10-02 caveat pass): "Joist Elite adds advanced tools such as reporting, change orders" —
          https://www.joist.com/pricing/ */
-      joist: { status: "partial", caveat: "higher-plans", note: "Reports start on the Elite plan." },
+      // In short: Reports start on the Elite plan.
+      joist: { status: "partial", caveat: "higher-plans" },
       /* yes · "Track revenue and trends by day, week, or month." —
          https://www.servicetitan.com/features/field-reporting-software (2026-10-02). */
       servicetitan: { status: "yes" },
@@ -411,14 +424,3 @@ export const COMPARE_ROWS = [...CORE_ROWS, ...EXISTING_ROWS.map((row) =>
   FEATURE_LABELS[row.id] ? { ...row, label: FEATURE_LABELS[row.id], detail: row.label } : row,
 )].sort((a, b) => Number(allAppsInclude(b)) - Number(allAppsInclude(a)) || rank(a.id) - rank(b.id));
 
-/* The footnotes under the table, numbered in reading order — row by row,
-   then column by column — so the numbers run 1, 2, 3 down the page. */
-export interface CompareNote { n: number; rowId: string; competitor: CompetitorId; caveat: CompareCaveat; text: string }
-export const COMPARE_NOTES: CompareNote[] = COMPARE_ROWS.flatMap((row) =>
-  COMPARE_COMPETITORS.flatMap(({ id }) => {
-    const cell = row.them[id];
-    return cell.status === "partial" && cell.caveat && cell.note ? [{ rowId: row.id, competitor: id, caveat: cell.caveat, text: cell.note }] : [];
-  }),
-).map((note, i) => ({ ...note, n: i + 1 }));
-export const noteNumber = (rowId: string, competitor: CompetitorId) =>
-  COMPARE_NOTES.find((note) => note.rowId === rowId && note.competitor === competitor)?.n;
