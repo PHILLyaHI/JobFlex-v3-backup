@@ -23,7 +23,8 @@ export type ShellHandle = {
 
 /** READABLE (owner, 2026-10-02: "hard to read, too small — 7%", then
  *  "another 7% everywhere"): every blueprint shell multiplies its fluid
- *  scale by this; the admin console doubles it (admin-shell ADMIN_SCALE). */
+ *  scale by this; the admin console doubles it (admin-shell ADMIN_SCALE).
+ *  Above 860px only — a phone-width window stays at zoom 1. */
 export const READABLE_SCALE = 1.07;
 
 export function initBlueprintShell(root: HTMLElement, opts: {
@@ -69,7 +70,18 @@ export function initBlueprintShell(root: HTMLElement, opts: {
       MIN = 0.78,
       MAX = 1.35;
     const applyScale = () => {
-      const raw = window.innerWidth <= 860 ? 1 : Math.min(MAX, Math.max(MIN, window.innerWidth / BASE));
+      // A phone-width window is NOT scaled at all — not even by `scale`. The
+      // ≤860px rules are written in true pixels, and READABLE_SCALE reaching
+      // them (2026-10-02 → 10-03) put the whole phone layout under zoom 1.07 —
+      // the 12px topbar edges became 12.8, the 40px buttons 42.8 — which the
+      // 7% change never meant to do (owner's iPhone, 2026-10-03).
+      if (window.innerWidth <= 860) {
+        root.style.setProperty("zoom", "1");
+        root.style.setProperty("--logo-z", "1");
+        root.style.setProperty("--app-h", window.innerHeight + "px");
+        return;
+      }
+      const raw = Math.min(MAX, Math.max(MIN, window.innerWidth / BASE));
       // Sharpness (owner, 2026-08-18): a zoom like 1.0098 (1745px window) puts
       // EVERY font on a fractional pixel size and softens all type, while the
       // ≤2% size difference from true 1:1 is imperceptible. Snap the band to 1

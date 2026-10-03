@@ -1183,7 +1183,9 @@
      padding alone left it a few px shorter than the 40px burger/bell row. */
   .bp :global(.topbar-right .btn-primary .cta-label) { display: none; }
   .bp :global(.topbar-right .btn-primary) { width: 40px; height: 40px; padding: 0; justify-content: center; }
-  .bp :global(.topbar-right) { gap: 8px; }
+  /* The same 10px the topbar puts between burger, search and this group —
+     one gap between every neighbour on the phone bar (owner, 2026-10-03). */
+  .bp :global(.topbar-right) { gap: 10px; }
 }
 /* ── QUOTA PILL (2026-09-02) — what is left of a metered page. Same plate as
    the unread badge, outline only so the two read as different facts; red

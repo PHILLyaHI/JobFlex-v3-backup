@@ -29,12 +29,18 @@
   --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
   --ease-soft: cubic-bezier(0.34, 1.2, 0.64, 1);
 
+  /* Pinned by its four edges and NOTHING else — no height. A height (it was
+     var(--app-h, 100dvh)) overrides `bottom: 0`, and iOS Safari settles 100dvh
+     only AFTER its toolbar finishes moving: through the animation the frame was
+     taller than the visible area, so the builder's sticky bar (the last row of
+     this frame) sat half under the toolbar and jumped when dvh caught up
+     (owner's iPhone, 2026-10-03). A fixed box's edges follow the visible
+     viewport natively, every frame, with no script. */
   position: fixed;
   inset: 0;
   z-index: 20;
   display: grid;
-  grid-template-rows: var(--topbar-h) 1fr;
-  height: var(--app-h, 100dvh);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr);
   overflow: hidden;
   background: var(--paper);
   color: var(--ink);

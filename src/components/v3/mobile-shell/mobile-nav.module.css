@@ -27,12 +27,10 @@
   shape-rendering: geometricPrecision;
 }
 
-/* Gap is fluid, not a flat 10px: four elements plus the wordmark have to clear
-   320px, and the gap is the only slack. At the old flat 10px with a 9.5px sub
-   the bar overflowed ~3px at 320px and "CONTRACTOR OS" wrapped, breaking the
-   masthead into three lines. Identical token to the sibling mobile-v2 module. */
+/* Edges and gaps: see THE BAR'S OWN GEOMETRY below. Same numbers in the
+   sibling mobile-v2 module, the /dashboard bar. */
 .tbar {
-  display: flex; align-items: center; gap: var(--tbar-gap);
+  display: flex; align-items: center;
   /* Mark→wordmark is NOT --tbar-gap: the lockup is one object and has to read
      tighter than the spacing between the bar's separate controls. Declared here
      rather than on the page root because 21 different page modules mount this
@@ -47,8 +45,18 @@
      to set: 116px puts ~50.3px of ink in a 62px bar with ~5.8px of air over
      and under it. Going bigger means raising --topbar-h first. */
   --mark-size: 116px;
+  /* THE BAR'S OWN GEOMETRY (owner, 2026-10-03): 12px from each screen edge,
+     and ONE gap between every pair of neighbours — burger, lockup, +, bell.
+     Fixed rather than read from the page root's --pad-x / --tbar-gap: those
+     are fluid and declared by 21 different page roots, and a root that missed
+     one dropped the bar to `padding: 0; gap: normal` — the burger flush with
+     the edge and the controls bunched. 320px budget: 12 + 44 + 8 + lockup
+     ~125 + 8 + 44 + 8 + 44 + 12 = 305. */
+  --tbar-edge: 12px;
+  --tbar-space: 8px;
+  gap: var(--tbar-space);
   height: var(--topbar-h);
-  padding: 0 var(--pad-x);
+  padding: 0 var(--tbar-edge);
   background: var(--ink);
   color: var(--paper);
   border-bottom: var(--border);
@@ -111,9 +119,9 @@
    wrapped sub would break the two-row block the mark is sized against. */
 /* Flex `gap` is uniform, so the only way to tighten JUST the mark→wordmark pair
    is to pull the text back over it — the burger→mark and wordmark→controls gaps
-   must stay at --tbar-gap. Negative by construction (--lockup-gap is always the
+   must stay at --tbar-space. Negative by construction (--lockup-gap is always the
    smaller of the two); it reclaims width rather than spending it. */
-.tbarTxt { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; overflow: hidden; margin-left: calc(var(--lockup-gap) - var(--tbar-gap)); }
+.tbarTxt { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; overflow: hidden; margin-left: calc(var(--lockup-gap) - var(--tbar-space)); }
 .tbarName { font-size: 16px; font-weight: 900; letter-spacing: 0.01em; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 9px everywhere a phone actually is (2.4vw hits 9px at 375px), shrinking only
    below that. The clamp is back because the 92px mark is 5px wider than the
@@ -121,7 +129,7 @@
    overflows by ~0.4px there. Above 375px nothing about this changed.
    The drawer head keeps a flat 9.5px; it has 288px to play with. */
 .tbarSub { font-size: clamp(7.8px, 2.4vw, 9px); font-weight: 800; letter-spacing: 0.24em; text-transform: uppercase; color: var(--sky); line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tbarRight { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.tbarRight { margin-left: auto; display: flex; align-items: center; gap: var(--tbar-space); }
 .tbar .tbarBtn {
   position: relative;
   width: 44px; height: 44px;
@@ -134,7 +142,7 @@
 .tbar .tbarBtn:active { background: rgba(255, 255, 255, 0.09); border-color: rgba(255, 255, 255, 0.35); }
 .tbar .tbarBtn .ic { width: 19px; height: 19px; }
 /* Burger sits first — it is the navigation on this surface. No negative pull:
-   the bar's left and right insets are both exactly var(--pad-x), so the
+   the bar's left and right insets are both exactly var(--tbar-edge), so the
    burger's frame and the bell's frame are equidistant from their edges. */
 .bellDot {
   position: absolute; top: 9px; right: 9px;

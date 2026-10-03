@@ -158,11 +158,15 @@
    TOPBAR
    ============================================================ */
 .tbar {
+  /* 12px edges, one 8px gap between neighbours — the shared bar's geometry
+     (mobile-shell/mobile-nav.module.css, THE BAR'S OWN GEOMETRY). */
+  --tbar-edge: 12px;
+  --tbar-space: 8px;
   display: flex;
   align-items: center;
-  gap: var(--tbar-gap);
+  gap: var(--tbar-space);
   height: var(--topbar-h);
-  padding: 0 var(--pad-x);
+  padding: 0 var(--tbar-edge);
   background: var(--ink);
   color: var(--paper);
   border-bottom: var(--border);
@@ -235,7 +239,7 @@
 }
 /* Flex `gap` is uniform, so the only way to tighten JUST the mark→wordmark pair
    is to pull the text back over it — burger→mark and wordmark→controls have to
-   stay at --tbar-gap. Always negative (--lockup-gap is the smaller of the two),
+   stay at --tbar-space. Always negative (--lockup-gap is the smaller of the two),
    so it reclaims width rather than spending it. */
 .tbarTxt {
   display: flex;
@@ -244,7 +248,7 @@
   gap: 3px;
   min-width: 0;
   overflow: hidden;
-  margin-left: calc(var(--lockup-gap) - var(--tbar-gap));
+  margin-left: calc(var(--lockup-gap) - var(--tbar-space));
 }
 /* nowrap + ellipsis is the guard, not the plan: the wordmark is measured to
    fit down to 320px. If a device font substitutes wider, it clips instead of
@@ -283,7 +287,7 @@
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--tbar-space);
 }
 .tbarBtn {
   position: relative;

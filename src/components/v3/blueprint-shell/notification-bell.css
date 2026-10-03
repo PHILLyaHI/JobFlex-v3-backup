@@ -47,6 +47,16 @@
   pointer-events: none;
 }
 
+/* On a phone the count sits INSIDE the button's top-right corner. Hung 7px
+   past the corner it ran over the topbar's bottom rule and, on the bell that
+   ends the bar, out past the 12px screen margin (owner, 2026-10-03). */
+@media (max-width: 860px) {
+  .bell-wrap .bell-n {
+    top: 3px;
+    right: 3px;
+  }
+}
+
 .bell-wrap {
   --paper: #f2f0eb;
   --ink: #0a0a0a;

@@ -147,6 +147,13 @@ html:has(.jf-blueprint),
 body:has(.jf-blueprint) {
   height: 100%;
   overflow: hidden;
+  /* The document must not move at all on a phone. The root layout's body is
+     `min-h-dvh`, which outgrew the 100% above whenever iOS reported a dvh
+     taller than the visible area, and the elastic overscroll of a locked page
+     still drags the document — either one shows or hides Safari's toolbar
+     mid-scroll, and the page's fixed shell resizes under the finger. */
+  min-height: 0;
+  overscroll-behavior: none;
 }
 
 /* ── Address suggestion dropdown (blueprint-shell/places-suggest) ────
