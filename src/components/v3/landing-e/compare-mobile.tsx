@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import { COMPARE_COMPETITORS, COMPARE_ROWS } from "./landing-compare";
-import { CompareAnswer, CompareBrand } from "./compare-elements";
+import { COMPARE_COMPETITORS, COMPARE_ROWS, noteNumber } from "./landing-compare";
+import { CompareAnswer, CompareBrand, CompareNotes } from "./compare-elements";
 
 /* The phone comparison (owner, 2026-10-02): every column, like the desk's,
    in a plate that scrolls sideways on its own — the page never does. The
@@ -27,7 +27,7 @@ export default function MobileComparison() {
           <tbody>{rows.map((row) => <tr key={row.id}>
             <th scope="row"><span>{row.label}</span>{row.detail && <small>{row.detail}</small>}</th>
             <td className="lp-compare-us"><CompareAnswer /></td>
-            {COMPARE_COMPETITORS.map((brand) => <td key={brand.id}><CompareAnswer cell={row.them[brand.id]} /></td>)}
+            {COMPARE_COMPETITORS.map((brand) => <td key={brand.id}><CompareAnswer cell={row.them[brand.id]} n={noteNumber(row.id, brand.id)} /></td>)}
           </tr>)}</tbody>
         </table>
       </div>
@@ -37,5 +37,6 @@ export default function MobileComparison() {
         </button>
       )}
     </div>
+    <CompareNotes rowIds={rows.map((row) => row.id)} />
   </div>;
 }
