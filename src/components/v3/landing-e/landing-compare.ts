@@ -268,13 +268,15 @@ const EXISTING_ROWS: CompareRow[] = [
     them: {
       /* no · "you will need to amend the original quote (or create a new one)" —
          https://help.getjobber.com/hc/en-us/articles/115012715008-Quote-Approvals (2026-09-18).
-         "Request a change" is a status: the contractor edits the original quote. */
-      jobber: { status: "no" },
+         "Request a change" is a status: the contractor edits the original quote or makes a new one.
+         LIMITED (owner, 2026-10-02): the same as Housecall Pro's — a change goes through a new estimate, and
+         there is no change order of its own. One footnote wording for both. */
+      jobber: { status: "partial", caveat: "limited", note: "No separate change order: changes go through a new estimate." },
       /* yes · "Easily update change orders and price additional work on-site without slowing down the job." —
          https://www.housecallpro.com/features/estimating-software/ (2026-09-18).
          LIMITED (2026-10-02 caveat pass): "manage change orders and diagnostic calls by creating an estimate on an ongoing job" —
          same page. A change order there is a new estimate on the job, not a document of its own. */
-      housecall: { status: "partial", caveat: "limited", note: "No separate change order: a new estimate is added to the running job." },
+      housecall: { status: "partial", caveat: "limited", note: "No separate change order: changes go through a new estimate." },
       /* yes · "You can also request a separate signature on the change order" —
          https://support.joistapp.com/en/articles/9212730-change-orders (2026-10-02).
          HIGHER PLANS (2026-10-02 caveat pass): "change orders are for invoices only and a Joist Elite subscription is required" —
@@ -365,13 +367,12 @@ const CORE_ROWS: CompareRow[] = [
       /* yes · "Customers view and sign estimates online, so work can start sooner." —
          https://www.joist.com/features/estimates/ (2026-10-02). Signing works on every plan.
          LIMITED (2026-10-02 caveat pass): "Up to 5 documents per month" — https://www.joist.com/pricing/ (the Basics plan). */
-      joist: { status: "partial", caveat: "limited", note: "The cheapest plan stops at 5 documents a month." },
+      joist: { status: "partial", caveat: "limited", note: "Base plan: up to 5 documents per month." },
       /* yes · "Customers using a mobile device have the option to sign using their touchscreen" —
          https://help.servicetitan.com/docs/use-online-estimates (2026-10-02).
-         HIGHER PLANS (2026-10-02 caveat pass): https://www.servicetitan.com/pricing — the Starter card greys out "Mobile Estimates"
-         (its not-included grey text style); Essentials and The Works carry it. The help centre names no tier for
-         office Online Estimates, so this rests on the pricing card alone. */
-      servicetitan: { status: "partial", caveat: "higher-plans", note: "The Starter plan leaves estimates out; they start on Essentials." },
+         The Starter pricing card greys out "Mobile Estimates", but the help centre names no tier for office
+         Online Estimates; the owner kept this a plain yes (2026-10-02). */
+      servicetitan: { status: "yes" },
     },
   },
   {
