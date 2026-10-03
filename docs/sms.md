@@ -55,6 +55,41 @@ Without the keys the app works the same: every text is a `SKIPPED` row in
   something an assistant session may make); everything after it was done
   with the REST API.
 
+## Rejected, and what the shared number may say (2026-10-02)
+
+Twilio rejected the verification with two reasons:
+
+- **30482, business email must use an official domain.** The contact email
+  was a Gmail address. It is now `support@jobflex.app`, the address the
+  Terms and Privacy pages already list (jobflex.app mail is Google).
+- **30474, end business details.** Twilio verifies a toll-free number for
+  the one business the person being texted signed up with. The submission
+  named Jobflex LLC while its samples spoke as each contractor ("Ridgeline
+  Roofing: …") and texted the contractors' clients and crews, so the
+  reviewers read the contractors as the senders.
+
+What changed so the number is truthfully JobFlex's own:
+
+- `send.ts` `dispatch`: on the shared number (no `Organization.smsFromNumber`)
+  a text goes out only as a code someone asked for, or to a member who set
+  their own mobile (`smsAddedBy` empty). A mobile the office typed in, crew
+  phones, clients, extra numbers and every company text rule (`rule:*`)
+  become SKIPPED rows with error `shared-number`. They wait for each
+  company's own registered number.
+- `format.ts` `asSharedSender`: the shared number names JobFlex first,
+  "JobFlex (Ridgeline Roofing): New lead: …". The row keeps the company's
+  words, so the duplicate rule and the overnight fold are unchanged.
+- The Your mobile card carries the consent line under Text me a code, with
+  links to Terms and Privacy. Terms has a "Text messages from JobFlex"
+  paragraph, Privacy the mobile-number sentence, and both now name
+  Jobflex LLC as the operator. The opt-in picture
+  `public/twilio/opt-in-settings.png` was re-captured with the consent line.
+- The resubmission names the categories two-factor + account notifications,
+  the new samples (made by the templates themselves), the HELP reply, the
+  Terms and Privacy URLs and "JobFlex" as the trade name. Edits were allowed
+  until 2026-10-16. Resubmit only after this is deployed: the reviewers
+  compare the registration with the live site.
+
 ## What the contractor does
 
 - Settings → Notifications: the matrix has a third column, **Text**. The

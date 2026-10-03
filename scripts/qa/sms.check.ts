@@ -85,6 +85,17 @@ check("held texts fold into one overnight line",
   heldDigestText("Ridgeline Roofing", ["one thing."]) === "Ridgeline Roofing: one thing.");
 check("welcome, code and STOP words", welcomeText("Ridgeline Roofing").includes("Reply STOP to opt out") && /^JobFlex code: 482913\./.test(verifyText("482913")) &&
   isStopWord("STOP") && isStopWord("  unsubscribe please") && !isStopWord("stopping by at 3") && isStartWord("Start") && !isStartWord("no"));
+// JobFlex's shared number (2026-10-02): Twilio rejected it (30474) while it spoke as every contractor.
+check("the shared number names JobFlex first and the company after; a JobFlex text stays as it is",
+  F.asSharedSender("Ridgeline Roofing", "Ridgeline Roofing: New lead: Jane Doe.") === "JobFlex (Ridgeline Roofing): New lead: Jane Doe." &&
+  F.asSharedSender("Ridgeline Roofing", "Ridgeline Roofing — tomorrow (Tue Oct 7): 8 AM Roof.") === "JobFlex (Ridgeline Roofing) — tomorrow (Tue Oct 7): 8 AM Roof." &&
+  F.asSharedSender("Ridgeline Roofing", verifyText("482913")) === verifyText("482913") &&
+  F.asSharedSender(null, "hello") === "JobFlex: hello" &&
+  F.asSharedSender("Ridgeline Roofing", "word ".repeat(100)).length <= SMS_MAX);
+check("the shared number texts a code someone asked for and people who set their own mobile; never an office entry, a crew phone, a client or a company's own text",
+  F.sharedNumberMay("verify", false) && F.sharedNumberMay("lead-assigned", true) && F.sharedNumberMay("test", true) &&
+  !F.sharedNumberMay("lead-assigned", false) && !F.sharedNumberMay("crew-assigned", false) && !F.sharedNumberMay("rule:r1:p1", true));
+check("HELP names the alerts the person turned on, and the support address", /turned on in JobFlex/.test(F.helpText()) && F.helpText().includes("support@jobflex.app"));
 check("stop words match the keyword, not a sentence that begins with it", isStopWord("stop") && !isStopWord("stopped by the shop") && isStopWord("STOPALL"));
 check("nothing longer than two segments; links are redacted for logs; money reads plainly",
   clip("x".repeat(500)).length <= SMS_MAX && clip("a word ".repeat(80)).endsWith("…") && redactLinks("see https://www.jobflex.app/w/abc now") === "see <link> now" && money(12000) === "$12,000" && money(1234.5) === "$1,234.50");

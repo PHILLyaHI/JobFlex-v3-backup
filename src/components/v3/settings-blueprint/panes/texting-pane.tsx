@@ -173,6 +173,9 @@ function MobileCard({ sms }: { sms: SmsSettingsData }) {
                 </>
               )}
             </div>
+            <p className="tx-note" data-sms-consent>
+              {TEXTS_COPY.consent} <a href="/terms">{TEXTS_COPY.terms}</a> · <a href="/privacy">{TEXTS_COPY.privacy}</a>
+            </p>
           </div>
         )}
         {notes}

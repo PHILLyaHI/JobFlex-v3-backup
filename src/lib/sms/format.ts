@@ -2,8 +2,9 @@
 //
 // A text is read on a phone in a truck: one glance, 160 characters if it
 // can be, two segments at most. Every builder here starts with the
-// company's name (the number is JobFlex's, shared by every contractor),
-// says one thing, and ends with a link only when a tap is the next step.
+// company's name, says one thing, and ends with a link only when a tap is the
+// next step. Sent from JobFlex's shared number, a text names JobFlex first
+// (asSharedSender, below).
 
 /** Two segments. Past this a text splits into three and reads as a wall. */
 export const SMS_MAX = 320;
@@ -26,6 +27,33 @@ export function brand(org: string | null | undefined, text: string): string {
 export function unbrand(org: string | null | undefined, text: string): string {
   const name = (org ?? "").replace(/\s+/g, " ").trim();
   return name && text.startsWith(`${name}: `) ? text.slice(name.length + 2) : text;
+}
+
+// ── JobFlex's shared number (2026-10-02) ─────────────────────────────────
+// Twilio verifies a toll-free number for ONE business: the one the person
+// being texted signed up with. The shared number was rejected (30474) while
+// it spoke as every contractor, so it now carries only JobFlex's own texts to
+// people who turned texts on for themselves, and names JobFlex first:
+// "JobFlex (Ridgeline Roofing): New lead: …". A company's own number keeps
+// the company's name alone.
+
+/** A text as it leaves the shared number: JobFlex first, the company after. */
+export function asSharedSender(org: string | null | undefined, text: string): string {
+  const t = text.replace(/\s+/g, " ").trim();
+  if (/^JobFlex\b/.test(t)) return clip(t);
+  const name = (org ?? "").replace(/\s+/g, " ").trim();
+  if (name && t.startsWith(name)) return clip(`JobFlex (${name})${t.slice(name.length)}`);
+  return clip(`JobFlex: ${t}`);
+}
+
+/** May the shared number send this text? The code a person asked for, or a
+ *  text to a member who set their own mobile. Never a mobile the office typed
+ *  in for someone, a crew phone, a client or an extra number, and never a
+ *  company's own text rule: JobFlex writes everything the shared number says. */
+export function sharedNumberMay(kind: string, setByThemselves: boolean): boolean {
+  if (kind === "verify") return true;
+  if (kind.startsWith("rule:")) return false;
+  return setByThemselves;
 }
 
 /** Links out of a text before it is logged anywhere a person can read. */
@@ -149,7 +177,7 @@ export function verifyText(code: string): string {
 }
 
 export function helpText(): string {
-  return "JobFlex texts: job alerts from the contractor who added your number. Reply STOP to opt out. Questions: support@jobflex.app";
+  return "JobFlex texts: the job alerts you turned on in JobFlex. Reply STOP to opt out. Questions: support@jobflex.app";
 }
 
 export function testText(org: string | null): string {
