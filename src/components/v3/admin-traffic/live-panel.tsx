@@ -19,6 +19,8 @@ import { sameReport } from "./live-diff";
    its own chunk (2026-10-01). */
 const LiveMap = dynamic(() => import("./live-map").then((m) => m.LiveMap), { ssr: false, loading: () => <div className={s.mapLoading}>Loading the map…</div> });
 import { JourneyLine } from "./journey-line";
+import { VisitorMood } from "./visitor-mood";
+import mood from "./visitor-mood.module.css";
 import s from "./traffic.module.css";
 
 /** Live mode (2026-09-30): the owner watches this while an ad runs, so the
@@ -322,27 +324,34 @@ const LiveRow = memo(function LiveRow({ v, timezone, selected, onToggle, adNames
   return <li className={s.liveRow} data-live-row data-stage={v.stage} data-active={v.active} data-ad={v.fromAd} data-selected={selected} onClick={() => onToggle(v.id)} title={v.lat !== null ? "Show on the map" : "No known place for this visitor"}>
     <div className={s.liveMark} aria-hidden="true"/>
     <div className={s.liveWho}>
-      <b>{STAGE[v.stage]}{v.signup ? ` → ${v.signup.orgName}` : v.member ? ` → ${v.member.orgName}` : ""}</b>
-      {/* A signed-in member: the company and the person (2026-10-01). */}
-      {!v.signup && v.member && <span className={s.liveSignup}><Building2 size={11}/> {v.member.orgName}{v.member.userName ? ` · ${v.member.userName}` : ""}</span>}
-      {v.signup && <span className={s.liveSignup}>
-        {v.signup.ownerName ? `${v.signup.ownerName} · ` : ""}{v.signup.ownerEmail} · account made {clock(v.signup.at, timezone)}
-        {/* What they signed up FOR, read from the subscription row — the
-            event's own `plan` is only what the page offered. */}
-        <b className={s.livePlan}>{v.signup.planLabel}</b>
-      </span>}
-      {!v.signup && v.stage === "signed-up" && v.signedUpAt && <span className={s.liveSignup}>Verified at {clock(v.signedUpAt, timezone)} · no organization row matched yet</span>}
-      <span className={s.liveSource}>
-        {v.fromAd && <em className={s.liveAd}><Megaphone size={11}/>Ad</em>}
-        {/* Locked out is its own chip: the one state that wants a person,
-            not a nudge. */}
-        {v.lockedOut && <em className={s.liveLocked}><KeyRound size={11}/>Locked out</em>}
-        {v.source}
-        {/* The trade the ad sent them to (the landing's ?industry=). */}
-        {v.trade && <em className={s.liveTrade}>{v.trade}</em>}
-        {v.campaign && <AdTag tag={v.campaign} adNames={adNames} onName={onName}/>}
-        {v.content && v.content !== v.campaign && <AdTag tag={v.content} adNames={adNames} onName={onName}/>}
-      </span>
+      {/* The little guy (2026-10-03): furious at a bounce, cheering on the
+          form, dancing at a signup — ./visitor-mood — beside the words. */}
+      <div className={mood.beside}>
+        <VisitorMood v={v}/>
+        <div className={mood.text}>
+          <b>{STAGE[v.stage]}{v.signup ? ` → ${v.signup.orgName}` : v.member ? ` → ${v.member.orgName}` : ""}</b>
+          {/* A signed-in member: the company and the person (2026-10-01). */}
+          {!v.signup && v.member && <span className={s.liveSignup}><Building2 size={11}/> {v.member.orgName}{v.member.userName ? ` · ${v.member.userName}` : ""}</span>}
+          {v.signup && <span className={s.liveSignup}>
+            {v.signup.ownerName ? `${v.signup.ownerName} · ` : ""}{v.signup.ownerEmail} · account made {clock(v.signup.at, timezone)}
+            {/* What they signed up FOR, read from the subscription row — the
+                event's own `plan` is only what the page offered. */}
+            <b className={s.livePlan}>{v.signup.planLabel}</b>
+          </span>}
+          {!v.signup && v.stage === "signed-up" && v.signedUpAt && <span className={s.liveSignup}>Verified at {clock(v.signedUpAt, timezone)} · no organization row matched yet</span>}
+          <span className={s.liveSource}>
+            {v.fromAd && <em className={s.liveAd}><Megaphone size={11}/>Ad</em>}
+            {/* Locked out is its own chip: the one state that wants a person,
+                not a nudge. */}
+            {v.lockedOut && <em className={s.liveLocked}><KeyRound size={11}/>Locked out</em>}
+            {v.source}
+            {/* The trade the ad sent them to (the landing's ?industry=). */}
+            {v.trade && <em className={s.liveTrade}>{v.trade}</em>}
+            {v.campaign && <AdTag tag={v.campaign} adNames={adNames} onName={onName}/>}
+            {v.content && v.content !== v.campaign && <AdTag tag={v.content} adNames={adNames} onName={onName}/>}
+          </span>
+        </div>
+      </div>
     </div>
     <div className={s.liveWhere}>
       <b>{v.pageLabel}</b>
