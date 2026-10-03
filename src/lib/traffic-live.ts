@@ -163,6 +163,12 @@ export interface LiveVisitor {
   /** Pageviews in this visit, and the last few pages in order. */
   views: number;
   trail: string[];
+  /** The visit step by step (2026-10-02): the same screens as `trail`, each
+   *  with the stage it belongs to, so a card can draw the journey as a line
+   *  in the stage colours — looking around, signing in, signing up, signed
+   *  up, in the app — with the current step marked while they are on the
+   *  site. A repeat folds into its neighbour; the last eight are kept. */
+  steps: Array<{ label: string; kind: LiveStage; at: string }>;
   firstAt: string;
   lastAt: string;
   /** An event in the last LIVE_ACTIVE_MINUTES. */
@@ -456,6 +462,15 @@ export function screenLabel(path: string): string {
   if (path === "/pricing") return "Pricing";
   return path;
 }
+/** The stage one event belongs to — the one rule the ranking and the journey share. */
+export function eventStage(e: LiveEvent): LiveStage {
+  if (e.event === E.completed && (e.verified === "true" || e.verified === "" || e.verified === "1")) return "signed-up";
+  if (e.event === E.opened || e.event === E.attempt) return "checkout";
+  if (e.event === E.step || SIGNUP_PATH.test(pathOf(e))) return "registering";
+  if (APP_PATH.test(pathOf(e))) return "member";
+  if (SIGNIN_PATH.test(pathOf(e)) || RECOVER_PATH.test(pathOf(e)) || VERIFY_PATH.test(pathOf(e))) return "signing-in";
+  return "browsing";
+}
 /** What one event was, for the trail: a screen, a step, the checkout, the signup. */
 function trailLabel(e: LiveEvent): string | null {
   if (e.event === E.completed) return "Signed up";
@@ -744,16 +759,12 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     let plan = "";
     let outcome = "";
     for (const e of list) {
-      let s: LiveStage = "browsing";
-      if (e.event === E.completed && (e.verified === "true" || e.verified === "" || e.verified === "1")) {
-        s = "signed-up";
+      const s = eventStage(e);
+      if (s === "signed-up") {
         signedUpAt = new Date(e.at).toISOString();
         plan = e.plan || plan;
         outcome = e.outcome || outcome;
-      } else if (e.event === E.opened || e.event === E.attempt) s = "checkout";
-      else if (e.event === E.step || SIGNUP_PATH.test(pathOf(e))) s = "registering";
-      else if (APP_PATH.test(pathOf(e))) s = "member";
-      else if (SIGNIN_PATH.test(pathOf(e)) || RECOVER_PATH.test(pathOf(e)) || VERIFY_PATH.test(pathOf(e))) s = "signing-in";
+      }
       if (stageRank[s] > stageRank[stage]) stage = s;
     }
     // Locked out: they asked for a reset link or opened one. Worth its own
@@ -795,11 +806,17 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     // The trail: every screen and step in order, a repeat folded into its
     // neighbour; the last six.
     const trail: string[] = [];
+    const steps: LiveVisitor["steps"] = [];
     for (const e of visit) {
       const label = trailLabel(e);
-      if (label && trail[trail.length - 1] !== label) trail.push(label);
+      if (!label) continue;
+      if (trail[trail.length - 1] !== label) trail.push(label);
+      const prev = steps[steps.length - 1];
+      if (prev && prev.label === label) prev.at = new Date(e.at).toISOString();
+      else steps.push({ label, kind: eventStage(e), at: new Date(e.at).toISOString() });
     }
     while (trail.length > 6) trail.shift();
+    while (steps.length > 8) steps.shift();
     visitors.push({
       id: shortId(person),
       stage,
@@ -813,6 +830,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       pageLabel: screenLabel(page),
       views: views.length,
       trail,
+      steps,
       firstAt: new Date(first.at).toISOString(),
       lastAt: new Date(last.at).toISOString(),
       active: last.at >= activeSince,

@@ -18,6 +18,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import type { LiveStage, LiveTotals, LiveVisitor } from "@/lib/traffic-live";
 import { Ago } from "./ticker";
+import { JourneyLine } from "./journey-line";
 import s from "./traffic.module.css";
 
 /* DRAWN ONCE, THEN ONLY THE DATA (2026-10-01). The world's shapes are their
@@ -444,7 +445,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
                     <b>{v.pageLabel}</b>
                     <small>{plural(v.views, "page", "pages")} since {clock(v.firstAt)} · last move <Since iso={v.lastAt}/> ago</small>
                   </div>
-                  {v.trail.length > 1 && <ol className={s.mapTrail}>{v.trail.map((t, i) => <li key={`${i}-${t}`} data-last={i === v.trail.length - 1}>{t}</li>)}</ol>}
+                  {v.steps.length > 1 && <JourneyLine steps={v.steps} live={v.active} compact/>}
                   <p className={s.mapMeta}>{[v.device, v.browser].filter(Boolean).join(" / ") || "Unknown device"}{v.fromAd ? " · from an ad" : ""}{v.environment === "development" ? " · localhost" : ""}</p>
                 </div>
                 {rest.length > 0 && (

@@ -3,7 +3,7 @@
 // signups named after the organization the database made. Static imports
 // only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
-import { AD_PLATFORM_KEYS, adTagsOf, buildConvertedQuery, buildLiveQuery, prospectsOf, isAdId, landingTradeOf, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
+import { AD_PLATFORM_KEYS, adTagsOf, buildConvertedQuery, buildLiveQuery, prospectsOf, isAdId, landingTradeOf, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, eventStage, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -335,6 +335,19 @@ const idRow = liveEventFromRow([...row, 32.7767, -96.797, "us", "tx", "", "", ""
 check("the query asks for the member ids and the parser reads them", /jf_org_id/.test(sql) && /jf_user_id/.test(sql) && idRow?.orgId === "org_9" && idRow?.userId === "user_9");
 check("a long run of digits is an ad id worth naming; a written name is not", isAdId("120248923877540280") && !isAdId("roof-40s-v1") && !isAdId("2026"));
 check("the tags to look names up for are every campaign and ad the report shows", adTagsOf(r).includes(ana.campaign) && adTagsOf({ visitors: [fenceAd], platforms: [] }).includes("120248923877540280"));
+
+// ── the journey: every step with its stage (2026-10-02)
+const kinds = (v: { steps: Array<{ label: string; kind: string }> }) => v.steps.map((x) => `${x.label}:${x.kind}`).join(" > ");
+check("Ana's journey carries a stage per step, from the landing to the app",
+  kinds(ana) === "Landing page:browsing > Sign-up form:registering > Step 2 / Company:registering > Checkout:checkout > Signed up:signed-up > App · Dashboard:member", kinds(ana));
+check("the locked-out customer's journey is cyan until the app turns it near-black",
+  kinds(recovered) === "Forgot password:signing-in > Setting a new password:signing-in > App · Dashboard:member", kinds(recovered));
+check("a bounce is one step", signin.steps.length === 1 && signin.steps[0].kind === "signing-in" && clicked.steps.length === 2);
+check("a repeat screen folds into its neighbour, and the step keeps the later time",
+  shapeLive([ev({ person: "x", at: min(9), pathname: "/" }), ev({ person: "x", at: min(8), pathname: "/" }), ev({ person: "x", at: min(7), pathname: "/pricing" })], [], NOW, {}).visitors[0].steps.map((x) => x.label).join(">") === "Landing page>Pricing");
+check("eventStage reads one event the way the ranking does",
+  eventStage(ev({ person: "e", at: NOW, pathname: "/auth/register" })) === "registering" && eventStage(ev({ person: "e", at: NOW, pathname: "/dashboard" })) === "member"
+  && eventStage(ev({ person: "e", at: NOW, pathname: "/auth/reset" })) === "signing-in" && eventStage(ev({ person: "e", at: NOW, pathname: "/pricing" })) === "browsing");
 
 console.log(bad ? `\n${bad} failing` : "\nall green");
 

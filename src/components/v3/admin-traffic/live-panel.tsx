@@ -17,6 +17,7 @@ import { sameReport } from "./live-diff";
    visitor) and the last thing the eye reaches: it loads after the rest, in
    its own chunk (2026-10-01). */
 const LiveMap = dynamic(() => import("./live-map").then((m) => m.LiveMap), { ssr: false, loading: () => <div className={s.mapLoading}>Loading the map…</div> });
+import { JourneyLine } from "./journey-line";
 import s from "./traffic.module.css";
 
 /** Live mode (2026-09-30): the owner watches this while an ad runs, so the
@@ -299,7 +300,9 @@ const LiveRow = memo(function LiveRow({ v, timezone, selected, onToggle, adNames
     </div>
     <div className={s.liveWhere}>
       <b>{v.pageLabel}</b>
-      <span>{v.views} {v.views === 1 ? "page" : "pages"}{v.trail.length > 1 ? ` · ${v.trail.join(" → ")}` : ""}</span>
+      <span>{v.views} {v.views === 1 ? "page" : "pages"}</span>
+      {/* The visit as a line: each step in its stage colour, running while they are on the site. */}
+      <JourneyLine steps={v.steps} live={v.active}/>
       {/* What they pressed — only the landing's tagged buttons fire this, so
           an empty line means "nothing we track", not "they clicked nothing". */}
       {v.clicks.length > 0 && <span className={s.liveClicks}>
