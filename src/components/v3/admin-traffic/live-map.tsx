@@ -73,7 +73,7 @@ const RING = { fill: "none", stroke: "var(--ink)", strokeWidth: 1.6, vectorEffec
 /** The world: ocean, grid, countries and the US states — red and blue by the
  *  2024 vote while that switch is on, else (zoomed over North America) shaded
  *  by visitors. Re-rendered only when the shapes, the counts or the switch change. */
-const MapBase = memo(function MapBase({ map, shapes, states, party, perCountry, perState }: { map: WorldMap; shapes: Shape[]; states: Shape[] | null; party: boolean; perCountry: Map<string, number>; perState: Map<string, number> }) {
+const MapBase = memo(function MapBase({ map, shapes, states, party, lit, outlines, perCountry, perState }: { map: WorldMap; shapes: Shape[]; states: Shape[] | null; party: boolean; lit: Set<string>; outlines: boolean; perCountry: Map<string, number>; perState: Map<string, number> }) {
   const mostCountry = Math.max(1, ...perCountry.values()), mostState = Math.max(1, ...perState.values());
   return <>
     <path d={map.sphere} className={s.mapOcean} />
@@ -92,11 +92,16 @@ const MapBase = memo(function MapBase({ map, shapes, states, party, perCountry, 
       <g>
         {states.map((x) => {
           const n = perState.get(x.r ?? "") ?? 0;
-          // Red and blue (2026-10-03): how the state voted for president in
-          // 2024, in tints pale enough that every pin colour reads on them.
-          const p = party ? partyOf(x.r) : null;
+          // Red and blue (2026-10-03): a state lights up in the colour of its
+          // 2024 presidential vote only while a pin is in it — the rest of the
+          // map keeps its colour (owner) — in tints pale enough that every pin
+          // colour reads on them.
+          const p = party && lit.has(x.r ?? "") ? partyOf(x.r) : null;
+          // Away from the US close-up only the lit states are drawn: no borders, no change.
+          if (!p && !outlines) return null;
           const tip = `${x.n}${p ? ` · ${PARTY_LABEL[p]} in 2024` : ""}${n ? ` · ${plural(n, "visitor", "visitors")}` : ""}`;
-          return <path key={x.r} d={x.d} data-tip={tip} data-party={p ?? undefined} className={p === "D" ? s.mapStateDem : p === "R" ? s.mapStateRep : s.mapState} style={!p && n ? { fill: `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostState))}%, var(--paper-deep))` } : undefined} strokeWidth={0.5} vectorEffect="non-scaling-stroke" />;
+          const wash = party ? `color-mix(in oklab, var(--ink) ${Math.round(14 + 22 * (n / mostState))}%, var(--paper-deep))` : `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostState))}%, var(--paper-deep))`;
+          return <path key={x.r} d={x.d} data-state={x.r} data-tip={tip} data-party={p ?? undefined} className={p === "D" ? s.mapStateDem : p === "R" ? s.mapStateRep : s.mapState} style={!p && n ? { fill: wash } : undefined} strokeWidth={0.5} vectorEffect="non-scaling-stroke" />;
         })}
       </g>
     )}
@@ -270,6 +275,8 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   const perCountry = useMemo(() => { const m = new Map<string, number>(); for (const v of visitors) if (v.countryCode) m.set(v.countryCode, (m.get(v.countryCode) ?? 0) + 1); return m; }, [visitors]);
   const perState = useMemo(() => { const m = new Map<string, number>(); for (const v of visitors) if (v.countryCode === "US" && v.regionCode) m.set(v.regionCode, (m.get(v.regionCode) ?? 0) + 1); return m; }, [visitors]);
+  /** The states with a pin in them: the ones that light up. */
+  const lit = useMemo(() => new Set(visitors.filter((v) => v.countryCode === "US" && v.regionCode && v.lat !== null && v.lon !== null).map((v) => v.regionCode)), [visitors]);
   const open = places.find((p) => p.visitors.some((v) => v.id === selected)) ?? null;
 
   // Dragging moves the map; two fingers pinch. A press and release on a pin without dragging opens it.
@@ -374,7 +381,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           role="img" aria-label={`World map: ${plural(visitors.length - unplaced, "visitor", "visitors")} in ${plural(places.length, "place", "places")}.`}
           data-pins={visitors.length - unplaced}
         >
-          <MapBase map={map} shapes={shapes} states={showStates ? states : null} party={party} perCountry={perCountry} perState={perState} />
+          <MapBase map={map} shapes={shapes} states={showStates ? states : null} party={party} lit={lit} outlines={detailed && overUS} perCountry={perCountry} perState={perState} />
           {/* The pulses go under every cluster and pin, so a later one never veils
               an earlier pin; on the red-and-blue map they are ink rings, not
               crimson that melts into a red state (2026-10-03). */}
@@ -417,7 +424,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAround(view.x + view.w / 2, view.y + view.h / 2, 1 / 0.6)}>−</button>
           <button type="button" title="Fit the visitors" aria-label="Fit the visitors" onClick={fitAll}>◎</button>
           <button type="button" title="Whole world" aria-label="Whole world" onClick={() => flyTo(full)}>⟲</button>
-          <button type="button" title={party ? "Plain US states" : "US states in red and blue (2024 vote)"} aria-label="US states in red and blue" aria-pressed={party} data-party-toggle onClick={() => setParty((x) => !x)}>◐</button>
+          <button type="button" title={party ? "Stop lighting up the states" : "Light up states with visitors in red and blue (2024 vote)"} aria-label="US states in red and blue" aria-pressed={party} data-party-toggle onClick={() => setParty((x) => !x)}>◐</button>
           <button type="button" title={wide ? "Back to the page · Esc" : "Full screen"} aria-label={wide ? "Exit full screen" : "Full screen"} aria-pressed={wide} onClick={() => (wide ? closeWide() : openWide())}>{wide ? <Minimize2 size={14}/> : <Maximize2 size={14}/>}</button>
         </div>
         {zoom > 1.05 && <span className={s.mapZoomLevel} data-card={!!open}>{Math.round(zoom * 10) / 10}×{showStates ? " · US states" : detailed ? " · detailed" : ""}</span>}
@@ -496,7 +503,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           </span>
         ))}
         <span><i className={s.mapAdRing} aria-hidden="true"/>From an ad</span>
-        {party && <span className={s.mapLegendParty}><i data-party="D" aria-hidden="true"/>Democratic <i data-party="R" aria-hidden="true"/>Republican <em>US states · 2024 presidential vote</em></span>}
+        {party && <span className={s.mapLegendParty}><i data-party="D" aria-hidden="true"/>Democratic <i data-party="R" aria-hidden="true"/>Republican <em>a US state lights up while a visitor is in it · its 2024 presidential vote</em></span>}
         <span className={s.mapLegendNote}>Pulsing: on the site in the last 5 minutes</span>
         {prospects && <span className={s.mapLegendNote}>Prospects: members and customers signing in are left off; a signup stays on the map for a day.</span>}
         {unplaced > 0 && <span className={s.mapLegendNote}>{plural(unplaced, "visitor", "visitors")} without a known place: counted, not on the map</span>}
@@ -509,7 +516,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           ))}
         </div>
       )}
-      <p className={s.mapNote}>Scroll or pinch to zoom, drag to move, double-click to zoom in; zoomed in, the map turns detailed and shows the US states. Hover for names, click a pin for who it is. The US states are painted by how each voted for president in 2024; the half-circle button in the corner turns that off. The last button fills the screen with the map; Esc brings the page back.</p>
+      <p className={s.mapNote}>Scroll or pinch to zoom, drag to move, double-click to zoom in; zoomed in, the map turns detailed and shows the US states. Hover for names, click a pin for who it is. A US state lights up in red or blue, how it voted for president in 2024, while a visitor on the map is in it; the rest of the map keeps its colour, and the half-circle button in the corner turns the lighting off. The last button fills the screen with the map; Esc brings the page back.</p>
     </div>
   );
 });

@@ -725,11 +725,15 @@
   :global(.jf-blueprint) .analystSample { padding:10px 16px; }
 }
 
-/* The US states in red and blue (2026-10-03): the 2024 presidential vote, in
-   tints pale enough that every pin colour — crimson included — reads on them;
+/* The US states in red and blue (2026-10-03): the 2024 presidential vote, lit
+   only where a visitor is, in tints pale enough that every pin colour — crimson included — reads on them;
    the pins carry a dark rim under their white edge for the same reason. */
 :global(.jf-blueprint) .mapStateDem { fill:#c4d6f2; stroke:color-mix(in oklab, #c4d6f2 55%, var(--ink)); stroke-linejoin:round; }
 :global(.jf-blueprint) .mapStateRep { fill:#f3c9c6; stroke:color-mix(in oklab, #f3c9c6 55%, var(--ink)); stroke-linejoin:round; }
+/* A state lights up when a visitor's pin lands in it (owner, 2026-10-03). */
+@keyframes statePop { from { opacity:0; } to { opacity:1; } }
+:global(.jf-blueprint) .mapStateDem, :global(.jf-blueprint) .mapStateRep { animation:statePop .7s ease-out; }
+@media (prefers-reduced-motion: reduce) { :global(.jf-blueprint) .mapStateDem, :global(.jf-blueprint) .mapStateRep { animation:none; } }
 :global(.jf-blueprint) .mapLegendParty { display:inline-flex; align-items:center; gap:6px; }
 :global(.jf-blueprint) .mapLegendParty i { width:14px; height:10px; border:1px solid color-mix(in oklab, var(--paper-deep) 40%, var(--ink)); display:inline-block; }
 :global(.jf-blueprint) .mapLegendParty i[data-party="D"] { background:#c4d6f2; }
