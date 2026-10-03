@@ -64,7 +64,7 @@ import {
 import { MobileCta } from "./mobile-cta";
 import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { Nav } from "./nav";
-import { REGISTER } from "./routes";
+import { PRICING, REGISTER } from "./routes";
 import { SmoothWheel } from "./smooth-wheel";
 import { trialRequiresCard } from "@/lib/trialPolicy";
 import "./landing-e.css";
@@ -87,6 +87,8 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
   const requiresCard = trialRequiresCard();
   // Every register link carries the trade, the visit's utm_* and the fbclid.
   const register = signupHref(REGISTER, { industry: variant, utm, fbclid });
+  // …and so does the nav's Pricing link, for /pricing to hand on (pricing-visit.tsx).
+  const pricing = signupHref(PRICING, { industry: variant, utm, fbclid });
   // The price anchor shows the Subscription page's own catalogue (CRO stage
   // 2); a catalogue read that fails leaves the section out rather than the
   // page down.
@@ -113,7 +115,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
   // of the whole page.
   return (
     <div className="jf-lp min-h-full bg-white">
-      <Nav registerHref={register} cta={top} />
+      <Nav registerHref={register} pricingHref={pricing} cta={top} />
       <main>
         <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} requiresCard={requiresCard} />
         <Intro />

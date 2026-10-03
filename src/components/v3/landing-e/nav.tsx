@@ -1,14 +1,24 @@
 "use client";
 
 import { Logo } from "./logo";
-import { LOGIN, REGISTER } from "./routes";
+import { LOGIN, PRICING, REGISTER } from "./routes";
 import Link from "next/link";
 
-/* No text links in the bar (owner, 2026-09-26): Pricing came out of the nav
-   and the footer; Product, Features and Resources never had pages. The
-   /pricing route itself stays. */
+/* One text link in the bar: Pricing, back in (owner, 2026-10-02 — it came
+   out on 2026-09-26), to the /pricing page on a desk and a phone alike. Its
+   href carries the visit's industry, utm_* and fbclid like every register
+   link (signupHref), so the prices page can hand them on to its own start
+   buttons. Product, Features and Resources never had pages. */
 
-export function Nav({ registerHref = REGISTER, cta }: { registerHref?: string; cta?: string }) {
+export function Nav({
+  registerHref = REGISTER,
+  pricingHref = PRICING,
+  cta,
+}: {
+  registerHref?: string;
+  pricingHref?: string;
+  cta?: string;
+}) {
   return (
     // Sticky on desktop only (owner, 2026-08-25): on a phone a pinned bar
     // eats a chunk of a short viewport for a two-item nav. The bar sits on the
@@ -24,6 +34,9 @@ export function Nav({ registerHref = REGISTER, cta }: { registerHref?: string; c
         </Link>
 
         <div className="hidden items-center gap-6 lg:flex">
+          <a href={pricingHref} className="text-[15px] font-medium text-black/70 transition-colors hover:text-black">
+            Pricing
+          </a>
           <a href={LOGIN} className="text-[15px] font-medium text-black/70 transition-colors hover:text-black">
             Sign in
           </a>
@@ -34,11 +47,19 @@ export function Nav({ registerHref = REGISTER, cta }: { registerHref?: string; c
           </a>
         </div>
 
-        {/* Handheld: the menu drawer is gone and the bar carries the one action
-            a visitor on a phone actually wants (owner, 2026-08-25). The wrapper
+        {/* Handheld: the menu drawer is gone and the bar carries the action a
+            visitor on a phone actually wants (owner, 2026-08-25), with Pricing
+            beside it as a 44 px text link (2026-10-02). The wrapper
             does the hiding — `.jf-lp .lp-btn-dark` sets display and would
             outrank a `lg:hidden` sitting on the anchor itself. */}
-        <div className="lg:hidden">
+        <div className="flex items-center gap-2 lg:hidden">
+          <a
+            href={pricingHref}
+            className="inline-flex min-h-[44px] items-center px-3 text-[14.5px] font-medium text-black/70 transition-colors hover:text-black"
+           
+          >
+            Pricing
+          </a>
           <a href={LOGIN} className="lp-btn-dark h-10 px-5 text-[14.5px] font-semibold">
             Log in
           </a>
