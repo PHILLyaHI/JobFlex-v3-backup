@@ -1252,6 +1252,11 @@ function TextingPane({ data }: { data: SettingsData }) {
                   </button>
                 </>
               )}
+              <div className="mst-note" data-sms-consent>
+                <span>
+                  {TEXTS_COPY.consent} <a href="/terms">{TEXTS_COPY.terms}</a> · <a href="/privacy">{TEXTS_COPY.privacy}</a>
+                </span>
+              </div>
             </>
           )}
         </div>

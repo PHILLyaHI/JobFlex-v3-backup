@@ -174,12 +174,11 @@ export interface HomeownerMatchedInput {
   statusUrl?: string | null;
 }
 
-/** Box: Phone, Rating, then a call-by condition. CTA opens the status page. */
+/** Box: Phone and Rating (no call-by promise — nothing enforces one). CTA opens the status page. */
 export function buildHomeownerMatched(i: HomeownerMatchedInput): EmailDoc {
   const box: BoxRow[] = [
     { type: "field", label: "Phone", value: i.phone ?? "—" },
     { type: "field", label: "Rating", value: i.rating },
-    { type: "cond", label: "They'll call by", chip: "Within 2 hours" },
   ];
   return {
     subject: `You're matched — ${i.orgName} will be in touch`,

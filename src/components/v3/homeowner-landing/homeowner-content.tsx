@@ -243,7 +243,7 @@ export function HomeownerContent() {
               </span>
             </h1>
             <p className="h1-sub anim a3">
-              Verified local pros send line-item quotes. No calls until you choose.
+              Your words become a contractor-ready scope, sent to a local pro on JobFlex. Free — no account needed.
             </p>
           </div>
 
@@ -254,13 +254,13 @@ export function HomeownerContent() {
               <svg className="ic">
                 <use href="#i-check" />
               </svg>
-              <span>Vetted local contractors</span>
+              <span>Local pros on JobFlex</span>
             </div>
             <div className="tr">
               <svg className="ic">
                 <use href="#i-clock" />
               </svg>
-              <span>Average quote in 4 hours</span>
+              <span>A written scope in minutes</span>
             </div>
             <div className="tr">
               <svg className="ic">
@@ -288,7 +288,7 @@ export function HomeownerContent() {
       <section className="net" id="net">
         <div className="net-in">
           <h2 className={rv.cls("netH", "net-h")} ref={rv.ref("netH")}>
-            Trusted <span>Contractors</span>
+            Local <span>Contractors</span>
           </h2>
 
           <div className="net-cards">
@@ -306,7 +306,7 @@ export function HomeownerContent() {
                     <rect className="nc-edge" x="40" y="44" width="120" height="106" />
                     <path className="nc-edge" d="M40 60h120" />
                     <text className="nc-xs" x="100" y="55" textAnchor="middle">
-                      CONTRACTOR LICENCE
+                      JOBFLEX PRO
                     </text>
                     <rect className="nc-edge" x="50" y="68" width="34" height="42" />
                     <circle className="nc-hip" cx="67" cy="83" r="7" />
@@ -314,7 +314,7 @@ export function HomeownerContent() {
                     <path className="nc-hip" d="M94 74h18M94 86h18" />
                     <path className="nc-edge" d="M118 74h34M118 86h34" />
                     <text className="nc-xs" x="90" y="100">
-                      No. WA-2847
+                      Local shop
                     </text>
                     {NC1_BARS.map(([x, width]) => (
                       <rect key={x} className="nc-bar" x={x} y="120" width={width} height="17" />
@@ -323,13 +323,13 @@ export function HomeownerContent() {
                     <circle className="nc-edge" cx="136" cy="128" r="13" />
                     <path className="nc-key" d="M129 128l5 5 10-11" />
                     <text className="nc-s" x="100" y="176" textAnchor="middle">
-                      CREDENTIAL
+                      PROFILE
                     </text>
                   </svg>
                 </div>
                 <div className="nc-cap">
-                  <b>Verified pros</b>
-                  <span>Credentials on file.</span>
+                  <b>Pros who run their business on JobFlex.</b>
+                  <span>Estimates, proposals and scheduling in one place.</span>
                 </div>
               </div>
 
@@ -389,8 +389,8 @@ export function HomeownerContent() {
                   </svg>
                 </div>
                 <div className="nc-cap">
-                  <b>100% licensed &amp; insured.</b>
-                  <span>Background-checked, always.</span>
+                  <b>A scope a pro can price.</b>
+                  <span>Sizes, materials and what to check on site.</span>
                 </div>
               </div>
             </div>
@@ -438,8 +438,8 @@ export function HomeownerContent() {
                   </svg>
                 </div>
                 <div className="nc-cap">
-                  <b>Verified contractors on JobFlex.</b>
-                  <span>Every specialty, every town.</span>
+                  <b>Trades JobFlex routes.</b>
+                  <span>Roofing to remodels — one form for all of them.</span>
                 </div>
               </div>
 
@@ -487,7 +487,7 @@ export function HomeownerContent() {
                       0H
                     </text>
                     <text className="nc-xs" x="144" y="157" textAnchor="middle">
-                      4H
+                      24H
                     </text>
                     <text className="nc-s" x="100" y="176" textAnchor="middle">
                       RESPONSE
@@ -495,8 +495,8 @@ export function HomeownerContent() {
                   </svg>
                 </div>
                 <div className="nc-cap">
-                  <b>4-hour response.</b>
-                  <span>Average across the network.</span>
+                  <b>24 hours to take your job.</b>
+                  <span>Then it moves to the next local pro.</span>
                 </div>
               </div>
             </div>
@@ -519,73 +519,10 @@ export function HomeownerContent() {
 
             <div className="arch-mid">
               <h2 className="arch-h">
-                Trusted by homeowners
+                Every room in the house
                 <br />
-                <span>and contractors alike</span>
+                <span>one simple form</span>
               </h2>
-            </div>
-          </div>
-
-          <div className={rv.cls("revs", "revs-grid")} ref={rv.ref("revs")}>
-            <div className="rev">
-              <div className="rate">
-                <i></i>
-                <i></i>
-                <i></i>
-                <i></i>
-                <i></i>
-              </div>
-              <p className="rev-q">
-                “JobFlex made finding a contractor so easy! I described our kitchen in plain English
-                and had three real quotes by dinner. Highly recommend!”
-              </p>
-              <div className="rev-who">
-                <span className="rev-av">D</span>
-                <div>
-                  <div className="rev-n">Dana W.</div>
-                  <div className="rev-r">Kitchen remodel</div>
-                </div>
-              </div>
-            </div>
-            <div className="rev">
-              <div className="rate">
-                <i></i>
-                <i></i>
-                <i></i>
-                <i></i>
-                <i></i>
-              </div>
-              <p className="rev-q">
-                “We needed the roof replaced fast after a storm. The scope it wrote was exactly what
-                the pros needed — the process was smooth, start to finish.”
-              </p>
-              <div className="rev-who">
-                <span className="rev-av">M</span>
-                <div>
-                  <div className="rev-n">Marcus T.</div>
-                  <div className="rev-r">Roof replacement</div>
-                </div>
-              </div>
-            </div>
-            <div className="rev">
-              <div className="rate">
-                <i></i>
-                <i></i>
-                <i></i>
-                <i></i>
-                <i></i>
-              </div>
-              <p className="rev-q">
-                “I love that every quote comes with ratings and reviews. Whether it’s a small fix or
-                a full remodel, I always find the right pro.”
-              </p>
-              <div className="rev-who">
-                <span className="rev-av">L</span>
-                <div>
-                  <div className="rev-n">Lena A.</div>
-                  <div className="rev-r">Bathroom remodel</div>
-                </div>
-              </div>
             </div>
           </div>
         </div>

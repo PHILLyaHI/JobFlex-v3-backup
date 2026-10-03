@@ -187,6 +187,12 @@ export default function PrivacyPage() {
         restrictions above continue to apply. Connected providers and contractors may operate as
         independent businesses for their own services; their privacy notices also apply.
       </p>
+      <p id="sms">
+        <strong>Mobile numbers and text messages:</strong> we use the mobile number you add in
+        Settings → Texting only to send the texts you turned on and to honor STOP and HELP. We do not
+        sell, rent, or share mobile numbers or text-message opt-in data with third parties or affiliates
+        for their marketing or promotional purposes; Twilio receives them only to deliver our messages.
+      </p>
       <h2 id="tracking">5. Cookies, analytics, and advertising</h2>
       <p>
         Essential cookies support sign-in and security. Cookies and browser storage also remember privacy

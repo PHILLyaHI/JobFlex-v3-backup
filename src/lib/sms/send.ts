@@ -9,7 +9,11 @@
 //     every text costs money, so a limiter outage pauses texting;
 //   - quiet hours hold a text until the morning, folded with the others;
 //   - Twilio off (the local stand, a fresh deploy) is a SKIPPED row, not an
-//     error — the app works the same, and the log shows what would have gone.
+//     error — the app works the same, and the log shows what would have gone;
+//   - JobFlex's shared number texts only people who set their own mobile, and
+//     never a company's own text rule (2026-10-02: Twilio verifies a number
+//     for the business the person signed up with) — the rest is a SKIPPED row
+//     "shared-number" until the company has its own registered number.
 // Every text is a row in SmsMessage: the usage counter, the delivery status
 // from Twilio's callback, the thing a support question is answered from.
 
@@ -26,7 +30,7 @@ import {
   SMS_URGENT_KEYS,
   smsDecision,
   type PrefKey, allowsSms, audienceForRole, textEventsFor } from "@/lib/notificationPrefsShared";
-import { brand, clip, heldDigestText, SMS_MAX, unbrand } from "./format";
+import { asSharedSender, brand, clip, heldDigestText, sharedNumberMay, SMS_MAX, unbrand } from "./format";
 import { trialBlocksText } from "@/lib/trialMeter";
 
 const CAP_PER_NUMBER_PER_DAY = 25;
@@ -82,6 +86,24 @@ async function dispatch(m: { organizationId: string | null; to: string; body: st
     await capped(m, "trial");
     return { ok: false, reason: "trial" };
   }
+  // Which number: the company's own when it claimed one (lib/sms/numbers),
+  // else JobFlex's shared number, which only carries JobFlex's own texts to
+  // people who turned texts on themselves (format.ts, sharedNumberMay). Asked
+  // before the caps, so a text the shared number may not send spends none.
+  let own: string | null = null;
+  let orgName: string | null = null;
+  try {
+    const org = m.organizationId ? await db.organization.findUnique({ where: { id: m.organizationId }, select: { smsFromNumber: true, name: true } }) : null;
+    own = org?.smsFromNumber ?? null;
+    orgName = org?.name ?? null;
+    if (!own && !sharedNumberMay(m.kind, await setTheirOwnMobile(m.to))) {
+      const skipped = await db.smsMessage.create({ data: { organizationId: m.organizationId, direction: "OUT", to: m.to, body: m.body, kind: m.kind, status: "SKIPPED", error: "shared-number" } });
+      return { ok: true, id: skipped.id, status: "SKIPPED" };
+    }
+  } catch (err) {
+    console.error(`[sms] sender check failed, text not sent: ${msg(err)}`);
+    return { ok: false, reason: "failed" };
+  }
   // Caps, fail-closed: a limiter that cannot answer pauses texting.
   try {
     const perNumber = await rateLimitShared(`sms:to:${m.to}`, CAP_PER_NUMBER_PER_DAY, DAY);
@@ -103,9 +125,10 @@ async function dispatch(m: { organizationId: string | null; to: string; body: st
   }
   try {
     const statusCallback = `${await appBaseUrl()}/api/twilio/sms/status`;
-    // The company's own number when it claimed one (lib/sms/numbers).
-    const own = m.organizationId ? (await db.organization.findUnique({ where: { id: m.organizationId }, select: { smsFromNumber: true } }))?.smsFromNumber : null;
-    const r = await sendSMS(m.to, m.body, { statusCallback, from: own ?? null });
+    // The row keeps the words as the company wrote them (the duplicate rule
+    // and the overnight fold read them); the shared number adds JobFlex's
+    // name at the door.
+    const r = await sendSMS(m.to, own ? m.body : asSharedSender(orgName, m.body), { statusCallback, from: own });
     await db.smsMessage.update({ where: { id: row.id }, data: { status: "SENT", sid: r.skipped ? null : r.sid } });
     return { ok: true, id: row.id, status: "SENT" };
   } catch (err) {
@@ -125,6 +148,22 @@ async function capped(m: { organizationId: string | null; to: string; body: stri
 
 function msg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Did a member set this mobile themselves (the six-digit code in Settings →
+ *  Texting, or their own entry), rather than the office typing it in for them?
+ *  actions/sms marks an office entry with `smsAddedBy` in the member's prefs. */
+async function setTheirOwnMobile(phone: string): Promise<boolean> {
+  const users = await db.user.findMany({ where: { smsPhone: phone, smsVerifiedAt: { not: null } }, select: { notificationPrefsJson: true }, take: 10 });
+  return users.some((u) => !addedByOffice(u.notificationPrefsJson));
+}
+function addedByOffice(json: string | null): boolean {
+  try {
+    const by = (JSON.parse(json || "{}") as { smsAddedBy?: unknown }).smsAddedBy;
+    return typeof by === "string" && by !== "";
+  } catch {
+    return false;
+  }
 }
 
 // ── the office ────────────────────────────────────────────────────────────

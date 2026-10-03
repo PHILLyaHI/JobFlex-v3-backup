@@ -260,7 +260,8 @@ export function initLeadsContent(
       .filter(Boolean);
     // A name with no latin letters at all (digits-only, another alphabet)
     // filters down to nothing — fall back to the raw string's first letters.
-    if (p.length === 0) return n.trim().slice(0, 2).toUpperCase() || "?";
+    // (escaped: this fallback keeps the raw characters, and every caller drops it into innerHTML)
+    if (p.length === 0) return esc(n.trim().slice(0, 2).toUpperCase()) || "?";
     return p.length === 1
       ? p[0].slice(0, 2).toUpperCase()
       : (p[0][0] + p[p.length - 1][0]).toUpperCase();

@@ -1,9 +1,12 @@
 // Business details provided by the operator. Verify inbox delivery before launch.
-export const LEGAL_OPERATOR_NAME = "Dmitiriy Apetenok";
+// The operator is the company Twilio verified (2026-10-02): its approved
+// business profile and the toll-free registration name Jobflex LLC, and the
+// carriers compare the website with them (this was "Dmitiriy Apetenok").
+export const LEGAL_OPERATOR_NAME = "Jobflex LLC";
 export const LEGAL_CONTACT_EMAIL = "support@jobflex.app";
 
 /** "Last updated" per legal page. Bump a page's entry when its text materially changes. */
 export const LEGAL_UPDATED = {
-  privacy: { iso: "2026-09-22", label: "September 22, 2026" },
-  terms: { iso: "2026-10-01", label: "October 1, 2026" },
+  privacy: { iso: "2026-10-02", label: "October 2, 2026" },
+  terms: { iso: "2026-10-02", label: "October 2, 2026" },
 } as const;

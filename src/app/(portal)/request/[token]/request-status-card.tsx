@@ -33,17 +33,17 @@ const STATUS_COPY: Record<string, { chip: string; title: string; body: string }>
   MATCHING: {
     chip: "Matching",
     title: "We're finding your contractor",
-    body: "Your request is being matched with qualified local pros right now. You'll get an email the moment one takes it on.",
+    body: "Your request is being matched with a local pro on JobFlex right now. You'll get an email the moment one takes it on.",
   },
   OFFERED: {
     chip: "Matching",
     title: "A contractor is reviewing your request",
-    body: "We've offered your project to a local pro — they have up to 24 hours to take it on, and most respond much sooner.",
+    body: "We've offered your project to a local pro — they have up to 24 hours to take it on.",
   },
   MATCHED: {
     chip: "Matched",
     title: "You're matched",
-    body: "They have your details and will reach out. Most contractors call within a couple of hours.",
+    body: "They have your details and will reach out to you.",
   },
   // Neutral (owner, 2026-10-03): the same words whether the queue holds the
   // lead by design (manual mode) or because no shop took it.
