@@ -394,3 +394,72 @@
 :global(.jf-blueprint .content) .starsNone {
   color: var(--muted-light); text-transform: uppercase; letter-spacing: 0.08em; font-size: 9.5px;
 }
+
+/* ── Test leads (2026-10-03) ──────────────────────────────────────────────
+   The TEST tag on a row and in the sheet; the internal switch in a
+   contractor's sheet; the "Test leads" card (link, key, quick create). */
+:global(.jf-blueprint .content) .testTag {
+  display: inline-flex; align-items: center; height: 20px; padding: 0 7px;
+  border: 1.5px solid var(--ink); border-radius: var(--radius);
+  background: var(--ink); color: var(--paper);
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 800;
+  letter-spacing: 0.14em; text-transform: uppercase; flex-shrink: 0;
+}
+:global(.jf-blueprint .content .pmdl) .internalRow {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  margin-top: 14px; padding: 12px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+}
+:global(.jf-blueprint .content .pmdl) .internalT { font-size: 13px; font-weight: 800; }
+:global(.jf-blueprint .content .pmdl) .internalH { margin-top: 3px; font-size: 12px; color: var(--muted); }
+:global(.jf-blueprint .content .pmdl) .switch {
+  position: relative; flex-shrink: 0; width: 46px; height: 26px; padding: 0;
+  border: 1.5px solid var(--ink); border-radius: 999px; background: var(--paper-deep); cursor: pointer;
+}
+:global(.jf-blueprint .content .pmdl) .switch span {
+  position: absolute; top: 3px; left: 3px; width: 17px; height: 17px; border-radius: 50%;
+  background: var(--ink); transition: transform 0.15s var(--ease);
+}
+:global(.jf-blueprint .content .pmdl) .switchOn { background: var(--blueprint); }
+:global(.jf-blueprint .content .pmdl) .switchOn span { transform: translateX(20px); background: #fff; }
+:global(.jf-blueprint .content .pmdl) .switch:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint .content .pmdl) .switch:disabled { opacity: 0.55; cursor: not-allowed; }
+
+:global(.jf-blueprint .content) .tlBody { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
+:global(.jf-blueprint .content) .tlBlock { min-width: 0; }
+:global(.jf-blueprint .content) .tlLbl {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 9px;
+}
+:global(.jf-blueprint .content) .tlLinkRow { display: flex; gap: 8px; align-items: stretch; }
+:global(.jf-blueprint .content) .tlIn {
+  width: 100%; min-width: 0; height: 36px; padding: 0 11px;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius);
+  background: #fff; font-family: var(--font); font-size: 13px; color: var(--ink);
+}
+:global(.jf-blueprint .content) .tlLinkRow .tlIn { font-family: var(--font-mono); font-size: 12px; }
+:global(.jf-blueprint .content) .tlIn:focus { outline: none; border-color: var(--ink); }
+:global(.jf-blueprint .content) .tlArea { height: auto; padding: 9px 11px; resize: vertical; line-height: 1.45; }
+:global(.jf-blueprint .content) .tlNote { margin-top: 8px; font-size: 12px; color: var(--muted); }
+:global(.jf-blueprint .content) .tlGen { margin-top: 12px; }
+:global(.jf-blueprint .content) .tlConfirm {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px;
+  font-size: 12.5px; color: var(--ink-soft);
+}
+:global(.jf-blueprint .content) .tlConfirm > span { flex-basis: 100%; }
+:global(.jf-blueprint .content) .tlGrid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 0.6fr); gap: 10px; }
+:global(.jf-blueprint .content) .tlField { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+:global(.jf-blueprint .content) .tlField > span {
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted);
+}
+:global(.jf-blueprint .content) .tlWide { grid-column: 1 / -1; }
+@media (max-width: 860px) {
+  :global(.jf-blueprint .content) .tlBody { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  :global(.jf-blueprint .content) .tlGrid { grid-template-columns: minmax(0, 1fr); }
+  :global(.jf-blueprint .content) .tlIn { height: 44px; }
+  :global(.jf-blueprint .content) .tlArea { height: auto; }
+  :global(.jf-blueprint .content) .tlLinkRow { flex-direction: column; }
+  :global(.jf-blueprint .content) .tlLinkRow :global(.btn),
+  :global(.jf-blueprint .content) .tlGen,
+  :global(.jf-blueprint .content) .tlConfirm :global(.btn) { min-height: 44px; }
+}

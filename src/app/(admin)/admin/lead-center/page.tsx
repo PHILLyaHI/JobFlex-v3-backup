@@ -9,6 +9,8 @@ import { isTradeType, orgCoversTrade, parseTradeTypes } from "@/lib/tradeTypes";
 import { getRoutingMode } from "@/lib/leadCenter/routingMode";
 import { loadRankingInputs, rankWith } from "@/lib/leadCenter/matching";
 import { purchasesByPlatformLead } from "@/lib/leadCenter/purchase";
+import { readTestKey } from "@/lib/leadCenter/testLeads";
+import { appBaseUrl } from "@/lib/appUrl";
 import { orgRatingsByIds } from "@/lib/reviews/publicSummary";
 import {
   AdminLeadCenterContent,
@@ -76,12 +78,15 @@ export default async function AdminLeadCenterPage() {
         phone: true,
         billingEmail: true,
         leadOffersEnabled: true,
+        isInternal: true,
+        serviceRadiusMiles: true,
         createdAt: true,
       },
     }),
     // The stats window — wider than the ledger's 200-row cap on a busy platform.
+    // Test leads (lib/leadCenter/testLeads) are rehearsals: no statistic counts them.
     db.platformLead.findMany({
-      where: { createdAt: { gte: seriesStart < since30 ? seriesStart : since30 } },
+      where: { createdAt: { gte: seriesStart < since30 ? seriesStart : since30 }, isTest: false },
       select: {
         id: true,
         createdAt: true,
@@ -94,11 +99,11 @@ export default async function AdminLeadCenterPage() {
       },
     }),
     db.leadOffer.findMany({
-      where: { createdAt: { gte: since30 }, status: { in: ["ACCEPTED", "DECLINED", "EXPIRED"] } },
+      where: { createdAt: { gte: since30 }, status: { in: ["ACCEPTED", "DECLINED", "EXPIRED"] }, platformLead: { isTest: false } },
       select: { status: true, attempt: true, createdAt: true, respondedAt: true },
     }),
     db.leadOffer.findMany({
-      where: { status: "OFFERED", expiresAt: { gt: now } },
+      where: { status: "OFFERED", expiresAt: { gt: now }, platformLead: { isTest: false } },
       select: { expiresAt: true },
     }),
     // What the cascade ranks on, loaded once for every lead still to place.
@@ -164,6 +169,7 @@ export default async function AdminLeadCenterPage() {
           }));
     return {
       id: p.id,
+      isTest: p.isTest,
       name: p.name,
       email: p.email,
       phone: p.phone,
@@ -234,11 +240,11 @@ export default async function AdminLeadCenterPage() {
   // One grouped pass each — a row per shop per stat would not scale, and this
   // roster is read on every visit.
   const [offerCounts, acceptCounts, matchedCounts, ratings] = await Promise.all([
-    db.leadOffer.groupBy({ by: ["organizationId"], _count: { _all: true } }),
-    db.leadOffer.groupBy({ by: ["organizationId"], where: { status: "ACCEPTED" }, _count: { _all: true } }),
+    db.leadOffer.groupBy({ by: ["organizationId"], where: { platformLead: { isTest: false } }, _count: { _all: true } }),
+    db.leadOffer.groupBy({ by: ["organizationId"], where: { status: "ACCEPTED", platformLead: { isTest: false } }, _count: { _all: true } }),
     db.platformLead.groupBy({
       by: ["matchedOrgId"],
-      where: { matchedOrgId: { not: null } },
+      where: { matchedOrgId: { not: null }, isTest: false },
       _count: { _all: true },
     }),
     // The same rating routing scores on — hidden reviews included, so the
@@ -261,6 +267,8 @@ export default async function AdminLeadCenterPage() {
     phone: o.phone,
     email: o.billingEmail,
     offersEnabled: o.leadOffersEnabled,
+    isInternal: o.isInternal,
+    radiusMi: o.serviceRadiusMiles,
     offersReceived: offersBy.get(o.id) ?? 0,
     offersAccepted: acceptsBy.get(o.id) ?? 0,
     leadsMatched: matchedBy.get(o.id) ?? 0,
@@ -292,7 +300,7 @@ export default async function AdminLeadCenterPage() {
       .filter((o) => o.respondedAt)
       .map((o) => (o.respondedAt!.getTime() - o.createdAt.getTime()) / 60_000),
   );
-  const routedTotal = await db.platformLead.count({ where: { status: "MATCHED" } });
+  const routedTotal = await db.platformLead.count({ where: { status: "MATCHED", isTest: false } });
 
   const stats: StatsDTO = {
     todayCreated: todayRows.length,
@@ -303,10 +311,13 @@ export default async function AdminLeadCenterPage() {
     routedTotal,
     openOffers: openOffers.length,
     expiringSoon: openOffers.filter((o) => o.expiresAt.getTime() - now.getTime() < 12 * 60 * 60 * 1000).length,
-    queue: platformLeads.filter((p) => p.status === "MANUAL_QUEUE").length,
+    queue: platformLeads.filter((p) => p.status === "MANUAL_QUEUE" && !p.isTest).length,
   };
 
   const routingMode = await getRoutingMode();
+  // The test link, whole (the admin copies it): /homeowner?test=<key>.
+  const testKey = await readTestKey();
+  const testLink = testKey ? { link: `${await appBaseUrl()}/homeowner?test=${testKey.key}`, createdAt: testKey.createdAt } : null;
 
   return (
     <AdminLeadCenterContent
@@ -314,6 +325,7 @@ export default async function AdminLeadCenterPage() {
       orgs={orgPicks}
       stats={stats}
       routingMode={routingMode}
+      testLink={testLink}
     />
   );
 }

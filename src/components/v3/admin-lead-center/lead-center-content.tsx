@@ -37,10 +37,13 @@ import { toast } from "@/components/ui/Toast";
 import { relative, shortDate } from "@/lib/format";
 import {
   manualAssignPlatformLead,
+  createTestLead,
   refundLeadPurchase,
   requeuePlatformLead,
+  rotateLeadTestKey,
   routeAllWaitingLeads,
   setLeadRoutingMode,
+  setOrganizationInternal,
   setPlatformLeadPrice,
 } from "@/actions/adminLeadCenter";
 import type { RoutingMode } from "@/lib/leadCenter/routingMode";
@@ -93,6 +96,8 @@ export interface OfferDTO {
 
 export interface PlatformLeadDTO {
   id: string;
+  /** A test lead (lib/leadCenter/testLeads): internal organizations only, no stats. */
+  isTest: boolean;
   name: string;
   email: string;
   phone: string | null;
@@ -172,6 +177,10 @@ export interface OrgPickDTO {
   phone: string | null;
   email: string | null;
   offersEnabled: boolean;
+  /** JobFlex's own organization — the only kind a test lead can be sent to. */
+  isInternal: boolean;
+  /** The shop's service radius, miles. */
+  radiusMi: number;
   offersReceived: number;
   offersAccepted: number;
   leadsMatched: number;
@@ -305,6 +314,7 @@ function destinationNote(l: PlatformLeadDTO): string {
     return [how, l.matchedAt ? relative(l.matchedAt) : ""].filter(Boolean).join(" · ");
   }
   if (l.status === "MANUAL_QUEUE") {
+    if (l.queueReason === "TEST_LEAD") return "test lead · internal only";
     if (l.queueReason === "NO_CANDIDATES") return "no contractor covers this";
     // Manual mode parks every request here on purpose — saying "3 offers, no
     // takers" about a lead nobody was offered is the page lying to itself.
@@ -350,11 +360,14 @@ export function AdminLeadCenterContent({
   orgs,
   stats,
   routingMode,
+  testLink,
 }: {
   leads: PlatformLeadDTO[];
   orgs: OrgPickDTO[];
   stats: StatsDTO;
   routingMode: RoutingMode;
+  /** The /homeowner?test=<key> link, whole; null until one is created. */
+  testLink: { link: string; createdAt: string } | null;
 }) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -560,6 +573,8 @@ export function AdminLeadCenterContent({
         )}
       </section>
 
+      <TestLeadsCard testLink={testLink} />
+
       <div ref={mapRef}>
         <MapCard
         leads={leads}
@@ -692,6 +707,7 @@ function LedgerRow({
           <Ic name={tradeIcon(lead.detectedTrade)} />
         </span>
         <span className={styles.lidNo}>{shortId(lead.id)}</span>
+        {lead.isTest ? <span className={styles.testTag}>Test</span> : null}
       </div>
 
       <div className={ui.tdWide}>
@@ -1001,7 +1017,7 @@ function AlgorithmCard() {
         <span className={styles.algoLbl}>Who is eligible</span>
       </div>
       <div className={styles.gates}>
-        {["Offers on", "Has an address", "Covers the trade"].map((g) => (
+        {["Offers on", "Has an address", "Covers the trade", "Within its service radius"].map((g) => (
           <span key={g} className={styles.gate}>
             <Ic name="check" />
             {g}
@@ -1151,7 +1167,12 @@ function DetailSheet({
     ...orgs.filter((o) => isMatchable(o) && order.get(o.id)?.coversTrade !== true).sort(byOrder),
     ...orgs.filter((o) => !isMatchable(o)).sort(byOrder),
   ];
-  const listed = [...readyShops, ...(showOutOfArea ? outOfAreaShops : []), ...(showAllShops ? otherShops : [])];
+  // A test lead (lib/leadCenter/testLeads) goes to JobFlex's own organizations
+  // only — whatever their trade, area or setup — and to nobody else.
+  const internalShops = orgs.filter((o) => o.isInternal).sort((a, b) => a.name.localeCompare(b.name));
+  const listed = lead?.isTest
+    ? internalShops
+    : [...readyShops, ...(showOutOfArea ? outOfAreaShops : []), ...(showAllShops ? otherShops : [])];
   const tradeLabel = lead?.detectedTrade ?? "this trade";
   /** "12 mi", "1,113 mi", or why there is no number. */
   const milesLabel = (o: OrgPickDTO): string | null => {
@@ -1162,6 +1183,7 @@ function DetailSheet({
   };
   /** The small line on a hand-send row: how far, and why it sits where it does. */
   const assignNote = (o: OrgPickDTO): string => {
+    if (lead?.isTest) return [milesLabel(o), "internal"].filter(Boolean).join(" · ");
     if (!isMatchable(o)) return eligibility(o);
     const s = order.get(o.id);
     const miles = milesLabel(o);
@@ -1208,7 +1230,7 @@ function DetailSheet({
                 Pick on the map
               </button>
             ) : null}
-            {lead.status === "MANUAL_QUEUE" ? (
+            {lead.status === "MANUAL_QUEUE" && !lead.isTest ? (
               <button
                 className={cx("btn btn-primary", busy === "requeue" && ui.btnBusy)}
                 type="button"
@@ -1229,6 +1251,7 @@ function DetailSheet({
               words. Everything below is the evidence for it. */}
           <div className={styles.dLede}>
             <Chip tone={statusTone(lead).tone}>{statusTone(lead).label}</Chip>
+            {lead.isTest ? <span className={styles.testTag}>Test</span> : null}
             <span>{whereItStands(lead)}</span>
           </div>
 
@@ -1360,10 +1383,13 @@ function DetailSheet({
                     <i>{busy === o.id ? "sending…" : assignNote(o)}</i>
                   </button>
                 ))}
-                {readyShops.length === 0 && !showAllShops && !showOutOfArea ? (
+                {lead.isTest && internalShops.length === 0 ? (
+                  <Empty>No internal organization yet — mark one in its contractor sheet.</Empty>
+                ) : null}
+                {!lead.isTest && readyShops.length === 0 && !showAllShops && !showOutOfArea ? (
                   <Empty>No shop that takes {tradeLabel} serves this area.</Empty>
                 ) : null}
-                {outOfAreaShops.length ? (
+                {!lead.isTest && outOfAreaShops.length ? (
                   <button
                     type="button"
                     className={cx(styles.disclose, showOutOfArea && styles.discloseOn)}
@@ -1374,7 +1400,7 @@ function DetailSheet({
                     {showOutOfArea ? "Hide out of area" : `Show out of area · ${outOfAreaShops.length}`}
                   </button>
                 ) : null}
-                {otherShops.length ? (
+                {!lead.isTest && otherShops.length ? (
                   <button
                     type="button"
                     className={cx(styles.disclose, showAllShops && styles.discloseOn)}
@@ -1582,6 +1608,9 @@ function whereItStands(l: PlatformLeadDTO): string {
         ? `Offered to ${l.activeOffer.orgName} — attempt ${l.activeOffer.attempt} of 3, 24 hours to answer.`
         : "An offer is open.";
     case "MANUAL_QUEUE":
+      if (l.queueReason === "TEST_LEAD") {
+        return "Test lead — it never goes to the cascade. Send it to an internal organization.";
+      }
       if (l.queueReason === "NO_CANDIDATES") {
         return "No contractor covers this trade or area — send it by hand.";
       }
@@ -1758,7 +1787,12 @@ function ShopSheet({
             </Field>
             <Field label="Leads held">{shop.leadsMatched}</Field>
             <Field label="Offers">{shop.offersEnabled ? "On" : "Paused"}</Field>
+            <Field label="Service radius">{shop.radiusMi} mi</Field>
           </div>
+
+          {/* INTERNAL — JobFlex's own organization: the only kind a test lead
+              can be sent to (lib/leadCenter/testLeads). */}
+          <InternalSwitch key={shop.id} shop={shop} />
 
           {/* WHAT IS ABOUT TO HAPPEN. The confirm button says the homeowner's
               name; this says what they asked for, so the decision is made on
@@ -1781,5 +1815,213 @@ function ShopSheet({
         </>
       )}
     </Sheet>
+  );
+}
+
+/* ============================================================
+   TEST LEADS (2026-10-03) — lib/leadCenter/testLeads
+   ============================================================ */
+
+function InternalSwitch({ shop }: { shop: OrgPickDTO }) {
+  const router = useRouter();
+  const [on, setOn] = useState(shop.isInternal);
+  const [busy, setBusy] = useState(false);
+  async function flip() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await setOrganizationInternal(shop.id, !on);
+      setOn(!on);
+      toast.success(!on ? "Marked internal" : "No longer internal", !on ? `${shop.name} can receive test leads.` : `${shop.name} gets no test leads.`);
+      router.refresh();
+    } catch (err) {
+      toast.error("Couldn't change it", actionError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={styles.internalRow}>
+      <div>
+        <div className={styles.internalT}>Internal organization</div>
+        <div className={styles.internalH}>JobFlex&apos;s own. Test leads go to internal organizations only.</div>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label="Internal organization"
+        className={cx(styles.switch, on && styles.switchOn)}
+        disabled={busy}
+        onClick={() => void flip()}
+      >
+        <span />
+      </button>
+    </div>
+  );
+}
+
+function TestLeadsCard({ testLink }: { testLink: { link: string; createdAt: string } | null }) {
+  const router = useRouter();
+  const [link, setLink] = useState(testLink);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "", email: "", zip: "", description: "" });
+
+  async function rotate() {
+    if (busy) return;
+    setBusy("key");
+    try {
+      const res = await rotateLeadTestKey();
+      setLink({ link: res.link, createdAt: res.createdAt });
+      setConfirming(false);
+      toast.success(link ? "New test link" : "Test link created", link ? "The old link no longer makes test leads." : "Copy it and open it anywhere.");
+      router.refresh();
+    } catch (err) {
+      toast.error("Couldn't make the link", actionError(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function copy() {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link.link);
+      toast.success("Link copied", "Open it in any browser — no sign-in needed.");
+    } catch {
+      toast.error("Couldn't copy", "Select the link and copy it by hand.");
+    }
+  }
+
+  const formOk =
+    form.name.trim().length > 0 &&
+    /^\S+@\S+\.\S+$/.test(form.email.trim()) &&
+    /^\d{5}$/.test(form.zip.trim()) &&
+    form.description.trim().length >= 10;
+
+  async function create() {
+    if (busy || !formOk) return;
+    setBusy("lead");
+    try {
+      await createTestLead({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        zip: form.zip.trim(),
+        description: form.description.trim(),
+      });
+      toast.success("Test lead created", "It is in the queue, marked TEST — send it to an internal organization.");
+      setForm({ name: "", email: "", zip: "", description: "" });
+      router.refresh();
+    } catch (err) {
+      toast.error("Couldn't create the test lead", actionError(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  return (
+    <section className="card rv" aria-labelledby="lcTestTitle">
+      <div className="card-head">
+        <div className="card-titles">
+          <div className="card-title" id="lcTestTitle">
+            Test leads
+          </div>
+          <div className="card-sub">
+            Never cascade, internal organizations only, kept out of every number on this page.
+          </div>
+        </div>
+      </div>
+
+      <div className={styles.tlBody}>
+        {/* THE LINK — what a tester opens: the ordinary homeowner page. */}
+        <div className={styles.tlBlock}>
+          <div className={styles.tlLbl}>Test link</div>
+          {link ? (
+            <>
+              <div className={styles.tlLinkRow}>
+                <input
+                  className={styles.tlIn}
+                  readOnly
+                  value={link.link}
+                  aria-label="Test link"
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <button className={cx("btn btn-primary", ui.btnSm)} type="button" onClick={() => void copy()}>
+                  Copy link
+                </button>
+              </div>
+              <div className={styles.tlNote}>Key created {shortDate(link.createdAt)}. Requests sent through it are marked TEST.</div>
+              {confirming ? (
+                <div className={styles.tlConfirm} role="group" aria-label="Replace the test key">
+                  <span>Replace the key? The current link stops making test leads at once.</span>
+                  <button
+                    className={cx("btn", ui.btnSm, ui.btnBad, busy === "key" && ui.btnBusy)}
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => void rotate()}
+                  >
+                    {busy === "key" ? "Replacing…" : "Replace key"}
+                  </button>
+                  <button className={cx("btn btn-ghost", ui.btnSm)} type="button" disabled={busy !== null} onClick={() => setConfirming(false)}>
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button className={cx("btn btn-ghost", ui.btnSm, styles.tlGen)} type="button" onClick={() => setConfirming(true)}>
+                  Generate new key
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <div className={styles.tlNote}>No test link yet.</div>
+              <button
+                className={cx("btn btn-primary", ui.btnSm, busy === "key" && ui.btnBusy, styles.tlGen)}
+                type="button"
+                disabled={busy !== null}
+                onClick={() => void rotate()}
+              >
+                {busy === "key" ? "Creating…" : "Create test link"}
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* QUICK RUN — the same intake, without the wizard. */}
+        <div className={styles.tlBlock}>
+          <div className={styles.tlLbl}>Create test lead</div>
+          <div className={styles.tlGrid}>
+            <label className={styles.tlField}>
+              <span>Name</span>
+              <input className={styles.tlIn} value={form.name} onChange={set("name")} autoComplete="off" />
+            </label>
+            <label className={styles.tlField}>
+              <span>Email</span>
+              <input className={styles.tlIn} type="email" value={form.email} onChange={set("email")} autoComplete="off" />
+            </label>
+            <label className={styles.tlField}>
+              <span>ZIP</span>
+              <input className={styles.tlIn} inputMode="numeric" maxLength={5} value={form.zip} onChange={set("zip")} autoComplete="off" />
+            </label>
+            <label className={cx(styles.tlField, styles.tlWide)}>
+              <span>Description</span>
+              <textarea className={cx(styles.tlIn, styles.tlArea)} rows={3} value={form.description} onChange={set("description")} />
+            </label>
+          </div>
+          <button
+            className={cx("btn btn-primary", ui.btnSm, busy === "lead" && ui.btnBusy, styles.tlGen)}
+            type="button"
+            disabled={busy !== null || !formOk}
+            onClick={() => void create()}
+          >
+            {busy === "lead" ? "Creating…" : "Create test lead"}
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }

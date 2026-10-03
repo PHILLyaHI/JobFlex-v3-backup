@@ -7,6 +7,10 @@ import { offerPlatformLeadToOrg } from "@/lib/leadCenter/route";
 import { buildRanking } from "@/lib/leadCenter/matching";
 import { getRoutingMode, setRoutingMode, type RoutingMode } from "@/lib/leadCenter/routingMode";
 import { adminRefund, dollars, MAX_LEAD_PRICE_CENTS, MIN_LEAD_PRICE_CENTS } from "@/lib/leadCenter/purchase";
+import { rotateTestKey } from "@/lib/leadCenter/testLeads";
+import { createHomeownerLead } from "@/lib/leadCenter/intake";
+import { appBaseUrl } from "@/lib/appUrl";
+import { z } from "zod";
 
 // Platform-admin Lead Center controls. Manual assignment is the escape hatch
 // for MANUAL_QUEUE leads (and can override a pending offer: cancelling it
@@ -36,6 +40,8 @@ export async function manualAssignPlatformLead(
 // (LeadOffer's unique constraint / the cascade's already-offered skip).
 export async function requeuePlatformLead(platformLeadId: string): Promise<{ ok: true }> {
   await requirePlatformAdmin();
+  const pl = await db.platformLead.findUnique({ where: { id: platformLeadId }, select: { isTest: true } });
+  if (pl?.isTest) throw new Error("A test lead never goes to the cascade — send it to an internal organization.");
 
   const res = await db.platformLead.updateMany({
     where: { id: platformLeadId, status: "MANUAL_QUEUE" },
@@ -86,7 +92,8 @@ export async function routeAllWaitingLeads(): Promise<{
   await requirePlatformAdmin();
 
   const waiting = await db.platformLead.findMany({
-    where: { status: { in: ["MANUAL_QUEUE", "MATCHING"] } },
+    // Test leads are placed by hand, with internal organizations only.
+    where: { status: { in: ["MANUAL_QUEUE", "MATCHING"] }, isTest: false },
     orderBy: { createdAt: "asc" },
     take: 100,
   });
@@ -154,4 +161,39 @@ export async function refundLeadPurchase(offerId: string, reason: string): Promi
   await adminRefund(offerId, why.slice(0, 400), { id: admin.id, email: admin.email });
   revalidatePath("/admin/lead-center");
   return { ok: true };
+}
+
+// ── Test leads (2026-10-03) ────────────────────────────────────────────────
+// lib/leadCenter/testLeads has the rule. Everything here is platform-admin only.
+
+/** "Internal organization" on a shop: the only kind a test lead can be sent to. */
+export async function setOrganizationInternal(organizationId: string, isInternal: boolean): Promise<{ ok: true }> {
+  await requirePlatformAdmin();
+  await db.organization.update({ where: { id: organizationId }, data: { isInternal } });
+  revalidatePath("/admin/lead-center");
+  return { ok: true };
+}
+
+/** Create the test link, or replace its key — the old link stops working at once. */
+export async function rotateLeadTestKey(): Promise<{ ok: true; createdAt: string; link: string }> {
+  await requirePlatformAdmin();
+  const next = await rotateTestKey();
+  revalidatePath("/admin/lead-center");
+  return { ok: true, createdAt: next.createdAt, link: `${await appBaseUrl()}/homeowner?test=${next.key}` };
+}
+
+const testLeadInput = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().email().max(200),
+  zip: z.string().trim().regex(/^\d{5}$/, "A 5-digit ZIP"),
+  description: z.string().trim().min(10).max(4000),
+});
+
+/** "Create test lead" — the homeowner intake itself, marked test, no wizard. */
+export async function createTestLead(raw: unknown): Promise<{ ok: true; platformLeadId: string; statusPath: string }> {
+  await requirePlatformAdmin();
+  const data = testLeadInput.parse(raw);
+  const res = await createHomeownerLead(data, { isTest: true });
+  revalidatePath("/admin/lead-center");
+  return { ok: true, platformLeadId: res.platformLeadId, statusPath: res.statusPath };
 }

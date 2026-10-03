@@ -15,6 +15,7 @@ import { db } from "@/lib/db";
 import { buildRanking, withinServiceRadius, type Candidate } from "./matching";
 import { parseTradeTypes, orgCoversTrade, isTradeType, type TradeType } from "@/lib/tradeTypes";
 import { notifyLeadOfferCreated } from "@/lib/notify";
+import { TEST_QUEUE_REASON } from "./testLeads";
 
 export const OFFER_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_ATTEMPTS = 3;
@@ -61,6 +62,11 @@ export async function startCascade(platformLeadId: string): Promise<void> {
   // Only drive fresh/stuck leads — the cron re-drive may race a submission
   // that already progressed.
   if (!pl || pl.status !== "MATCHING") return;
+  // A test lead never reaches a shop through the cascade (lib/leadCenter/testLeads).
+  if (pl.isTest) {
+    await parkInManualQueue(platformLeadId, TEST_QUEUE_REASON, { tellHomeowner: false });
+    return;
+  }
 
   // No usable detected trade — this lead must not cascade at all (owner,
   // 2026-09-04: the AI classification is the ONLY trade source, and an
@@ -96,6 +102,11 @@ export async function advanceCascade(platformLeadId: string): Promise<void> {
   if (!pl) return;
   // Terminal states — e.g. an admin manually assigned while an offer was open.
   if (pl.status === "MATCHED" || pl.status === "MANUAL_QUEUE") return;
+  // A test lead an internal shop passed on goes back to the admin, not onward.
+  if (pl.isTest) {
+    await parkInManualQueue(platformLeadId, TEST_QUEUE_REASON, { tellHomeowner: false });
+    return;
+  }
 
   if (pl.attemptCount >= MAX_ATTEMPTS) {
     // The real EXHAUSTED: three shops were asked and none took it.

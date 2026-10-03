@@ -52,7 +52,7 @@ import { needsAddressFor } from "@/lib/leadRules";
 /** The street address is CONTACT_FIELDS[4]; required only when lib/leadRules says the job is measured at the property. */
 const ADDRESS_FIELD = 4;
 import { submitHomeownerRequest, suggestHomeownerQuestions, suggestHomeownerScope } from "@/actions/homeowner";
-import { prefersReducedMotion, referralCodeFromUrl } from "../homeowner-landing/use-homeowner-behavior";
+import { prefersReducedMotion, referralCodeFromUrl, testKeyFromUrl } from "../homeowner-landing/use-homeowner-behavior";
 import { usePlaceholderCycle } from "../homeowner-landing/wizard/use-placeholder-cycle";
 
 type Upload = { name: string; kind: "pdf" | "photo"; progress: number };
@@ -200,6 +200,11 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
     [bump]
   );
 
+  // A tester's ?test=<key> is read now and held for the whole walk.
+  useEffect(() => {
+    testKeyFromUrl();
+  }, []);
+
   /* ── teardown: nothing outlives the page ───────────────────────────── */
   useEffect(() => {
     return () => {
@@ -327,6 +332,8 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         description,
         // A shared link's ?ref=CODE — recorded as a referral conversion.
         referralCode: referralCodeFromUrl(),
+        // A tester's ?test=<key>, held since the first render (lib/leadCenter/testLeads).
+        testKey: testKeyFromUrl(),
       });
       if (!res.ok) {
         setSendErr(res.error);

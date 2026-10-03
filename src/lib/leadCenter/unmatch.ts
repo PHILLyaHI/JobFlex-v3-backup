@@ -192,6 +192,15 @@ export async function routeToNextBest(platformLeadId: string): Promise<boolean> 
     include: { offers: { select: { organizationId: true } } },
   });
   if (!pl) return false;
+  // A test lead never goes on to a real shop (lib/leadCenter/testLeads).
+  if (pl.isTest) {
+    const { TEST_QUEUE_REASON } = await import("./testLeads");
+    await db.platformLead.update({
+      where: { id: platformLeadId },
+      data: { status: "MANUAL_QUEUE", queueReason: TEST_QUEUE_REASON },
+    });
+    return false;
+  }
   const seen = new Set(pl.offers.map((o) => o.organizationId));
   const ranking = await buildRanking(pl);
   const next = ranking.find((c) => !seen.has(c.orgId));

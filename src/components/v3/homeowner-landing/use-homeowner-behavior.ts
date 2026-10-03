@@ -40,6 +40,20 @@ export function referralCodeFromUrl(): string | undefined {
   return new URLSearchParams(window.location.search).get("ref")?.trim() || undefined;
 }
 
+/** The test key a tester's link carried (`/homeowner?test=<key>`,
+ *  lib/leadCenter/testLeads). Read once, at the wizard's first render, and held
+ *  for the whole walk — whatever happens to the address bar on the way — then
+ *  sent with the request. The page never shows it or reacts to it; the server
+ *  alone decides whether it is the current key. */
+let heldTestKey: string | null | undefined;
+export function testKeyFromUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  if (heldTestKey === undefined) {
+    heldTestKey = new URLSearchParams(window.location.search).get("test")?.trim() || null;
+  }
+  return heldTestKey ?? undefined;
+}
+
 function subscribeReducedMotion(onChange: () => void) {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
   const mq = window.matchMedia(REDUCED_QUERY);

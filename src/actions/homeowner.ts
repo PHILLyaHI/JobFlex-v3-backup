@@ -1,11 +1,7 @@
 "use server";
-import { randomBytes } from "crypto";
 import { z } from "zod";
-import { db } from "@/lib/db";
-import { detectTrade, routeDecision } from "@/lib/ai/detectTrade";
-import { geocodeAddress } from "@/lib/maps";
-import { startCascade } from "@/lib/leadCenter/cascade";
-import { getRoutingMode, MANUAL_MODE_REASON } from "@/lib/leadCenter/routingMode";
+import { createHomeownerLead } from "@/lib/leadCenter/intake";
+import { isValidTestKey } from "@/lib/leadCenter/testLeads";
 import { suggestIntakeQuestions, type IntakeQuestion } from "@/lib/ai/homeownerQuestions";
 import { enforceRateLimit, clientIp, rateLimitShared, MINUTE } from "@/lib/rateLimit";
 import { needsAddressFor, writeProfessionalScope } from "@/lib/leadScope";
@@ -23,54 +19,10 @@ const homeownerSchema = z.object({
   referralCode: z.string().optional(),
   /** The scope the wizard wrote and the homeowner approved (suggestHomeownerScope); stored as is. */
   scope: z.string().trim().max(3000).optional(),
+  /** /homeowner?test=<key> (lib/leadCenter/testLeads). Never echoed back. */
+  testKey: z.string().max(200).optional(),
 });
 
-// Reuse a prior geocode for the SAME address instead of paying Google again.
-// Public-intake addresses are almost always unique, so this only saves the
-// occasional duplicate submission — but a redundant paid call is cheap to avoid.
-// Best-effort: only reuses when a real street line is present (a zip-only match
-// could reuse a coarse/wrong pin) and a prior lead already has coordinates; any
-// miss or error falls through to a live geocode. Matched on the street line and
-// the ZIP — the city and the state on a stored lead are the geocoder's, not
-// what was typed, so they cannot be part of the key. Exact match — case and
-// whitespace variants won't dedup (that would need a normalized column, i.e. a
-// schema change, which we're not making here).
-type Geo = { lat: number; lng: number; city?: string | null; state?: string | null };
-async function geocodeOrReuse(parts: {
-  address?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip?: string | null;
-}): Promise<Geo | null> {
-  const street = parts.address?.trim();
-  if (street) {
-    try {
-      const prior = await db.platformLead.findFirst({
-        where: {
-          address: parts.address ?? null,
-          zip: parts.zip ?? null,
-          lat: { not: null },
-          lng: { not: null },
-        },
-        select: { lat: true, lng: true, city: true, state: true },
-        orderBy: { createdAt: "desc" },
-      });
-      if (prior?.lat != null && prior?.lng != null) {
-        return { lat: prior.lat, lng: prior.lng, city: prior.city, state: prior.state };
-      }
-    } catch {
-      // Reuse lookup is best-effort — fall through to a live geocode on any error.
-    }
-  }
-  return geocodeAddress(parts);
-}
-
-// Public intake → Lead Center. A submission becomes a platform-owned
-// PlatformLead that the cascade engine routes to the best-matching org (the
-// org-scoped Lead row is created only when a contractor accepts). Everything
-// after the two inserts is best-effort: AI, geocoding, matching, and email can
-// all fail without losing the homeowner's request — the cron sweep re-drives
-// leads stuck in MATCHING.
 export async function submitHomeownerRequest(raw: unknown) {
   const data = homeownerSchema.parse(raw);
   // Public, unauthenticated, and expensive downstream (AI, geocode, email, SMS
@@ -89,118 +41,12 @@ export async function submitHomeownerRequest(raw: unknown) {
     };
   }
 
-  const req = await db.homeownerRequest.create({
-    data: {
-      name: data.name,
-      email: data.email,
-      phone: data.phone,
-      address: data.address,
-      zip: data.zip,
-      projectType: data.projectType,
-      description: data.description,
-    },
-  });
-
-  // The description is the ONE trade source (owner, 2026-09-04) — the wizards
-  // no longer carry a specialty picker. `projectType` stays accepted in the
-  // schema for older clients but is only context, never the classification.
-  const [detected, geo, scope] = await Promise.all([
-    detectTrade(`${data.projectType ?? ""}\n${data.description}`).catch(() => null),
-    geocodeOrReuse({
-      address: data.address,
-      city: data.city,
-      state: data.state,
-      zip: data.zip,
-    }).catch(() => null),
-    // The scope the homeowner approved in the wizard, else written now from
-    // the words and the answers.
-    data.scope && data.scope.length >= 20
-      ? Promise.resolve(data.scope)
-      : writeProfessionalScope({ description: data.description, address: data.address, projectType: data.projectType }),
-  ]);
-
-  const platformLead = await db.platformLead.create({
-    data: {
-      homeownerRequestId: req.id,
-      // Capability token for the status page (/request/[token]): the link in
-      // the confirmation email IS the authorization — same pattern as the
-      // admin cookie's HMAC. 144 bits, URL-safe.
-      accessToken: randomBytes(18).toString("base64url"),
-      name: data.name,
-      email: data.email,
-      phone: data.phone,
-      address: data.address,
-      // The wizard asks for a street and a ZIP; the city and the state come
-      // from the geocode of those (owner, 2026-10-02). What a caller sent
-      // itself wins; a failed geocode leaves them empty and the request goes.
-      city: data.city?.trim() || geo?.city || null,
-      state: data.state?.trim() || geo?.state || null,
-      zip: data.zip,
-      lat: geo?.lat ?? null,
-      lng: geo?.lng ?? null,
-      projectType: data.projectType,
-      description: data.description,
-      // The scope a contractor prices from (lib/leadScope); null when the
-      // model is off or failed, and the lead carries the homeowner's words.
-      scope,
-      detectedTrade: detected?.trade ?? null,
-      aiConfidence: detected?.confidence ?? null,
-    },
-  });
-
-  // Routing. Three gates, in order:
-  //   1. platform MANUAL mode parks everything (lib/leadCenter/routingMode);
-  //   2. an unavailable or unsure detector parks THIS lead (routeDecision) —
-  //      the request is never lost and never sent to a random trade, and the
-  //      homeowner still gets the ordinary "request received";
-  //   3. a confident classification starts the cascade as before.
-  try {
-    const decision = routeDecision(detected);
-    if ((await getRoutingMode()) === "MANUAL") {
-      await db.platformLead.update({
-        where: { id: platformLead.id },
-        data: { status: "MANUAL_QUEUE", queueReason: MANUAL_MODE_REASON },
-      });
-    } else if (decision.route === "MANUAL_QUEUE") {
-      await db.platformLead.update({
-        where: { id: platformLead.id },
-        // queueReason is a free string column; the honest cause plus the
-        // model's one-liner is what the admin placing it by hand needs.
-        data: {
-          status: "MANUAL_QUEUE",
-          queueReason: `${decision.queueReason}: ${decision.note}`.slice(0, 250),
-        },
-      });
-    } else {
-      await startCascade(platformLead.id);
-    }
-  } catch (err) {
-    console.warn("[homeowner] cascade failed — cron will re-drive:", err);
-  }
-
-  try {
-    const { notifyHomeownerRequestReceived } = await import("@/lib/notify");
-    await notifyHomeownerRequestReceived(platformLead.id);
-  } catch (err) {
-    console.warn("[homeowner] confirmation notify failed:", err);
-  }
-
-  // Record referral conversion if a valid ref code accompanied the submission
-  if (data.referralCode) {
-    try {
-      const { recordReferralConversion } = await import("@/lib/referralConversion");
-      await recordReferralConversion(data.referralCode, data.email);
-    } catch (err) {
-      console.warn("[homeowner] referral tracking failed:", err);
-    }
-  }
-
-  return {
-    ok: true as const,
-    platformLeadId: platformLead.id,
-    /** The homeowner's status page — the wizard's Done screen links it. */
-    statusPath: `/request/${platformLead.accessToken}`,
-  };
+  // A valid ?test=<key> (lib/leadCenter/testLeads) makes this a test lead; a
+  // wrong or empty key is simply an ordinary request.
+  const isTest = data.testKey ? await isValidTestKey(data.testKey) : false;
+  const { testKey: _testKey, ...intake } = data;
+  void _testKey;
+  return createHomeownerLead(intake, { isTest });
 }
 
 // ── Adaptive clarify questions ─────────────────────────────────────────────

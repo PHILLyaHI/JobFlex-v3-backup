@@ -32,13 +32,17 @@ export async function offerPlatformLeadToOrg(
 ): Promise<{ offerId: string }> {
   const org = await db.organization.findUnique({
     where: { id: organizationId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, isInternal: true },
   });
   if (!org) throw new Error("Organization not found");
 
   const before = await db.platformLead.findUnique({ where: { id: platformLeadId } });
   if (!before) throw new Error("Lead not found");
   if (before.status === "MATCHED") throw new Error("This lead was already matched.");
+  // A test lead reaches JobFlex's own organizations only (lib/leadCenter/testLeads).
+  if (before.isTest && !org.isInternal) {
+    throw new Error("A test lead goes only to an internal organization.");
+  }
 
   // The shop's score as the cascade would compute it — trade filter off, since
   // a person may send a lead outside a shop's listed trades. A shop with no
