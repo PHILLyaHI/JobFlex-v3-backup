@@ -5,8 +5,9 @@
 //
 //   npx tsx scripts/qa/lead-reroute-test.ts
 //
-// Covered, mirroring the owner's rules:
-//   1. 24h cooldown helper — locked before, open after (rule #1)
+// Covered, mirroring the owner's rules (no waiting period since 2026-10-02 —
+// "the client can request another contractor at any time" — so every lead
+// here is matched a moment before the client un-matches it):
 //   2. client rejection spends a cascade attempt; at MAX_ATTEMPTS the lead
 //      parks in MANUAL_QUEUE, never re-offers (rule #2, #3 empty pool)
 //   3. the shop's Lead row is marked LOST, not deleted (rule #5)
@@ -30,11 +31,7 @@ for (const file of [".env", ".env.local"]) {
 }
 
 import { PrismaClient } from "@prisma/client";
-import {
-  CLIENT_REROUTE_COOLDOWN_MS,
-  clientRerouteUnlocksAt,
-  unmatchAndAdvance,
-} from "../../src/lib/leadCenter/unmatch";
+import { unmatchAndAdvance } from "../../src/lib/leadCenter/unmatch";
 import { MAX_ATTEMPTS } from "../../src/lib/leadCenter/cascade";
 import { getRoutingMode, setRoutingMode, type RoutingMode } from "../../src/lib/leadCenter/routingMode";
 
@@ -86,7 +83,7 @@ async function makeMatchedLead(orgId: string, opts?: { attemptCount?: number; ra
       status: "MATCHED",
       matchedOrgId: orgId,
       matchedLeadId: lead.id,
-      matchedAt: new Date(Date.now() - CLIENT_REROUTE_COOLDOWN_MS - 1000),
+      matchedAt: new Date(),
       attemptCount: opts?.attemptCount ?? 1,
       rankingJson: JSON.stringify(opts?.ranking ?? []),
       offers: {
@@ -124,17 +121,6 @@ async function main() {
   await cleanup(); // stale rows from an aborted previous run
   MODE_BEFORE = await getRoutingMode();
   await setRoutingMode("AUTO");
-
-  // ── 1 · cooldown helper ────────────────────────────────────────────────────
-  console.log("\n24h cooldown (rule #1):");
-  const justMatched = new Date();
-  const dayAgo = new Date(Date.now() - CLIENT_REROUTE_COOLDOWN_MS - 1);
-  check(
-    "заперто сразу после match",
-    clientRerouteUnlocksAt(justMatched)!.getTime() > Date.now(),
-  );
-  check("открыто спустя 24ч", clientRerouteUnlocksAt(dayAgo)!.getTime() <= Date.now());
-  check("нет матча — нет замка", clientRerouteUnlocksAt(null) === null);
 
   // ── 2 · LOST + exclusion + advance to next candidate ──────────────────────
   console.log("\nклиентский отказ: LOST, исключение, следующий кандидат:");
