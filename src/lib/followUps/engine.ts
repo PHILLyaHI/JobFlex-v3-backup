@@ -8,7 +8,8 @@ import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendOrgEmail } from "@/lib/email/orgSend";
 import { renderEmail } from "@/lib/email/renderEmail";
-import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
+import { isTwilioEnabled } from "@/lib/sdk/twilio";
+import { sendText } from "@/lib/sms/send";
 import {
   delayLabel,
   encodeDispatch,
@@ -137,9 +138,12 @@ export async function dispatchOne(id: string): Promise<boolean> {
     const canText = channel === "TEXT" && await isTwilioEnabled() && Boolean(proposal.client?.phone) && !(await trialBlocksText(proposal.organizationId, "follow-up"));
 
     if (canText && proposal.client?.phone) {
-      const res = await sendSMS(proposal.client.phone, followUpSmsText(trigger ?? "SENT", ctx));
-      if (!res.skipped) outcome = { kind: "TEXT", to: proposal.client.phone };
-    } else if (proposal.client?.email) {
+      // From the company's own number to a client who said yes; a text that
+      // cannot leave falls back to the email below (lib/sms/send, 2026-10-02).
+      const res = await sendText({ organizationId: proposal.organizationId, to: proposal.client.phone, body: followUpSmsText(trigger ?? "SENT", ctx), kind: "follow-up" });
+      if (res.ok && res.status !== "SKIPPED") outcome = { kind: "TEXT", to: proposal.client.phone };
+    }
+    if (!outcome && proposal.client?.email) {
       const { subject: subj, html } = renderEmail(followUpEmailDoc(trigger ?? "SENT", ctx));
       // Sends via the org's connected Gmail when opted in, else Resend/SMTP with
       // the contractor as reply-to.

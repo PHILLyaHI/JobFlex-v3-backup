@@ -14,7 +14,8 @@ import { textOffice } from "@/lib/sms/send";
 import { fireTextRules, jobContext, proposalContext } from "@/lib/sms/rulesEngine";
 import { money } from "@/lib/sms/format";
 import { changeOrderLine } from "@/lib/sms/format";
-import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
+import { isTwilioEnabled } from "@/lib/sdk/twilio";
+import { sendText } from "@/lib/sms/send";
 import { toE164 } from "@/lib/phone";
 import { contractTotal, type ContractCo } from "@/lib/contractTotal";
 import { parseCoLines, parseCoPhotos } from "./parse";
@@ -102,8 +103,9 @@ export async function sendChangeOrderToClient(coId: string): Promise<SendReport>
       try {
         const amount = co.total ?? co.amount;
         const body = `${co.organization.name}: a change order${co.number ? ` #${co.number}` : ""} for ${contextTitle} needs your approval — ${co.title}, ${amount >= 0 ? "+" : "−"}$${Math.abs(amount).toLocaleString("en-US", { maximumFractionDigits: 2 })}. Review and approve: ${href}`;
-        await sendSMS(phone, body);
-        report.sms = "sent";
+        // From the company's own number to a client who said yes (lib/sms/send, 2026-10-02).
+        const sent = await sendText({ organizationId: co.organizationId, to: phone, body, kind: "change-order" });
+        report.sms = !sent.ok ? "failed" : sent.status === "SKIPPED" ? "disabled" : "sent";
       } catch (err) {
         console.warn("[changeOrders] sms failed:", err);
         report.sms = "failed";

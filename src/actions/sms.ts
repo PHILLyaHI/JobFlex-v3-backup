@@ -15,12 +15,13 @@ import { requireManager, requireOrg } from "@/lib/orgContext";
 import { toE164 } from "@/lib/phone";
 import { enforceRateLimit, HOUR, RateLimitError } from "@/lib/rateLimit";
 import { isTwilioEnabled } from "@/lib/sdk/twilio";
-import { testText, verifyText, welcomeText } from "@/lib/sms/format";
+import { leadTextsOnText, testText, welcomeText } from "@/lib/sms/format";
+import { checkVerifyCode, sendVerifyCode } from "@/lib/sms/verify";
 import { sendText, TRIAL_TEXT_MESSAGE } from "@/lib/sms/send";
-import { claimNumberFor, releaseNumberFor } from "@/lib/sms/numbers";
+import { refreshRegistration, releaseRegistration, submitRegistration } from "@/lib/sms/registration";
+import type { SmsRegistrationDetails } from "@/lib/sms/registrationShared";
 import { SMS_GROUPS, audienceForRole, parseNotificationPrefs, textEventsFor, type PrefCells, type PrefKey, type SmsGroupKey } from "@/lib/notificationPrefsShared";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
-import { takeTrialCap } from "@/lib/trialMeter";
 
 const OFFICE_ROLES = ["OWNER", "ADMIN", "MANAGER"];
 
@@ -28,6 +29,8 @@ const SETTINGS_PATH = "/dashboard/settings";
 const CODE_TTL_MS = 10 * 60_000;
 const MAX_ATTEMPTS = 5;
 const MAX_EXTRA_NUMBERS = 10;
+/** In PhoneVerification.codeHash: Twilio Verify holds this code (lib/sms/verify). */
+const VERIFY_HELD = "verify";
 
 export type SmsActionResult = { ok: true; note?: string } | { ok: false; error: string };
 
@@ -43,7 +46,7 @@ function pretty(e164: string): string {
 
 /** Step one: text a code to the number the member typed. */
 export async function startPhoneVerification(raw: string): Promise<SmsActionResult> {
-  const { organizationId, user } = await requireOrg();
+  const { user } = await requireOrg();
   const phone = toE164(raw);
   if (!phone) return { ok: false, error: "That doesn't look like a US or Canadian mobile number." };
   try {
@@ -55,20 +58,22 @@ export async function startPhoneVerification(raw: string): Promise<SmsActionResu
   if (await db.smsOptOut.findUnique({ where: { phone }, select: { phone: true } })) {
     return { ok: false, error: `${pretty(phone)} replied STOP to JobFlex texts. Text START to our number from that phone first.` };
   }
-  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  // The code goes through Twilio Verify (2026-10-02, lib/sms/verify): JobFlex
+  // has no registered number of its own. The row only remembers which phone
+  // is being verified; Twilio holds the code ("verify" in place of a hash).
   await db.phoneVerification.deleteMany({ where: { userId: user.id } });
-  await db.phoneVerification.create({
-    data: { userId: user.id, phone, codeHash: hashCode(code, user.id), expiresAt: new Date(Date.now() + CODE_TTL_MS) },
-  });
-  const r = await sendText({ organizationId, to: phone, body: verifyText(code), kind: "verify" });
-  if (r.ok && r.status === "SKIPPED") {
-    // Texting is not configured on this server (the local stand): the code
-    // is in the server log, and only there, so the flow can still be walked.
-    if (process.env.NODE_ENV !== "production") console.info(`[sms] verification code for …${phone.slice(-4)}: ${code}`);
-    return { ok: true, note: "Texting is not set up on this server — the code is in the server log." };
+  const sent = await sendVerifyCode(phone);
+  if (sent.ok) {
+    await db.phoneVerification.create({ data: { userId: user.id, phone, codeHash: VERIFY_HELD, expiresAt: new Date(Date.now() + CODE_TTL_MS) } });
+    return { ok: true, note: `Code sent to ${pretty(phone)}.` };
   }
-  if (!r.ok) return { ok: false, error: r.reason === "opted-out" ? "That number has opted out of JobFlex texts." : "Couldn't send the code. Check the number and try again." };
-  return { ok: true, note: `Code sent to ${pretty(phone)}.` };
+  if (!sent.notConfigured) return { ok: false, error: `Couldn't send the code: ${sent.error}` };
+  // Texting is not configured on this server (the local stand): our own code,
+  // in the server log and only there, so the flow can still be walked.
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  await db.phoneVerification.create({ data: { userId: user.id, phone, codeHash: hashCode(code, user.id), expiresAt: new Date(Date.now() + CODE_TTL_MS) } });
+  if (process.env.NODE_ENV !== "production") console.info(`[sms] verification code for …${phone.slice(-4)}: ${code}`);
+  return { ok: true, note: "Texting is not set up on this server — the code is in the server log." };
 }
 
 /** Step two: the code came back — the number is verified, and that is the opt-in. */
@@ -86,7 +91,15 @@ export async function confirmPhoneVerification(rawCode: string): Promise<SmsActi
     await db.phoneVerification.delete({ where: { id: v.id } }).catch(() => null);
     return { ok: false, error: "Too many tries. Ask for a new code." };
   }
-  if (v.codeHash !== hashCode(code, user.id)) {
+  let matched: boolean;
+  if (v.codeHash === VERIFY_HELD) {
+    const check = await checkVerifyCode(v.phone, code);
+    if (!check.ok) return { ok: false, error: check.error };
+    matched = check.approved;
+  } else {
+    matched = v.codeHash === hashCode(code, user.id);
+  }
+  if (!matched) {
     await db.phoneVerification.update({ where: { id: v.id }, data: { attempts: { increment: 1 } } });
     return { ok: false, error: `That's not the code. ${MAX_ATTEMPTS - v.attempts - 1} tries left.` };
   }
@@ -163,23 +176,61 @@ export async function setClientTextsOn(on: boolean): Promise<SmsActionResult> {
   return { ok: true, note: on ? "Clients get the proposal link and a reminder the evening before a visit." : "Clients are not texted." };
 }
 
-/** "Get your own number": a local number in the company's area code, kept on the company. */
-export async function claimOwnNumber(): Promise<SmsActionResult> {
-  const { organizationId } = await requireManager();
-  // A number is a monthly charge: the card-less trial's own ceiling (lib/trialMeter).
-  const trial = await takeTrialCap(organizationId, "phoneNumbers");
-  if (!trial.ok) return trial.failure;
-  const r = await claimNumberFor(organizationId);
-  if (!r.ok) await trial.refund();
+/**
+ * "Get your texting number" (2026-10-02, lib/sms/registration): a toll-free
+ * number bought on JobFlex's account and registered with Twilio in the
+ * company's name. Paid plans only; JobFlex pays for it. It starts sending once
+ * Twilio approves the business.
+ */
+export async function submitSmsRegistration(details: SmsRegistrationDetails): Promise<SmsActionResult> {
+  const { organizationId, user } = await requireManager();
+  const r = await submitRegistration(organizationId, user.id, details);
   revalidatePath(SETTINGS_PATH);
-  return r.ok ? { ok: true, note: `${pretty(r.number)} is yours — your texts show it, and replies to it come straight to you.` } : { ok: false, error: r.error };
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, note: r.state.stage === "approved" ? `${pretty(r.state.number ?? "")} is approved and sending.` : `${pretty(r.state.number ?? "")} is yours. Twilio is checking your business now; texts start when it approves.` };
 }
 
-export async function releaseOwnNumber(): Promise<SmsActionResult> {
-  const { organizationId } = await requireManager();
-  const r = await releaseNumberFor(organizationId);
+/**
+ * "Lead texts from JobFlex" (2026-10-02): JobFlex texts the company phone when
+ * a lead is reserved for it — the opt-in the JobFlex number is registered on.
+ * Only the one key changes in the stored leads settings; turning it on sends
+ * the confirmation with the STOP and HELP words.
+ */
+export async function setLeadTexts(on: boolean): Promise<SmsActionResult> {
+  const { organizationId, user } = await requireManager();
+  const org = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true, phone: true, leadsSettingsJson: true } });
+  if (!org) return { ok: false, error: "Not found." };
+  const phone = toE164(org.phone ?? "");
+  if (on && !phone) return { ok: false, error: "Add the company phone (a US number that takes texts) in Company settings first." };
+  let stored: Record<string, unknown> = {};
+  try {
+    const v: unknown = JSON.parse(org.leadsSettingsJson || "{}");
+    if (v && typeof v === "object" && !Array.isArray(v)) stored = v as Record<string, unknown>;
+  } catch {
+    /* unreadable settings: start from nothing but this key */
+  }
+  await db.organization.update({ where: { id: organizationId }, data: { leadsSettingsJson: JSON.stringify({ ...stored, instantSms: on }) } });
+  await logActivity({ organizationId, actorId: user.id, kind: TRAIL_KINDS.SETTINGS, summary: on ? "Turned on JobFlex's lead texts to the company phone" : "Turned off JobFlex's lead texts" });
+  if (on && phone) await sendText({ organizationId: null, to: phone, body: leadTextsOnText(org.name), kind: "jobflex-lead-texts-on" });
   revalidatePath(SETTINGS_PATH);
-  return r.ok ? { ok: true, note: `${pretty(r.number)} released. Texts go from the JobFlex number again.` } : { ok: false, error: r.error };
+  return { ok: true, note: on ? "Lead texts are on. JobFlex texts the company phone when a lead is reserved for you." : "Lead texts are off." };
+}
+
+/** Ask Twilio now instead of waiting for the hourly check. */
+export async function checkSmsRegistration(): Promise<SmsActionResult> {
+  const { organizationId } = await requireManager();
+  const s = await refreshRegistration(organizationId, true);
+  revalidatePath(SETTINGS_PATH);
+  if (s.stage === "approved") return { ok: true, note: "Approved — your texts go out from your own number." };
+  if (s.stage === "rejected") return { ok: true, note: "Twilio sent it back — see what it asks below." };
+  return { ok: true, note: "Still with Twilio. It usually answers within a few days." };
+}
+
+export async function releaseSmsNumber(): Promise<SmsActionResult> {
+  const { organizationId, user } = await requireManager();
+  const r = await releaseRegistration(organizationId, user.id);
+  revalidatePath(SETTINGS_PATH);
+  return r.ok ? { ok: true, note: "Number released. Texts wait until you get a new one; your team gets its alerts by email and in the app." } : { ok: false, error: r.error };
 }
 
 /**

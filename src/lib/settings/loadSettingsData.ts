@@ -28,6 +28,7 @@ import { getOrgPlanContext } from "@/lib/planCatalogServer";
 import { getOrgLimitUsage } from "@/lib/limitsEngine";
 import { GMAIL_SCOPES, isGmailOAuthConfigured } from "@/lib/sdk/gmail";
 import { isStripeConnectConfigured } from "@/lib/sdk/integrations";
+import type { SmsRegistrationView } from "@/lib/sms/registrationShared";
 import { isSecretBoxConfigured } from "@/lib/crypto/secretBox";
 import { metaAllowed } from "@/lib/meta/graph";
 import { metaConnectionView } from "@/lib/meta/connections";
@@ -257,6 +258,8 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
     canManage: ["OWNER", "ADMIN", "MANAGER"].includes(role),
     clientsOn: true,
     ownNumber: null,
+    registration: null,
+    leadTexts: { on: false, phone: null },
     roster: [],
     rules: [],
     companyName: "",
@@ -265,7 +268,7 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
     const monthStart = new Date();
     monthStart.setUTCDate(1);
     monthStart.setUTCHours(0, 0, 0, 0);
-    const orgSms = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true, smsClientsOn: true, smsFromNumber: true } });
+    const orgSms = await db.organization.findUnique({ where: { id: organizationId }, select: { name: true, smsClientsOn: true, smsFromNumber: true, phone: true, leadsSettingsJson: true } });
     // Who gets texted (2026-09-29): every member who can be — the office,
     // sales and estimators, the crew — with their mobile, whether they typed
     // it themselves or the office did, and their own Text switches.
@@ -320,6 +323,8 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
       monthCount,
       clientsOn: orgSms?.smsClientsOn ?? true,
       ownNumber: orgSms?.smsFromNumber ? prettyPhone(orgSms.smsFromNumber) : null,
+      registration: base.canManage ? await loadRegistrationView(organizationId, myUserId) : null,
+      leadTexts: { on: leadTextsOn(orgSms?.leadsSettingsJson), phone: orgSms?.phone?.trim() || null },
       roster,
       companyName: orgSms?.name ?? "",
       rules: ruleRows.map((r) => {
@@ -335,5 +340,45 @@ async function loadSmsSettings(organizationId: string, smsPhone: string | null, 
     };
   } catch {
     return base;
+  }
+}
+
+/** JobFlex's lead texts are on only when the company turned them on (instantSms, stored true). */
+function leadTextsOn(json: string | null | undefined): boolean {
+  try {
+    return (JSON.parse(json || "{}") as { instantSms?: unknown }).instantSms === true;
+  } catch {
+    return false;
+  }
+}
+
+/** The company's own texting number (2026-10-02, lib/sms/registration): its state in words, the form prefilled. */
+async function loadRegistrationView(organizationId: string, myUserId: string | null): Promise<SmsRegistrationView | null> {
+  try {
+    const { companyIsPaying, refreshRegistration } = await import("@/lib/sms/registration");
+    const { prefillDetails } = await import("@/lib/sms/registrationShared");
+    const [state, paying, org, me] = await Promise.all([
+      refreshRegistration(organizationId),
+      companyIsPaying(organizationId),
+      db.organization.findUnique({ where: { id: organizationId }, select: { name: true, website: true, address: true, phone: true, slug: true, smsFromNumber: true } }),
+      myUserId ? db.user.findUnique({ where: { id: myUserId }, select: { name: true, email: true } }) : Promise.resolve(null),
+    ]);
+    if (!org) return null;
+    // A number from the old instant button: on the company, never registered.
+    const legacy = state.stage === "none" && Boolean(org.smsFromNumber);
+    const canEdit = state.stage === "rejected" && state.editAllowed !== false && (!state.editUntil || Date.parse(state.editUntil) > Date.now());
+    return {
+      stage: state.stage,
+      number: state.number ? prettyPhone(state.number) : legacy && org.smsFromNumber ? prettyPhone(org.smsFromNumber) : null,
+      reasons: (state.reasons ?? []).map((r) => (r.code ? `${r.reason} (${r.code})` : r.reason)),
+      editUntil: state.editUntil ?? null,
+      canEdit,
+      error: state.error ?? null,
+      paying,
+      legacy,
+      details: state.details ?? prefillDetails(org, { name: me?.name ?? null, email: me?.email ?? null }),
+    };
+  } catch {
+    return null;
   }
 }

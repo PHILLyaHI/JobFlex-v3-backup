@@ -3,8 +3,8 @@
 // A text is read on a phone in a truck: one glance, 160 characters if it
 // can be, two segments at most. Every builder here starts with the
 // company's name, says one thing, and ends with a link only when a tap is the
-// next step. Sent from JobFlex's shared number, a text names JobFlex first
-// (asSharedSender, below).
+// next step. Every text leaves from the company's own registered number
+// (registration.ts); JobFlex's own codes go through Twilio Verify (verify.ts).
 
 /** Two segments. Past this a text splits into three and reads as a wall. */
 export const SMS_MAX = 320;
@@ -27,33 +27,6 @@ export function brand(org: string | null | undefined, text: string): string {
 export function unbrand(org: string | null | undefined, text: string): string {
   const name = (org ?? "").replace(/\s+/g, " ").trim();
   return name && text.startsWith(`${name}: `) ? text.slice(name.length + 2) : text;
-}
-
-// ── JobFlex's shared number (2026-10-02) ─────────────────────────────────
-// Twilio verifies a toll-free number for ONE business: the one the person
-// being texted signed up with. The shared number was rejected (30474) while
-// it spoke as every contractor, so it now carries only JobFlex's own texts to
-// people who turned texts on for themselves, and names JobFlex first:
-// "JobFlex (Ridgeline Roofing): New lead: …". A company's own number keeps
-// the company's name alone.
-
-/** A text as it leaves the shared number: JobFlex first, the company after. */
-export function asSharedSender(org: string | null | undefined, text: string): string {
-  const t = text.replace(/\s+/g, " ").trim();
-  if (/^JobFlex\b/.test(t)) return clip(t);
-  const name = (org ?? "").replace(/\s+/g, " ").trim();
-  if (name && t.startsWith(name)) return clip(`JobFlex (${name})${t.slice(name.length)}`);
-  return clip(`JobFlex: ${t}`);
-}
-
-/** May the shared number send this text? The code a person asked for, or a
- *  text to a member who set their own mobile. Never a mobile the office typed
- *  in for someone, a crew phone, a client or an extra number, and never a
- *  company's own text rule: JobFlex writes everything the shared number says. */
-export function sharedNumberMay(kind: string, setByThemselves: boolean): boolean {
-  if (kind === "verify") return true;
-  if (kind.startsWith("rule:")) return false;
-  return setByThemselves;
 }
 
 /** Links out of a text before it is logged anywhere a person can read. */
@@ -177,7 +150,20 @@ export function verifyText(code: string): string {
 }
 
 export function helpText(): string {
-  return "JobFlex texts: the job alerts you turned on in JobFlex. Reply STOP to opt out. Questions: support@jobflex.app";
+  return "JobFlex: lead alerts you turned on in your JobFlex settings. Reply STOP to opt out. Questions: support@jobflex.app";
+}
+
+/** The confirmation when a company turns on JobFlex's lead texts (2026-10-02). */
+export function leadTextsOnText(org: string | null): string {
+  const name = (org ?? "").replace(/\s+/g, " ").trim();
+  return clip(`JobFlex: lead texts are on${name ? ` for ${name}` : ""}. We text this phone when a lead is reserved for you. Msg & data rates may apply. Reply STOP to opt out, HELP for help.`);
+}
+
+/** HELP on a company's own number (2026-10-02): the company answers, with a way to reach it. */
+export function companyHelpText(org: string | null, phone: string | null): string {
+  const d = (phone ?? "").replace(/\D/g, "").replace(/^1(\d{10})$/, "$1");
+  const call = d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : "support@jobflex.app";
+  return brand(org, `texts about your visits and estimates. Reply STOP to opt out. Questions: ${call}`);
 }
 
 export function testText(org: string | null): string {

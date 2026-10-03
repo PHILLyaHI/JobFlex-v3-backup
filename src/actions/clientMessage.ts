@@ -24,7 +24,8 @@
 import { db } from "@/lib/db";
 import { requireSalesOrManager } from "@/lib/orgContext";
 import { sendOrgEmail } from "@/lib/email/orgSend";
-import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
+import { isTwilioEnabled } from "@/lib/sdk/twilio";
+import { sendText } from "@/lib/sms/send";
 import { parseGmailSettings } from "@/lib/settings";
 import { enforceTrialCap } from "@/lib/trialMeter";
 
@@ -111,7 +112,7 @@ export async function messageClient(input: {
 
   let to: string;
   // `delivered` is false when the transport is switched off in this
-  // environment. sendSMS() logs and returns `skipped` rather than throwing, so
+  // environment. sendText() returns SKIPPED rather than throwing, so
   // without this the UI would report a send that only happened in a console.
   let delivered = true;
 
@@ -132,8 +133,12 @@ export async function messageClient(input: {
     // redirects to the trial page, which says so and adds the card.
     await enforceTrialCap(organizationId, "smsOutbound");
     to = client.phone;
-    const res = await sendSMS(to, body);
-    delivered = !res.skipped;
+    // From the company's own registered number, to a client who said yes (lib/sms/send, 2026-10-02).
+    const res = await sendText({ organizationId, to, body, kind: "client-message" });
+    if (!res.ok) throw new Error(res.reason === "opted-out" ? `${client.name} replied STOP — they get no texts` : res.reason === "invalid-number" ? `${client.name}'s phone is not a US or Canadian mobile` : res.reason === "duplicate" ? "That text just went to them" : "The text could not be sent. Try again.");
+    if (res.status === "SKIPPED" && res.why === "no-number") throw new Error("Texts go out from your company's own texting number — get one in Settings → Texting");
+    if (res.status === "SKIPPED" && res.why === "no-consent") throw new Error(`${client.name} hasn't agreed to texts yet — clients agree when they book online`);
+    delivered = res.status === "SENT" || res.status === "HELD";
   }
 
   await db.activityEvent.create({

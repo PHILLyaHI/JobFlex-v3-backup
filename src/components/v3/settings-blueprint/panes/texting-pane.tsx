@@ -20,19 +20,20 @@ import { useRouter } from "next/navigation";
 
 import {
   addNotificationPhone,
-  claimOwnNumber,
   confirmPhoneVerification,
-  releaseOwnNumber,
   removeNotificationPhone,
   removeSmsPhone,
   sendTestText,
   setClientTextsOn,
+  setLeadTexts,
   setNotificationPhoneActive,
   startPhoneVerification,
   type SmsActionResult,
 } from "@/actions/sms";
 import { TextingPeople } from "@/components/v3/texting-people/texting-people";
 import { TextRules } from "@/components/v3/texting-people/text-rules";
+import { OwnNumber } from "@/components/v3/texting-people/own-number";
+import { REGISTRATION_COPY } from "@/lib/sms/registrationShared";
 import { Field, actionError } from "../ui";
 import type { PaneProps, SmsSettingsData } from "../settings-data";
 import { TEXTING_COPY, TEXTS_COPY } from "../settings-data";
@@ -213,31 +214,30 @@ function CompanyCard({ sms }: { sms: SmsSettingsData }) {
             </button>
           </div>
         </div>
-        <div className="tx-sub">
+        <div className="tx-sub" id="texting-lead-texts" data-lead-texts={sms.leadTexts.on ? "on" : "off"}>
           <div className="tx-sub-h">
-            <b>{TEXTS_COPY.ownTitle}</b>
-            <span>{TEXTS_COPY.ownSub}</span>
+            <b>{TEXTS_COPY.leadTitle}</b>
+            <span>{TEXTS_COPY.leadSub}</span>
           </div>
-          {sms.ownNumber ? (
-            <div className="tx-row">
-              <div className="tx-row-t">
-                <b>{sms.ownNumber}</b>
-                <span className="tx-tag">yours</span>
-              </div>
-              <div className="tx-row-a">
-                <button type="button" className="btn btn-ghost btn-sm" disabled={busy !== null} onClick={() => run("release", releaseOwnNumber)}>
-                  {TEXTS_COPY.ownRelease}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="tx-row-a tx-row-a--left">
-              <button type="button" className="btn btn-ghost btn-sm" disabled={busy !== null || !sms.configured} onClick={() => run("claim", claimOwnNumber)}>
-                {busy === "claim" ? "Finding a number…" : TEXTS_COPY.ownGet}
-              </button>
-              <span className="tx-note" style={{ margin: 0, alignSelf: "center" }}>{TEXTS_COPY.ownCost}</span>
-            </div>
-          )}
+          <div className="tx-row-a tx-row-a--left">
+            <button type="button" className={`btn btn-sm ${sms.leadTexts.on ? "btn-primary" : "btn-ghost"}`} disabled={busy !== null || sms.leadTexts.on || !sms.leadTexts.phone} onClick={() => run("lead", () => setLeadTexts(true))}>
+              {TEXTS_COPY.clientsOn}
+            </button>
+            <button type="button" className={`btn btn-sm ${sms.leadTexts.on ? "btn-ghost" : "btn-primary"}`} disabled={busy !== null || !sms.leadTexts.on} onClick={() => run("lead", () => setLeadTexts(false))}>
+              {TEXTS_COPY.clientsOff}
+            </button>
+            <span className="tx-note" style={{ margin: 0, alignSelf: "center" }}>{sms.leadTexts.phone ? `To ${sms.leadTexts.phone}` : TEXTS_COPY.leadNoPhone}</span>
+          </div>
+          <p className="tx-note" data-lead-consent>
+            {TEXTS_COPY.leadConsent} <a href="/terms#sms">{TEXTS_COPY.terms}</a> · <a href="/privacy#sms">{TEXTS_COPY.privacy}</a>
+          </p>
+        </div>
+        <div className="tx-sub" id="texting-own-number">
+          <div className="tx-sub-h">
+            <b>{REGISTRATION_COPY.title}</b>
+            <span>{REGISTRATION_COPY.sub}</span>
+          </div>
+          <OwnNumber view={sms.registration} configured={sms.configured} />
         </div>
         <div className="tx-sub">
           <div className="tx-sub-h">

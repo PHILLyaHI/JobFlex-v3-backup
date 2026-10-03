@@ -86,9 +86,11 @@ export default function TermsPage() {
       </p>
       <p id="sms">
         <strong>Text messages from JobFlex.</strong> When you add your own mobile number in Settings →
-        Texting and confirm it with the code we text you, you agree to receive text messages from
-        JobFlex at that number: verification codes and the job alerts you turn on for your account, such
-        as a new lead, an accepted proposal, a payment, or your crew on site. Message frequency varies
+        Texting and confirm it with the code we text you, you agree to receive text messages at that
+        number: verification codes from JobFlex, and the job alerts you turn on for your account, such
+        as a new lead, an accepted proposal, a payment, or your crew on site, sent from your company&apos;s
+        own texting number under your company&apos;s name. If your company turns on lead texts in
+        Settings → Texting, JobFlex also texts the company phone when a lead is reserved for it. Message frequency varies
         with your account&apos;s activity. Message and data rates may apply. Reply STOP to cancel at any
         time or HELP for help, or remove your number in Settings → Texting. Questions: <LegalContact />.
         Carriers are not liable for delayed or undelivered messages. We do not text you marketing. Our{" "}

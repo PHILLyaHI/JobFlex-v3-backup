@@ -9,7 +9,8 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildInvoice } from "@/lib/email/build/client";
 import { noteGmailFallback, sendOrgEmail } from "@/lib/email/orgSend";
-import { isTwilioEnabled, sendSMS } from "@/lib/sdk/twilio";
+import { isTwilioEnabled } from "@/lib/sdk/twilio";
+import { sendText } from "@/lib/sms/send";
 import { toE164 } from "@/lib/phone";
 import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { contractSchedule, contractTotal } from "@/lib/contractTotal";
@@ -147,8 +148,9 @@ export async function sendInvoice(input: { proposalId: string; installmentId: st
     else {
       try {
         const how = input.method === "bank" ? "Bank-transfer details are in your email." : input.method === "card" ? "Pay by card here:" : "Pay here:";
-        await sendSMS(phone, `${org.name}: invoice for ${label.toLowerCase()} on ${proposal.title} — $${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}. ${how} ${href}`);
-        report.sms = "sent";
+        // From the company's own number to a client who said yes (lib/sms/send, 2026-10-02).
+        const sent = await sendText({ organizationId: proposal.organizationId, to: phone, body: `${org.name}: invoice for ${label.toLowerCase()} on ${proposal.title} — $${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}. ${how} ${href}`, kind: "invoice" });
+        report.sms = !sent.ok ? "failed" : sent.status === "SKIPPED" ? "disabled" : "sent";
       } catch (err) {
         console.warn("[invoices] sms failed:", err);
         report.sms = "failed";

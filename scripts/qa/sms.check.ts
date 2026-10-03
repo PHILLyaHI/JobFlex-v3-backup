@@ -4,6 +4,7 @@
 import * as P from "../../src/lib/notificationPrefsShared";
 import * as F from "../../src/lib/sms/format";
 import * as R from "../../src/lib/sms/textRules";
+import * as G from "../../src/lib/sms/registrationShared";
 import {
   acceptedLine,
   brand,
@@ -85,17 +86,8 @@ check("held texts fold into one overnight line",
   heldDigestText("Ridgeline Roofing", ["one thing."]) === "Ridgeline Roofing: one thing.");
 check("welcome, code and STOP words", welcomeText("Ridgeline Roofing").includes("Reply STOP to opt out") && /^JobFlex code: 482913\./.test(verifyText("482913")) &&
   isStopWord("STOP") && isStopWord("  unsubscribe please") && !isStopWord("stopping by at 3") && isStartWord("Start") && !isStartWord("no"));
-// JobFlex's shared number (2026-10-02): Twilio rejected it (30474) while it spoke as every contractor.
-check("the shared number names JobFlex first and the company after; a JobFlex text stays as it is",
-  F.asSharedSender("Ridgeline Roofing", "Ridgeline Roofing: New lead: Jane Doe.") === "JobFlex (Ridgeline Roofing): New lead: Jane Doe." &&
-  F.asSharedSender("Ridgeline Roofing", "Ridgeline Roofing — tomorrow (Tue Oct 7): 8 AM Roof.") === "JobFlex (Ridgeline Roofing) — tomorrow (Tue Oct 7): 8 AM Roof." &&
-  F.asSharedSender("Ridgeline Roofing", verifyText("482913")) === verifyText("482913") &&
-  F.asSharedSender(null, "hello") === "JobFlex: hello" &&
-  F.asSharedSender("Ridgeline Roofing", "word ".repeat(100)).length <= SMS_MAX);
-check("the shared number texts a code someone asked for and people who set their own mobile; never an office entry, a crew phone, a client or a company's own text",
-  F.sharedNumberMay("verify", false) && F.sharedNumberMay("lead-assigned", true) && F.sharedNumberMay("test", true) &&
-  !F.sharedNumberMay("lead-assigned", false) && !F.sharedNumberMay("crew-assigned", false) && !F.sharedNumberMay("rule:r1:p1", true));
-check("HELP names the alerts the person turned on, and the support address", /turned on in JobFlex/.test(F.helpText()) && F.helpText().includes("support@jobflex.app"));
+check("HELP on JobFlex's number names the lead alerts and the support address", /lead alerts you turned on/.test(F.helpText()) && F.helpText().includes("support@jobflex.app"));
+check("turning lead texts on is confirmed with the STOP and HELP words", /lead texts are on for Ridgeline Roofing/.test(F.leadTextsOnText("Ridgeline Roofing")) && /STOP/.test(F.leadTextsOnText(null)) && /HELP/.test(F.leadTextsOnText(null)));
 check("stop words match the keyword, not a sentence that begins with it", isStopWord("stop") && !isStopWord("stopped by the shop") && isStopWord("STOPALL"));
 check("nothing longer than two segments; links are redacted for logs; money reads plainly",
   clip("x".repeat(500)).length <= SMS_MAX && clip("a word ".repeat(80)).endsWith("…") && redactLinks("see https://www.jobflex.app/w/abc now") === "see <link> now" && money(12000) === "$12,000" && money(1234.5) === "$1,234.50");
@@ -181,6 +173,39 @@ check("the monthly allowance grows with the plan and defaults to the free tier",
   check("the list says when, with the hours or days", R.whenText("appointment.before", 24) === "Before an appointment — 24 hours before" && R.whenText("job.after", 1) === "After a job is completed — 1 day after" && R.whenText("proposal.accepted", null) === "A proposal is accepted");
   check("the company name leads once, never twice", R.signed("Ridgeline Roofing Co.", "Hi Sarah, a reminder from Ridgeline Roofing Co.") === "Hi Sarah, a reminder from Ridgeline Roofing Co." && R.signed("Ridgeline Roofing Co.", "Hi Sarah.") === "Ridgeline Roofing Co.: Hi Sarah.");
   check("the crew can only be reached where there is a crew", !R.triggerOf("proposal.accepted")!.recipients.includes("crew") && R.triggerOf("job.before")!.recipients.includes("crew"));
+}
+
+
+// A company's own texting number, registered in its name (2026-10-02).
+{
+  const good: G.SmsRegistrationDetails = {
+    legalName: "Ridgeline Roofing LLC", dba: "Ridgeline Roofing", businessType: "PRIVATE_PROFIT", ein: "123456789",
+    street: "4567 Rainier Ave S", street2: "", city: "Seattle", state: "wa", zip: "98118", website: "https://ridgelineroofing.com",
+    contactFirst: "Rick", contactLast: "Stevens", contactEmail: "rick@ridgelineroofing.com", contactPhone: "(206) 555-0100",
+  };
+  check("a complete business form has no problems", Object.keys(G.registrationProblems(good)).length === 0, JSON.stringify(G.registrationProblems(good)));
+  const p = G.registrationProblems({ ...good, ein: "", state: "Washington", zip: "981", website: "ridgeline.com", contactPhone: "555" });
+  check("an LLC needs its EIN; the state, ZIP, website and phone are checked", Boolean(p.ein && p.state && p.zip && p.website && p.contactPhone), JSON.stringify(p));
+  check("a sole proprietor may leave the EIN empty", !G.registrationProblems({ ...good, businessType: "SOLE_PROPRIETOR", ein: "" }).ein);
+  const t = G.tidyDetails(good);
+  check("the EIN reads 12-3456789 and the state is upper-cased", t.ein === "12-3456789" && t.state === "WA");
+  check("Twilio's statuses map to ours", G.stageFor("PENDING_REVIEW") === "pending" && G.stageFor("IN_REVIEW") === "pending" && G.stageFor("TWILIO_APPROVED") === "approved" && G.stageFor("TWILIO_REJECTED") === "rejected" && G.stageFor(undefined) === "failed");
+  check("free mailboxes are told apart from a business domain", G.isFreeMailbox("rick@gmail.com") && G.isFreeMailbox("x@Outlook.com") && !G.isFreeMailbox("rick@ridgelineroofing.com"));
+  const pre = G.prefillDetails({ name: "Ridgeline Roofing", website: null, address: "13620 NE 20th St, Suite I, Bellevue, WA 98005", phone: "+14255550100", slug: "ridgeline" }, { name: "Rick Stevens", email: "rick@ridgelineroofing.com" });
+  check("the form starts from the company's address, a JobFlex page for a missing website, and the person's name",
+    pre.street === "13620 NE 20th St" && pre.street2 === "Suite I" && pre.city === "Bellevue" && pre.state === "WA" && pre.zip === "98005" &&
+    pre.website === "https://www.jobflex.app/r/ridgeline" && pre.contactFirst === "Rick" && pre.contactLast === "Stevens", JSON.stringify(pre));
+  const samples = ["Ridgeline Roofing: your proposal is ready.", "Ridgeline Roofing: reminder — tomorrow 9 AM."];
+  const f = G.verificationFields({ details: t, companyName: "Ridgeline Roofing", samples, bookingUrl: "https://www.jobflex.app/book/ridgeline-roofing-and-exteriors" });
+  check("the registration names the contractor, not JobFlex, and stays inside Twilio's limits",
+    f.businessName === "Ridgeline Roofing LLC" && f.doingBusinessAs === "Ridgeline Roofing" && f.businessContactEmail === "rick@ridgelineroofing.com" &&
+    f.businessContactPhone === "+12065550100" && f.businessRegistrationNumber === "12-3456789" && f.optInImageUrls[0] === G.BOOKING_OPT_IN_IMAGE &&
+    f.useCaseSummary.length <= 500 && f.additionalInformation.length <= 500 && f.productionMessageSample.length <= 500 && f.useCaseSummary.includes("used by Ridgeline Roofing only") && f.additionalInformation.includes("/book/ridgeline-roofing-and-exteriors") && !f.additionalInformation.endsWith("…"));
+  const sole = G.verificationFields({ details: { ...t, businessType: "SOLE_PROPRIETOR", ein: "", dba: "" }, companyName: "Ridgeline Roofing", samples, bookingUrl: "https://www.jobflex.app/book/ridgeline" });
+  check("a sole proprietor without an EIN sends no registration number, and no trade name equal to the legal one", !("businessRegistrationNumber" in sole) && !("doingBusinessAs" in sole));
+  check("HELP on a company's number names the company and how to reach it",
+    F.companyHelpText("Ridgeline Roofing", "+12065550100") === "Ridgeline Roofing: texts about your visits and estimates. Reply STOP to opt out. Questions: (206) 555-0100" &&
+    F.companyHelpText("Ridgeline Roofing", null).endsWith("Questions: support@jobflex.app"));
 }
 
 console.log(bad ? `\n${bad} check(s) FAILED` : "\nall checks passed");

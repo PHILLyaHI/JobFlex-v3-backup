@@ -10,10 +10,13 @@
 //   - quiet hours hold a text until the morning, folded with the others;
 //   - Twilio off (the local stand, a fresh deploy) is a SKIPPED row, not an
 //     error — the app works the same, and the log shows what would have gone;
-//   - JobFlex's shared number texts only people who set their own mobile, and
-//     never a company's own text rule (2026-10-02: Twilio verifies a number
-//     for the business the person signed up with) — the rest is a SKIPPED row
-//     "shared-number" until the company has its own registered number.
+//   - a company's text goes out only from its own registered number
+//     (registration.ts, 2026-10-02); sign-in codes go through Twilio Verify
+//     (verify.ts). JobFlex's own texts (kind "jobflex-…": the lead alerts a
+//     company turned on, HELP on JobFlex's number) leave from JobFlex's number
+//     once Twilio approved it (jobflexSender.ts). No number: a SKIPPED row
+//     "no-number". A company's number texts its team, and anyone else only
+//     after they said yes on the booking page (consent.ts), else "no-consent".
 // Every text is a row in SmsMessage: the usage counter, the delivery status
 // from Twilio's callback, the thing a support question is answered from.
 
@@ -30,8 +33,10 @@ import {
   SMS_URGENT_KEYS,
   smsDecision,
   type PrefKey, allowsSms, audienceForRole, textEventsFor } from "@/lib/notificationPrefsShared";
-import { asSharedSender, brand, clip, heldDigestText, sharedNumberMay, SMS_MAX, unbrand } from "./format";
+import { brand, clip, heldDigestText, SMS_MAX, unbrand } from "./format";
 import { trialBlocksText } from "@/lib/trialMeter";
+import { hasTextConsent, isTeamPhone } from "./consent";
+import { jobflexSender } from "./jobflexSender";
 
 const CAP_PER_NUMBER_PER_DAY = 25;
 const CAP_PER_ORG_PER_DAY = 500;
@@ -49,7 +54,9 @@ export type SendTextInput = {
   sendAfter?: Date | null;
 };
 export type SendTextResult =
-  | { ok: true; id: string; status: "SENT" | "SKIPPED" | "HELD" }
+  | { ok: true; id: string; status: "SENT" | "HELD" }
+  /** `why`: "no-number" (the company has no registered number), "no-consent", "not-configured" (no Twilio here). */
+  | { ok: true; id: string; status: "SKIPPED"; why: string }
   | { ok: false; reason: "invalid-number" | "opted-out" | "duplicate" | "cap" | "trial" | "limiter-down" | "failed" };
 
 /** What a member reads when the card-less trial held a text back (lib/trialCaps). */
@@ -86,19 +93,23 @@ async function dispatch(m: { organizationId: string | null; to: string; body: st
     await capped(m, "trial");
     return { ok: false, reason: "trial" };
   }
-  // Which number: the company's own when it claimed one (lib/sms/numbers),
-  // else JobFlex's shared number, which only carries JobFlex's own texts to
-  // people who turned texts on themselves (format.ts, sharedNumberMay). Asked
-  // before the caps, so a text the shared number may not send spends none.
+  // Which number: the company's own, once Twilio approved it (registration.ts
+  // sets smsFromNumber then). There is no JobFlex number to fall back on. The
+  // company's number texts its team, and anyone else only after they said yes
+  // on the booking page (consent.ts): the opt-in its registration was approved
+  // on. The answer to HELP always goes. Asked before the caps, so a text that
+  // may not go spends none.
   let own: string | null = null;
-  let orgName: string | null = null;
   try {
-    const org = m.organizationId ? await db.organization.findUnique({ where: { id: m.organizationId }, select: { smsFromNumber: true, name: true } }) : null;
-    own = org?.smsFromNumber ?? null;
-    orgName = org?.name ?? null;
-    if (!own && !sharedNumberMay(m.kind, await setTheirOwnMobile(m.to))) {
-      const skipped = await db.smsMessage.create({ data: { organizationId: m.organizationId, direction: "OUT", to: m.to, body: m.body, kind: m.kind, status: "SKIPPED", error: "shared-number" } });
-      return { ok: true, id: skipped.id, status: "SKIPPED" };
+    const jobflexOwn = !m.organizationId && m.kind.startsWith("jobflex-");
+    const org = !jobflexOwn && m.organizationId ? await db.organization.findUnique({ where: { id: m.organizationId }, select: { smsFromNumber: true } }) : null;
+    own = jobflexOwn ? await jobflexSender() : org?.smsFromNumber ?? null;
+    let blocked: string | null = null;
+    if (!own) blocked = "no-number";
+    else if (!jobflexOwn && m.kind !== "help" && m.organizationId && !(await isTeamPhone(m.organizationId, m.to)) && !(await hasTextConsent(m.organizationId, m.to))) blocked = "no-consent";
+    if (blocked) {
+      const skipped = await db.smsMessage.create({ data: { organizationId: m.organizationId, direction: "OUT", to: m.to, body: m.body, kind: m.kind, status: "SKIPPED", error: blocked } });
+      return { ok: true, id: skipped.id, status: "SKIPPED", why: blocked };
     }
   } catch (err) {
     console.error(`[sms] sender check failed, text not sent: ${msg(err)}`);
@@ -121,14 +132,11 @@ async function dispatch(m: { organizationId: string | null; to: string; body: st
   const row = await db.smsMessage.create({ data: { organizationId: m.organizationId, direction: "OUT", to: m.to, body: m.body, kind: m.kind, status: "QUEUED" } });
   if (!await isTwilioEnabled()) {
     await db.smsMessage.update({ where: { id: row.id }, data: { status: "SKIPPED", error: "not-configured" } });
-    return { ok: true, id: row.id, status: "SKIPPED" };
+    return { ok: true, id: row.id, status: "SKIPPED", why: "not-configured" };
   }
   try {
     const statusCallback = `${await appBaseUrl()}/api/twilio/sms/status`;
-    // The row keeps the words as the company wrote them (the duplicate rule
-    // and the overnight fold read them); the shared number adds JobFlex's
-    // name at the door.
-    const r = await sendSMS(m.to, own ? m.body : asSharedSender(orgName, m.body), { statusCallback, from: own });
+    const r = await sendSMS(m.to, m.body, { statusCallback, from: own });
     await db.smsMessage.update({ where: { id: row.id }, data: { status: "SENT", sid: r.skipped ? null : r.sid } });
     return { ok: true, id: row.id, status: "SENT" };
   } catch (err) {
@@ -148,22 +156,6 @@ async function capped(m: { organizationId: string | null; to: string; body: stri
 
 function msg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/** Did a member set this mobile themselves (the six-digit code in Settings →
- *  Texting, or their own entry), rather than the office typing it in for them?
- *  actions/sms marks an office entry with `smsAddedBy` in the member's prefs. */
-async function setTheirOwnMobile(phone: string): Promise<boolean> {
-  const users = await db.user.findMany({ where: { smsPhone: phone, smsVerifiedAt: { not: null } }, select: { notificationPrefsJson: true }, take: 10 });
-  return users.some((u) => !addedByOffice(u.notificationPrefsJson));
-}
-function addedByOffice(json: string | null): boolean {
-  try {
-    const by = (JSON.parse(json || "{}") as { smsAddedBy?: unknown }).smsAddedBy;
-    return typeof by === "string" && by !== "";
-  } catch {
-    return false;
-  }
 }
 
 // ── the office ────────────────────────────────────────────────────────────

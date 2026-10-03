@@ -70,9 +70,19 @@ import {
   setStripeAchEnabled,
 } from "@/actions/paymentConnections";
 import { sendTestNotification } from "@/actions/notifications";
-import { addNotificationPhone, confirmPhoneVerification, removeNotificationPhone, removeSmsPhone, sendTestText, startPhoneVerification } from "@/actions/sms";
+import {
+  addNotificationPhone,
+  confirmPhoneVerification,
+  removeNotificationPhone,
+  removeSmsPhone,
+  sendTestText,
+  startPhoneVerification,
+  setLeadTexts,
+} from "@/actions/sms";
 import { TextingPeople } from "@/components/v3/texting-people/texting-people";
 import { TextRules } from "@/components/v3/texting-people/text-rules";
+import { OwnNumber } from "@/components/v3/texting-people/own-number";
+import { REGISTRATION_COPY } from "@/lib/sms/registrationShared";
 import type { PaymentConnectionStatusView } from "@/lib/payments/connections";
 import type {
   Badge,
@@ -1261,6 +1271,35 @@ function TextingPane({ data }: { data: SettingsData }) {
           )}
         </div>
       </section>
+      {sms.canManage ? (
+        <section className="mst-card" id="texting-own-number">
+          <CardHeader card={{ title: REGISTRATION_COPY.title, sub: REGISTRATION_COPY.sub }} />
+          <div className="mst-cardB">
+            <OwnNumber view={sms.registration} configured={sms.configured} />
+          </div>
+        </section>
+      ) : null}
+      {sms.canManage ? (
+        <section className="mst-card" id="texting-lead-texts" data-lead-texts={sms.leadTexts.on ? "on" : "off"}>
+          <CardHeader card={{ title: TEXTS_COPY.leadTitle, sub: TEXTS_COPY.leadSub }} />
+          <div className="mst-cardB">
+            <div className="mst-note">{sms.leadTexts.phone ? `To ${sms.leadTexts.phone}` : TEXTS_COPY.leadNoPhone}</div>
+            <button
+              className={`mst-btn ${sms.leadTexts.on ? "mst-btn--ghost" : "mst-btn--primary"} mst-btn--wide`}
+              type="button"
+              disabled={busy !== null || (!sms.leadTexts.on && !sms.leadTexts.phone)}
+              onClick={() => run("lead", () => setLeadTexts(!sms.leadTexts.on))}
+            >
+              {sms.leadTexts.on ? "Turn lead texts off" : "Turn lead texts on"}
+            </button>
+            <div className="mst-note" data-lead-consent>
+              <span>
+                {TEXTS_COPY.leadConsent} <a href="/terms#sms">{TEXTS_COPY.terms}</a> · <a href="/privacy#sms">{TEXTS_COPY.privacy}</a>
+              </span>
+            </div>
+          </div>
+        </section>
+      ) : null}
       {sms.canManage ? (
         <section className="mst-card">
           <CardHeader card={{ title: TEXTS_COPY.extrasTitle, sub: TEXTS_COPY.extrasSub }} />

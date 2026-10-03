@@ -23,6 +23,7 @@
 /** Every sprite symbol id used by the settings page. */
 import type { PaymentConnectionStatusView } from '@/lib/payments/connections';
 import type { NotificationPrefs, PrefKey } from '@/lib/notificationPrefsShared';
+import type { SmsRegistrationView } from '@/lib/sms/registrationShared';
 
 export type IconName =
   | 'i-arrow'
@@ -798,7 +799,7 @@ export const TEXTS_COPY = {
   sendCode: 'Text me a code',
   // What a person agrees to at the moment they ask for the code (2026-10-02,
   // the carriers' opt-in rules for JobFlex's toll-free number).
-  consent: 'By tapping Text me a code you agree to get texts from JobFlex at this number: your code and the job alerts you turn on. Message frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help.',
+  consent: 'By tapping Text me a code you agree to get texts at this number: your JobFlex code, and the job alerts you turn on, sent from your company’s texting number. Message frequency varies. Msg & data rates may apply. Reply STOP to opt out, HELP for help.',
   terms: 'Terms',
   privacy: 'Privacy Policy',
   codeLabel: 'The six digits',
@@ -826,6 +827,11 @@ export const TEXTS_COPY = {
   clientsSub: 'The proposal link the moment it is sent, and a reminder the evening before a visit — signed with your company name, with the STOP line.',
   clientsOn: 'On',
   clientsOff: 'Off',
+  // JobFlex's own lead texts to the company phone (2026-10-02): the opt-in the JobFlex number is registered on.
+  leadTitle: 'Lead texts from JobFlex',
+  leadSub: 'When JobFlex reserves a homeowner lead for you, or one is about to pass to the next shop, we text the company phone.',
+  leadConsent: 'By turning this on you agree to get texts from JobFlex at the company phone about your leads. Message frequency varies with your leads. Msg & data rates may apply. Reply STOP to opt out, HELP for help.',
+  leadNoPhone: 'Add the company phone in Company settings first.',
   ownTitle: 'Your own number',
   ownSub: 'A local number in your area code that your texts show and clients can reply to. It stays on the JobFlex account, registered with the carriers.',
   ownGet: 'Get my own number',
@@ -861,6 +867,10 @@ export interface SmsSettingsData {
   clientsOn: boolean;
   /** The company's own number, pretty, when it claimed one. */
   ownNumber: string | null;
+  /** The company's own texting number, registered in its name (2026-10-02); managers only. */
+  registration: SmsRegistrationView | null;
+  /** JobFlex's lead texts to the company phone (2026-10-02): on only after the company turns them on. */
+  leadTexts: { on: boolean; phone: string | null };
   /** Who gets texted (2026-09-27): the office members with their verified
    *  mobile (pretty, or null) and the three group switches. */
   roster: SmsRosterRow[];
@@ -909,7 +919,7 @@ export const TEXTING_COPY = {
   rosterTitle: 'Who gets texted',
   rosterSub: 'The office, by event. A member is texted only after they verify a mobile on their own account.',
   peopleTitle: 'Who gets texted',
-  peopleSub: 'Everyone on the team, by what they do. JobFlex’s texting number reaches a person once they add their own mobile on their own account (Your mobile, a six-digit code); a mobile typed in for them is kept until they do.',
+  peopleSub: 'Everyone on the team, by what they do. Texts go out from your company’s own texting number (The company, below); until it is approved, the same alerts arrive by email and in the app.',
   sections: {
     office: { title: 'Office', sub: 'Owner, managers, admin and accounting — the whole company.' },
     sales: { title: 'Sales & estimators', sub: 'Their own leads, visits and deals — nobody else’s.' },
@@ -923,7 +933,7 @@ export const TEXTING_COPY = {
   turnOn: 'Text this number',
   all: 'All',
   none: 'None',
-  byOffice: 'added by the office · not texted until they add it',
+  byOffice: 'added by the office',
   bySelf: 'verified',
   noMobileLong: 'No mobile — nothing is texted',
   onFileOff: 'on file, texts off',
@@ -934,7 +944,7 @@ export const TEXTING_COPY = {
   mineTitle: 'Your mobile',
   mineSub: 'The number your texts go to. A six-digit code proves it is yours.',
   companyTitle: 'The company',
-  companySub: 'Texts to clients, the number they see, and the numbers outside the team that hear about everything. These go out once your company has its own registered texting number — JobFlex’s number only texts people who added their own mobile.',
+  companySub: 'Your own texting number, texts to clients, and the numbers outside the team that hear about everything. Every text goes out from your own registered number.',
   rulesTitle: 'Your own texts',
   rulesSub: 'Write a text for any moment — when it goes out, who gets it, what it says. {Fields} fill in from the job; clients always get your company name and the STOP line. They go out once your company has its own registered texting number.',
   notConfiguredLong: 'Texting is not switched on for this server yet. Everything here is kept and nothing is sent until it is.',
