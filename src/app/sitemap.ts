@@ -11,6 +11,8 @@ const LANDING = new Date("2026-09-30");
 const UPDATED: Array<[string, Date, number]> = [
   ["/", LANDING, 1],
   ["/pricing", LANDING, 0.9],
+  // The one homeowner page since 2026-10-02 (intake, status link, ?ref).
+  ["/homeowner", new Date("2026-10-02"), 0.7],
   ["/about", new Date("2026-04-20"), 0.5],
   ["/privacy", new Date("2026-09-22"), 0.3],
   ["/terms", new Date("2026-09-22"), 0.3],
