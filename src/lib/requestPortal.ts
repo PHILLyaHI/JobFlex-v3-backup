@@ -104,6 +104,12 @@ export interface RequestPortalView {
   scope: string | null;
   /** Fallback zone for times shown before the viewer's own clock takes over. */
   timeZone: string;
+  /** The homeowner's home dashboard key (/home/[key]); null for a request with no home yet. */
+  homeKey: string | null;
+  /** The request's status in one word, for a list of projects. */
+  status2: "WAITING" | "MATCHED" | "PROPOSAL" | "HIRED" | "DONE";
+  /** Each involved shop's client record for this homeowner (born after the request). */
+  clients: Array<{ orgId: string; clientId: string }>;
   current: { org: PortalOrg; matchedAt: string | null } | null;
   previous: Array<{ org: PortalOrg; endedAt: string | null; reason: string | null }>;
   proposals: PortalProposal[];
@@ -142,12 +148,25 @@ function stageOf(p: { status: string; viewedAt: Date | null }): ProposalStage {
   }
 }
 
-export async function loadRequestPortal(token: string): Promise<RequestPortalView | null> {
-  const pl = await db.platformLead.findUnique({
+/** The request row with its offers, as the view is built from it. */
+export type RequestLeadRow = NonNullable<Awaited<ReturnType<typeof findRequestLead>>>;
+
+export function findRequestLead(token: string) {
+  return db.platformLead.findUnique({
     where: { accessToken: token },
-    include: { offers: { orderBy: { createdAt: "asc" } } },
+    include: { offers: { orderBy: { createdAt: "asc" } }, home: { select: { accessToken: true } } },
   });
+}
+
+export async function loadRequestPortal(token: string): Promise<RequestPortalView | null> {
+  const pl = await findRequestLead(token);
   if (!pl) return null;
+  return buildRequestPortal(pl);
+}
+
+/** The view for one request row (the home dashboard builds one per project). */
+export async function buildRequestPortal(pl: RequestLeadRow): Promise<RequestPortalView> {
+  const token = pl.accessToken ?? "";
 
   const currentOrgId = pl.status === "MATCHED" ? pl.matchedOrgId : null;
   // The shops the homeowner already moved on from ("find me another
@@ -300,9 +319,15 @@ export async function loadRequestPortal(token: string): Promise<RequestPortalVie
   events.sort((a, b) => a.at.localeCompare(b.at));
 
   const place = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || null;
+  const won = proposals.some((p) => p.current && (p.stage === "ACCEPTED" || p.stage === "PAID"));
+  const done = proposals.some((p) => p.current && p.stage === "COMPLETED");
+  const status2: RequestPortalView["status2"] = done ? "DONE" : won ? "HIRED" : proposals.some((p) => p.current) ? "PROPOSAL" : currentOrg ? "MATCHED" : "WAITING";
   return {
     token,
     status: pl.status,
+    homeKey: pl.home?.accessToken ?? null,
+    status2,
+    clients: [...clientByOrg.entries()].map(([orgId, clientId]) => ({ orgId, clientId })),
     trade: pl.detectedTrade ?? pl.projectType,
     firstName: (pl.name || "").trim().split(/\s+/)[0] || "",
     submittedAt: pl.createdAt.toISOString(),

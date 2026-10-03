@@ -5,7 +5,10 @@
 // buildTestEmail is the one exception: it exists to prove an org's OWN
 // lockup renders, so it deliberately uses the contractor lockup.
 import type { BoxRow, EmailDoc, Lockup } from "../doc";
+import { truncate } from "../fit";
 import type { OrgBrand } from "./client";
+
+const TITLE_MAX = 70;
 
 const PLATFORM_LOCKUP: Lockup = { kind: "platform" };
 const PLATFORM_FOOTER = { name: "JobFlex" };
@@ -138,11 +141,16 @@ export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDo
   };
 }
 
+/** The homeowner's home dashboard (lib/home/portal), named in every homeowner email. */
+const homeLine = (url: string) => `Your home dashboard — every project in one place, no account needed: ${url}`;
+
 export interface RequestReceivedInput {
   name: string;
   projectType: string | null;
   /** The homeowner's status page (/request/[token]); null for legacy rows with no token. */
   statusUrl?: string | null;
+  /** /home/[key] — the dashboard every project of theirs lives on. */
+  homeUrl?: string | null;
 }
 
 /** Solo anchor; the CTA is the homeowner's one link into the system. */
@@ -159,6 +167,7 @@ export function buildRequestReceived(i: RequestReceivedInput): EmailDoc {
     ],
     box: [{ type: "anchor", label: "You'll hear back", value: "Within 24h" }],
     ...(i.statusUrl ? { cta: { label: "Track your request", href: i.statusUrl } } : {}),
+    ...(i.homeUrl ? { after: [homeLine(i.homeUrl)] } : {}),
     footer: PLATFORM_FOOTER,
   };
 }
@@ -172,6 +181,7 @@ export interface HomeownerMatchedInput {
   projectType: string | null;
   /** The homeowner's status page (/request/[token]); null for legacy rows with no token. */
   statusUrl?: string | null;
+  homeUrl?: string | null;
 }
 
 /** Box: Phone and Rating (no call-by promise — nothing enforces one). CTA opens the status page. */
@@ -192,6 +202,7 @@ export function buildHomeownerMatched(i: HomeownerMatchedInput): EmailDoc {
     ],
     box,
     ...(i.statusUrl ? { cta: { label: "View your request", href: i.statusUrl } } : {}),
+    ...(i.homeUrl ? { after: [homeLine(i.homeUrl)] } : {}),
     fine: i.statusUrl
       ? "If it doesn't work out with this contractor, the request page lets you ask for another one."
       : undefined,
@@ -239,6 +250,7 @@ export interface HomeownerReroutingInput {
   name: string;
   projectType: string | null;
   statusUrl: string | null;
+  homeUrl?: string | null;
 }
 
 /** Confirmation to the homeowner right after they pressed the button. */
@@ -255,6 +267,7 @@ export function buildHomeownerRerouting(i: HomeownerReroutingInput): EmailDoc {
     ],
     box: [{ type: "anchor", label: "You'll hear back", value: "Within 24h" }],
     ...(i.statusUrl ? { cta: { label: "Track your request", href: i.statusUrl } } : {}),
+    ...(i.homeUrl ? { after: [homeLine(i.homeUrl)] } : {}),
     footer: PLATFORM_FOOTER,
   };
 }
@@ -263,6 +276,7 @@ export interface HomeownerManualQueueInput {
   name: string;
   projectType: string | null;
   statusUrl: string | null;
+  homeUrl?: string | null;
 }
 
 /**
@@ -283,6 +297,84 @@ export function buildHomeownerManualQueue(i: HomeownerManualQueueInput): EmailDo
       } request. We'll email you as soon as one takes it on.`,
     ],
     ...(i.statusUrl ? { cta: { label: "Track your request", href: i.statusUrl } } : {}),
+    ...(i.homeUrl ? { after: [homeLine(i.homeUrl)] } : {}),
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+// ── The home dashboard (2026-10-03, lib/home/portal) ─────────────────────────
+
+export interface HomeLinkInput {
+  name: string;
+  homeUrl: string;
+  /** How many projects the dashboard holds. */
+  projects: number;
+}
+
+/** "Lost the link?" — the homeowner typed their email on /home. */
+export function buildHomeLink(i: HomeLinkInput): EmailDoc {
+  return {
+    subject: "Your JobFlex home dashboard",
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Your home" },
+    headline: "Here's your home dashboard",
+    prose: [
+      `Hi ${i.name.split(" ")[0]} — this link opens your home dashboard: ${i.projects === 1 ? "your project" : `your ${i.projects} projects`}, the proposals, your contractors and the jobs you're planning. No password; keep the link.`,
+    ],
+    cta: { label: "Open your home dashboard", href: i.homeUrl },
+    fine: "If you didn't ask for this, ignore it — nothing changes.",
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface HomePlanReminderInput {
+  name: string;
+  title: string;
+  /** "November 2026" or "Nov 14, 2026". */
+  when: string;
+  notes: string | null;
+  /** The intake, prefilled with the plan. */
+  submitUrl: string;
+  homeUrl: string;
+}
+
+/** The month a planned project comes: a nudge to submit it. */
+export function buildHomePlanReminder(i: HomePlanReminderInput): EmailDoc {
+  return {
+    subject: `Ready for your ${truncate(i.title, 60)}?`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Your plan" },
+    headline: truncate(i.title, TITLE_MAX),
+    prose: [
+      `Hi ${i.name.split(" ")[0]} — you planned this for ${i.when}. Ready? Describe it in a minute and we'll find you a local contractor on JobFlex.`,
+      ...(i.notes ? [`Your note: “${truncate(i.notes, 240)}”`] : []),
+    ],
+    cta: { label: "Submit it now", href: i.submitUrl },
+    after: [`Not yet? It stays on your home dashboard: ${i.homeUrl}`],
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface HomeownerMessageInput {
+  homeownerName: string;
+  orgName: string;
+  /** The project, as the shop knows it. */
+  project: string;
+  body: string;
+  /** The shop's lead page in JobFlex. */
+  leadUrl: string;
+}
+
+/** To the shop: what the homeowner wrote from their dashboard. Reply-to is the homeowner. */
+export function buildHomeownerMessage(i: HomeownerMessageInput): EmailDoc {
+  return {
+    subject: `${truncate(i.homeownerName, 40)} sent you a message — ${truncate(i.project, 50)}`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Message from your client" },
+    headline: `${truncate(i.homeownerName, 40)} wrote`,
+    prose: [`“${truncate(i.body, 1500)}”`, `About: ${truncate(i.project, 120)}.`],
+    cta: { label: "Open the lead in JobFlex", href: i.leadUrl },
+    after: ["Reply to this email to answer — it goes straight to them."],
     footer: PLATFORM_FOOTER,
   };
 }

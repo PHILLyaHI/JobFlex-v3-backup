@@ -39,6 +39,7 @@
 
 import type { Metadata } from "next";
 import { HomeownerResponsive } from "./homeowner-responsive";
+import { loadWizardPrefill } from "@/lib/home/portal";
 
 export const metadata: Metadata = {
   title: "JobFlex Homeowner Portal — Describe your project, get real quotes",
@@ -54,6 +55,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function HomeownerLandingPage() {
-  return <HomeownerResponsive />;
+// From the home dashboard (lib/home/portal, 2026-10-03): ?home=<key> fills the
+// contact fields, ?plan=<id> gives the first words — the request then joins
+// that dashboard. Anything else is the plain intake.
+export default async function HomeownerLandingPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const sp = await searchParams;
+  const prefill = await loadWizardPrefill(typeof sp.home === "string" ? sp.home : null, typeof sp.plan === "string" ? sp.plan : null);
+  return <HomeownerResponsive prefill={prefill} />;
 }

@@ -13,6 +13,7 @@ import { startCascade } from "@/lib/leadCenter/cascade";
 import { getRoutingMode, MANUAL_MODE_REASON } from "@/lib/leadCenter/routingMode";
 import { TEST_QUEUE_REASON } from "@/lib/leadCenter/testLeads";
 import { writeProfessionalScope } from "@/lib/leadScope";
+import { adoptLeads, findOrCreateHome, homePath, mayShowHomeKey } from "@/lib/home/portal";
 
 export interface HomeownerIntake {
   name: string;
@@ -74,7 +75,16 @@ async function geocodeOrReuse(parts: {
 // after the two inserts is best-effort: AI, geocoding, matching, and email can
 // all fail without losing the homeowner's request — the cron sweep re-drives
 // leads stuck in MATCHING.
-export async function createHomeownerLead(data: HomeownerIntake, opts: { isTest: boolean }) {
+export interface IntakeOptions {
+  isTest: boolean;
+  /** Submitted from the home dashboard: its key, and the plan it fulfils (lib/home/portal). */
+  homeKey?: string | null;
+  planId?: string | null;
+  /** The browser's zone, kept on a new home for its reminders. */
+  timezone?: string | null;
+}
+
+export async function createHomeownerLead(data: HomeownerIntake, opts: IntakeOptions) {
   const req = await db.homeownerRequest.create({
     data: {
       name: data.name,
@@ -135,6 +145,28 @@ export async function createHomeownerLead(data: HomeownerIntake, opts: { isTest:
       aiConfidence: detected?.confidence ?? null,
     },
   });
+
+  // THE HOME DASHBOARD (2026-10-03): the request joins the home that carries
+  // this email, or makes it. Older requests with the email join too. The key
+  // is handed back on screen only to a first-timer (nothing older to see) or
+  // to a request made from the dashboard itself; everyone else gets it by
+  // email — the intake is public and the address may not be theirs.
+  let homePathOut: string | null = null;
+  let homeEmailed = false;
+  try {
+    const { home, isNew } = await findOrCreateHome({ ...data, timezone: opts.timezone ?? null });
+    // This request joins first, so the adoption counts only OLDER ones.
+    await db.platformLead.update({ where: { id: platformLead.id }, data: { homeId: home.id } });
+    const older = await adoptLeads(home);
+    const fromDashboard = Boolean(opts.homeKey) && opts.homeKey === home.accessToken;
+    if (fromDashboard && opts.planId) {
+      await db.homePlan.updateMany({ where: { id: opts.planId, homeId: home.id, status: "PLANNED" }, data: { status: "SUBMITTED", platformLeadId: platformLead.id } });
+    }
+    if (mayShowHomeKey({ isNew, older, fromDashboard })) homePathOut = homePath(home.accessToken);
+    else homeEmailed = true;
+  } catch (err) {
+    console.warn("[homeowner] home dashboard link failed — the request stands:", err);
+  }
 
   // Routing. Four gates, in order (the first since 2026-10-03):
   //   0. a test lead parks as TEST_LEAD (lib/leadCenter/testLeads);
@@ -207,6 +239,9 @@ export async function createHomeownerLead(data: HomeownerIntake, opts: { isTest:
     platformLeadId: platformLead.id,
     /** The homeowner's status page — the wizard's Done screen links it. */
     statusPath: `/request/${platformLead.accessToken}`,
+    /** The home dashboard, when it may be shown on screen (see above); else it went by email. */
+    homePath: homePathOut,
+    homeEmailed,
   };
 }
 

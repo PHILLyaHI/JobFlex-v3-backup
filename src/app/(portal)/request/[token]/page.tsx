@@ -20,7 +20,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { loadRequestPortal, type PortalProposal, type ProposalStage } from "@/lib/requestPortal";
 import { publicReviewsPath } from "@/lib/reviews/publicSummary";
-import { LiveRefresh, LocalTime } from "./live";
+import { LiveRefresh, LocalTime } from "@/components/portal/live-time";
 import { RerouteButton } from "./reroute";
 import s from "./request.module.css";
 
@@ -130,7 +130,14 @@ export default async function RequestPage({ params }: { params: Promise<{ token:
             </span>
             JobFlex
           </Link>
-          <LiveRefresh className={s.live} />
+          <div className={s.topRight}>
+            {v.homeKey && (
+              <a className={s.homeLink} href={`/home/${encodeURIComponent(v.homeKey)}`}>
+                Your home dashboard
+              </a>
+            )}
+            <LiveRefresh className={s.live} />
+          </div>
         </header>
 
         {/* ── status ─────────────────────────────────────────────────── */}

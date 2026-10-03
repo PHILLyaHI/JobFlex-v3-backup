@@ -37,6 +37,7 @@ import { parsePaymentSettings, parseLeadsSettings } from "@/lib/settings";
 import { resolveSchedule, fromMinor } from "@/lib/paymentSchedule";
 import { resolveEmailRecipients, sendToMembersByPref, sendToUserByPref } from "@/lib/notificationPrefs";
 import { textOffice, sendText } from "@/lib/sms/send";
+import { homeUrlForLead } from "@/lib/home/portal";
 import { fireTextRules, jobContext, leadContext, proposalContext } from "@/lib/sms/rulesEngine";
 import { acceptedLine, dayLabel, money as smsMoney, jobBackLine, jobCompletedLine, jobMediaLine, jobStartedLine, leadLine, leadOfferLine, paymentLine, workerRespondedLine } from "@/lib/sms/format";
 import type { ProgressWhat } from "@/lib/jobProgressShared";
@@ -665,6 +666,7 @@ export async function notifyHomeownerRequestReceived(platformLeadId: string) {
       name: pl.name,
       projectType: pl.projectType ?? null,
       statusUrl: await statusUrlFor(pl),
+      homeUrl: await homeUrlForLead(pl),
     }),
   );
   await sendEmail({ to: pl.email, subject, html });
@@ -799,6 +801,7 @@ export async function notifyHomeownerMatched(platformLeadId: string) {
       rating,
       projectType: pl.detectedTrade ?? pl.projectType ?? null,
       statusUrl: await statusUrlFor(pl),
+      homeUrl: await homeUrlForLead(pl),
     }),
   );
   await sendEmail({
@@ -868,6 +871,7 @@ export async function notifyHomeownerRerouting(platformLeadId: string) {
       name: pl.name,
       projectType: pl.detectedTrade ?? pl.projectType ?? null,
       statusUrl: await statusUrlFor(pl),
+      homeUrl: await homeUrlForLead(pl),
     }),
   );
   await sendEmail({ to: pl.email, subject, html });
@@ -893,6 +897,7 @@ export async function notifyHomeownerManualQueue(platformLeadId: string) {
       name: pl.name,
       projectType: pl.detectedTrade ?? pl.projectType ?? null,
       statusUrl: await statusUrlFor(pl),
+      homeUrl: await homeUrlForLead(pl),
     }),
   );
   await sendEmail({ to: pl.email, subject, html });

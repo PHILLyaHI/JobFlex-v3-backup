@@ -21,6 +21,11 @@ const homeownerSchema = z.object({
   scope: z.string().trim().max(3000).optional(),
   /** /homeowner?test=<key> (lib/leadCenter/testLeads). Never echoed back. */
   testKey: z.string().max(200).optional(),
+  /** From the home dashboard (lib/home/portal): its key, and the plan being submitted. */
+  homeKey: z.string().max(200).optional(),
+  planId: z.string().max(60).optional(),
+  /** The browser's time zone, for a new home's reminders. */
+  timezone: z.string().max(80).optional(),
 });
 
 export async function submitHomeownerRequest(raw: unknown) {
@@ -44,9 +49,9 @@ export async function submitHomeownerRequest(raw: unknown) {
   // A valid ?test=<key> (lib/leadCenter/testLeads) makes this a test lead; a
   // wrong or empty key is simply an ordinary request.
   const isTest = data.testKey ? await isValidTestKey(data.testKey) : false;
-  const { testKey: _testKey, ...intake } = data;
+  const { testKey: _testKey, homeKey, planId, timezone, ...intake } = data;
   void _testKey;
-  return createHomeownerLead(intake, { isTest });
+  return createHomeownerLead(intake, { isTest, homeKey: homeKey ?? null, planId: planId ?? null, timezone: timezone ?? null });
 }
 
 // ── Adaptive clarify questions ─────────────────────────────────────────────

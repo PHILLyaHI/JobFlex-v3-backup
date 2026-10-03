@@ -45,6 +45,7 @@ import { HomeownerSprite } from "./homeowner-sprite";
 import { NetCount } from "./homeowner-net-count";
 import { StepsGrid } from "./homeowner-vignettes";
 import { HomeownerWizard } from "./wizard/homeowner-wizard";
+import type { WizardPrefill } from "@/lib/home/prefill";
 import { useNetParallax, useReveal } from "./use-homeowner-behavior";
 import { Fragment, useState } from "react";
 import Link from "next/link";
@@ -200,7 +201,7 @@ function Plate({ height, src, label }: { height: string; src: string; label: str
   );
 }
 
-export function HomeownerContent() {
+export function HomeownerContent({ prefill = null }: { prefill?: WizardPrefill | null }) {
   const rv = useReveal();
   useNetParallax();
 
@@ -243,11 +244,11 @@ export function HomeownerContent() {
               </span>
             </h1>
             <p className="h1-sub anim a3">
-              Your words become a contractor-ready scope, sent to a local pro on JobFlex. Free — no account needed.
+              Your words become a contractor-ready scope, sent to a local pro on JobFlex. Free — no account needed. Your own home dashboard comes with your first project.
             </p>
           </div>
 
-          <HomeownerWizard uid="w0" />
+          <HomeownerWizard uid="w0" prefill={prefill} />
 
           <div className="trust-row">
             <div className="tr">
@@ -282,6 +283,39 @@ export function HomeownerContent() {
           </h2>
 
           <StepsGrid className={rv.cls("grid4", "grid4")} gridRef={rv.ref("grid4")} />
+        </div>
+      </section>
+
+      {/* THE HOME DASHBOARD (2026-10-03): what comes with the first project.
+          Every line here is true of the dashboard as shipped (lib/home/portal). */}
+      <section className="steps" id="home-dashboard">
+        <div className="sec-in">
+          <div className="sec-n">Your home dashboard</div>
+          <h2 className="sec-h">
+            One link. <span className="inv">Every project</span> on your house.
+          </h2>
+          <div className="grid4">
+            <div className="st">
+              <div className="st-n">01</div>
+              <div className="st-t">Made for you, automatically</div>
+              <p className="st-b">Submit your first project and your home dashboard comes with it. No account, no password — the link is yours.</p>
+            </div>
+            <div className="st">
+              <div className="st-n">02</div>
+              <div className="st-t">Proposals and your contractor</div>
+              <p className="st-b">Read each proposal and accept it online, message your contractor, see the next visit.</p>
+            </div>
+            <div className="st">
+              <div className="st-n">03</div>
+              <div className="st-t">Plan the next job</div>
+              <p className="st-b">Put “garage epoxy floor — March” on your calendar. When March comes, we remind you, and one tap sends it to a local pro.</p>
+            </div>
+            <div className="st">
+              <div className="st-n">04</div>
+              <div className="st-t">Your house’s record</div>
+              <p className="st-b">What was done, by whom and for how much — kept in one place for as long as you own the home.</p>
+            </div>
+          </div>
         </div>
       </section>
 

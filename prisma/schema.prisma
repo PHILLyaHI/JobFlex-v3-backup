@@ -578,12 +578,87 @@ model PlatformLead {
   // "Create test lead". Never cascades, goes only to isInternal organizations,
   // and stays out of the Lead Center's statistics.
   isTest             Boolean   @default(false)
+  // The homeowner's home dashboard this request belongs to (2026-10-03,
+  // model Home): set by the intake, or adopted later by the email.
+  homeId             String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   offers LeadOffer[]
+  home   Home?       @relation(fields: [homeId], references: [id])
 
   @@index([status, createdAt])
+  @@index([homeId])
+}
+
+// ─────────────────────────────────────────────
+// The homeowner's home dashboard (2026-10-03)
+// ─────────────────────────────────────────────
+// Made by the first request a homeowner submits, keyed by their email; the
+// emailed link is the login. Every later request with that email joins it,
+// so one page holds the house's projects, the plans for the next ones and
+// what was said to the contractors. See lib/home/portal.
+
+model Home {
+  id          String    @id @default(cuid())
+  // Lowercased: the one identity a request carries.
+  email       String    @unique
+  name        String
+  phone       String?
+  address     String?
+  city        String?
+  state       String?
+  zip         String?
+  // Capability token for /home/[key] — the emailed link IS the authorization.
+  accessToken String    @unique
+  // The browser's zone at the first submission; reminders land at 9 AM there.
+  timezone    String?
+  lastSeenAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  leads    PlatformLead[]
+  plans    HomePlan[]
+  messages HomeMessage[]
+}
+
+// A project the homeowner means to do: on the dashboard's calendar, with a reminder when its month comes, and one tap away from becoming a request.
+model HomePlan {
+  id             String    @id @default(cuid())
+  homeId         String
+  title          String
+  notes          String?
+  // The month (its first day) or the day the homeowner has in mind.
+  plannedFor     DateTime
+  wholeMonth     Boolean   @default(true)
+  remindAt       DateTime?
+  remindedAt     DateTime?
+  status         String    @default("PLANNED") // PLANNED | SUBMITTED | DONE | DROPPED
+  // The request it became, once submitted from the dashboard.
+  platformLeadId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  home Home @relation(fields: [homeId], references: [id], onDelete: Cascade)
+
+  @@index([homeId, status])
+  @@index([status, remindAt])
+}
+
+// What the homeowner wrote to a contractor from the dashboard — emailed to the shop with the homeowner as reply-to, and kept on the project.
+model HomeMessage {
+  id             String   @id @default(cuid())
+  homeId         String
+  platformLeadId String
+  organizationId String
+  body           String
+  // False when no mail transport could carry it (the row still stands).
+  emailed        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  home Home @relation(fields: [homeId], references: [id], onDelete: Cascade)
+
+  @@index([platformLeadId, createdAt])
 }
 
 model LeadOffer {

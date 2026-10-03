@@ -62,6 +62,7 @@ import { needsAddressFor } from "@/lib/leadRules";
 /** The street address is CONTACT_FIELDS[4]; required only when lib/leadRules says the job is measured at the property. */
 const ADDRESS_FIELD = 4;
 import { submitHomeownerRequest, suggestHomeownerQuestions, suggestHomeownerScope } from "@/actions/homeowner";
+import { browserTimeZone, type WizardPrefill } from "@/lib/home/prefill";
 import { prefersReducedMotion, referralCodeFromUrl, testKeyFromUrl } from "../use-homeowner-behavior";
 import { usePlaceholderCycle } from "./use-placeholder-cycle";
 
@@ -82,10 +83,10 @@ const UPLOADS_LIVE = false;
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 
-export function HomeownerWizard({ uid }: { uid: string }) {
+export function HomeownerWizard({ uid, prefill = null }: { uid: string; prefill?: WizardPrefill | null }) {
   /* donor `S` */
   const [step, setStep] = useState(0);
-  const [desc, setDesc] = useState("");
+  const [desc, setDesc] = useState(prefill?.description ?? "");
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [thinking, setThinking] = useState(false);
   /* not donor state — `root.classList.add('drag')`, expressed as a class */
@@ -114,6 +115,10 @@ export function HomeownerWizard({ uid }: { uid: string }) {
   /* The status page (/request/[token]) the submission hands back — the done
      pane links it, as the confirmation email does. */
   const [statusPath, setStatusPath] = useState<string | null>(null);
+  /* The home dashboard (lib/home/portal): its path when the done pane may show
+     it, or a note that the link went by email. */
+  const [homePath, setHomePath] = useState<string | null>(null);
+  const [homeEmailed, setHomeEmailed] = useState(false);
   const uploadsRef = useRef<Upload[]>([]);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -368,12 +373,19 @@ export function HomeownerWizard({ uid }: { uid: string }) {
         referralCode: referralCodeFromUrl(),
         // A tester's ?test=<key>, held since the first render (lib/leadCenter/testLeads).
         testKey: testKeyFromUrl(),
+        // From the home dashboard: the request joins it, and fulfils the plan.
+        homeKey: prefill?.homeKey,
+        planId: prefill?.planId ?? undefined,
+        // The browser's zone, for a new home's reminders.
+        timezone: browserTimeZone() || undefined,
       });
       if (!res.ok) {
         setSendErr(res.error);
         return;
       }
       setStatusPath(res.statusPath ?? null);
+      setHomePath(res.homePath ?? null);
+      setHomeEmailed(Boolean(res.homeEmailed));
       setStep(4);
       bump();
     } catch (err) {
@@ -610,7 +622,7 @@ export function HomeownerWizard({ uid }: { uid: string }) {
               <label className="fld-l" htmlFor={id}>
                 {label}
               </label>
-              <input className="q-in c-in" id={id} placeholder={label} {...CONTACT_INPUTS[i]}
+              <input className="q-in c-in" id={id} placeholder={label} {...CONTACT_INPUTS[i]} defaultValue={prefill ? [prefill.name, prefill.email, prefill.phone, prefill.zip, prefill.address][i] : undefined}
                   aria-required={i === ADDRESS_FIELD ? needsAddress : !/\(optional\)/i.test(field)} />
             </div>
           );
@@ -649,14 +661,23 @@ export function HomeownerWizard({ uid }: { uid: string }) {
           <use href="#i-check" />
         </svg>
       </span>
-      <div className="done-h">Your project is on its way.</div>
+      <div className="done-h">{homePath ? "Sent — and your home dashboard is ready." : "Your project is on its way."}</div>
       <p className="done-p">
-        We’re matching your scope with a local pro on JobFlex. We’ve emailed you a link to follow your request — and if the pro isn’t the right fit, you can ask for another.
+        {homePath
+          ? "We’re matching your scope with a local pro on JobFlex. Your home dashboard holds this project, the proposal when it comes, your contractor and the next jobs you plan — no account, no password. The link is in your email too."
+          : homeEmailed
+            ? "We’re matching your scope with a local pro on JobFlex. Your home dashboard — this project with your earlier ones, the proposals and your contractors — is in your email: we sent its link to the address you gave."
+            : "We’re matching your scope with a local pro on JobFlex. We’ve emailed you a link to follow your request — and if the pro isn’t the right fit, you can ask for another."}
       </p>
-      {/* The same link the confirmation email carries — where the request is
-          followed and, later, re-matched. A plain anchor: the path is a runtime
-          token that typedRoutes has no literal for. */}
-      {statusPath ? (
+      {/* The dashboard, when it may be shown here (lib/home/portal: a first-timer,
+          or a request made from the dashboard); else the request page, as the
+          confirmation email links it. Plain anchors: runtime tokens, no literal
+          route for typedRoutes. */}
+      {homePath ? (
+        <a className="done-link" href={homePath}>
+          Open your home dashboard →
+        </a>
+      ) : statusPath ? (
         <a className="done-link" href={statusPath}>
           Track your request →
         </a>

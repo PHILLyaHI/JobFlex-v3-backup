@@ -29,6 +29,7 @@
 import dynamic from "next/dynamic";
 import { useSyncExternalStore } from "react";
 import { HomeownerContent } from "@/components/v3/homeowner-landing/homeowner-content";
+import type { WizardPrefill } from "@/lib/home/prefill";
 
 /** CLAUDE.md's handheld target: ≤768px. */
 const HANDHELD = "(max-width: 768px)";
@@ -67,7 +68,7 @@ const getSnapshot = () => window.matchMedia(HANDHELD).matches;
 // visitor on every viewport, which is a worse trade.
 const getServerSnapshot = () => false;
 
-export function HomeownerResponsive() {
+export function HomeownerResponsive({ prefill = null }: { prefill?: WizardPrefill | null }) {
   const isHandheld = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  return isHandheld ? <MobileHomeowner /> : <HomeownerContent />;
+  return isHandheld ? <MobileHomeowner prefill={prefill} /> : <HomeownerContent prefill={prefill} />;
 }
