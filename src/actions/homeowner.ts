@@ -28,34 +28,35 @@ const homeownerSchema = z.object({
 // Reuse a prior geocode for the SAME address instead of paying Google again.
 // Public-intake addresses are almost always unique, so this only saves the
 // occasional duplicate submission — but a redundant paid call is cheap to avoid.
-// Best-effort: only reuses when a real street line is present (a zip/city-only
-// match could reuse a coarse/wrong pin) and a prior lead already has coordinates;
-// any miss or error falls through to a live geocode. Exact match on the stored
-// parts — case/whitespace variants won't dedup (that would need a normalized
-// column, i.e. a schema change, which we're not making here).
+// Best-effort: only reuses when a real street line is present (a zip-only match
+// could reuse a coarse/wrong pin) and a prior lead already has coordinates; any
+// miss or error falls through to a live geocode. Matched on the street line and
+// the ZIP — the city and the state on a stored lead are the geocoder's, not
+// what was typed, so they cannot be part of the key. Exact match — case and
+// whitespace variants won't dedup (that would need a normalized column, i.e. a
+// schema change, which we're not making here).
+type Geo = { lat: number; lng: number; city?: string | null; state?: string | null };
 async function geocodeOrReuse(parts: {
   address?: string | null;
   city?: string | null;
   state?: string | null;
   zip?: string | null;
-}): Promise<{ lat: number; lng: number } | null> {
+}): Promise<Geo | null> {
   const street = parts.address?.trim();
   if (street) {
     try {
       const prior = await db.platformLead.findFirst({
         where: {
           address: parts.address ?? null,
-          city: parts.city ?? null,
-          state: parts.state ?? null,
           zip: parts.zip ?? null,
           lat: { not: null },
           lng: { not: null },
         },
-        select: { lat: true, lng: true },
+        select: { lat: true, lng: true, city: true, state: true },
         orderBy: { createdAt: "desc" },
       });
       if (prior?.lat != null && prior?.lng != null) {
-        return { lat: prior.lat, lng: prior.lng };
+        return { lat: prior.lat, lng: prior.lng, city: prior.city, state: prior.state };
       }
     } catch {
       // Reuse lookup is best-effort — fall through to a live geocode on any error.
@@ -129,8 +130,11 @@ export async function submitHomeownerRequest(raw: unknown) {
       email: data.email,
       phone: data.phone,
       address: data.address,
-      city: data.city,
-      state: data.state,
+      // The wizard asks for a street and a ZIP; the city and the state come
+      // from the geocode of those (owner, 2026-10-02). What a caller sent
+      // itself wins; a failed geocode leaves them empty and the request goes.
+      city: data.city?.trim() || geo?.city || null,
+      state: data.state?.trim() || geo?.state || null,
       zip: data.zip,
       lat: geo?.lat ?? null,
       lng: geo?.lng ?? null,

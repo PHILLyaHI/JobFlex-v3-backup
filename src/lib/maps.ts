@@ -16,12 +16,15 @@ const MAPS_TIMEOUT_MS = 8_000;
 // Structured geocode for Lead Center matching — joins whatever address parts
 // exist and pins them. Best-effort by design: null on disabled / no result /
 // network error, and callers fall back to zip or neutral distance scoring.
+// The city and the state come back from the same answer (2026-10-02): the
+// homeowner wizard asks for a street and a ZIP only, and the lead fills its
+// city and state from here. Either may be missing on an odd result.
 export async function geocodeAddress(parts: {
   address?: string | null;
   city?: string | null;
   state?: string | null;
   zip?: string | null;
-}): Promise<{ lat: number; lng: number } | null> {
+}): Promise<{ lat: number; lng: number; city?: string; state?: string } | null> {
   const query = [parts.address, parts.city, parts.state, parts.zip]
     .map((p) => p?.trim())
     .filter(Boolean)
@@ -35,13 +38,28 @@ export async function geocodeAddress(parts: {
     const res = await externalFetch("maps", "geocodeAddress", url.toString(), {}, { timeoutMs: MAPS_TIMEOUT_MS });
     const data = (await res.json()) as {
       status?: string;
-      results?: { geometry?: { location?: { lat: number; lng: number } } }[];
+      results?: {
+        geometry?: { location?: { lat: number; lng: number } };
+        address_components?: Array<{ long_name: string; short_name: string; types: string[] }>;
+      }[];
     };
-    const loc = data.results?.[0]?.geometry?.location;
+    const hit = data.results?.[0];
+    const loc = hit?.geometry?.location;
     if (data.status !== "OK" || typeof loc?.lat !== "number" || typeof loc?.lng !== "number") {
       return null;
     }
-    return { lat: loc.lat, lng: loc.lng };
+    const comp = (type: string, short = false) => {
+      const c = hit?.address_components?.find((a) => a.types.includes(type));
+      return c ? (short ? c.short_name : c.long_name) : undefined;
+    };
+    return {
+      lat: loc.lat,
+      lng: loc.lng,
+      // Same picks as geocodePlace below: the town, else the postal town or
+      // the neighbourhood; the state as its two-letter code.
+      city: comp("locality") ?? comp("postal_town") ?? comp("sublocality"),
+      state: comp("administrative_area_level_1", true),
+    };
   } catch {
     // Best-effort by contract: lead matching falls back to zip or neutral
     // distance scoring, so the reason is deliberately not surfaced here.
