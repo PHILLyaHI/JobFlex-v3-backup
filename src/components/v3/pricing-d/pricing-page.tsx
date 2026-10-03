@@ -148,7 +148,7 @@ export function PricingPage({
           </div>
         </section>
 
-        <CtaFooter />
+        <CtaFooter requiresCard={requiresCard} />
       </main>
       <PricingVisit />
     </div>
