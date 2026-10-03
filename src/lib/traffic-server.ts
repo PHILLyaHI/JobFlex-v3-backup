@@ -1,6 +1,6 @@
 import type { ExperimentResult, StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficDaily, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
 import { buildExperimentsQuery, buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
-import { CONVERTED_HOURS, buildConvertedQuery, buildLiveQuery, buildLiveTotalsQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, minutesIntoDay, shapeLive, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair } from "./traffic-live";
+import { CONVERTED_HOURS, MAP_HISTORY_LIMIT, buildConvertedQuery, buildLiveQuery, buildLiveTotalsQuery, buildMapHistoryQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, mapHistoryEventsFromRow, minutesIntoDay, shapeLive, shortId, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair, type MapHistory, type MapSpan } from "./traffic-live";
 import { analystSessionFromRow, buildAnalystQuery, type LandingSession } from "./traffic-analyst";
 
 /** The last half hour of events, one PostHog query, shared by every admin
@@ -67,6 +67,52 @@ export async function fetchLiveTotals(timezone: string, fullHistory = false): Pr
   promise.catch(() => { if (liveTotals.get(key)?.promise === promise) liveTotals.delete(key); });
   liveTotals.set(key, { at: now, promise });
   return promise;
+}
+
+/** The map over a longer span (2026-10-03, lib/traffic-live buildMapHistoryQuery):
+ *  one row per person, cached per span — a month's query reads every event,
+ *  so it is asked at most every few minutes whoever is watching. The rows are
+ *  cached as events; each answer shapes them with its own signups. */
+type HistoryRows = { events: LiveEvent[]; views: Map<string, number>; rows: number };
+const mapHistoryCache = new Map<string, { at: number; promise: Promise<HistoryRows> }>();
+const mapHistoryAge = (minutes: number) => (minutes <= 240 ? 60_000 : minutes <= 1440 ? 120_000 : 300_000);
+export async function getMapHistory(minutes: MapSpan, signups: FreshSignup[], opts: { includeDevelopment?: boolean; fullHistory?: boolean } = {}): Promise<Omit<MapHistory, "adNames">> {
+  const fetchedAt = new Date().toISOString();
+  const empty = { minutes, visitors: [], truncated: false, fetchedAt };
+  try {
+    if (!posthogApiConfig()) return { ...empty, status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID." };
+  } catch (err) { return { ...empty, status: "error", message: (err as Error).message }; }
+  const key = `${minutes}|${opts.includeDevelopment ? 1 : 0}|${opts.fullHistory ? 1 : 0}`;
+  const now = Date.now();
+  let hit = mapHistoryCache.get(key);
+  if (!hit || now - hit.at >= mapHistoryAge(minutes)) {
+    const promise = runTrafficQuery(buildMapHistoryQuery(minutes, opts), "map history").then((rows) => {
+      const events: LiveEvent[] = [];
+      const views = new Map<string, number>();
+      for (const row of rows) {
+        const h = Array.isArray(row) ? mapHistoryEventsFromRow(row) : null;
+        if (!h) continue;
+        events.push(...h.events);
+        views.set(shortId(h.person), h.views);
+      }
+      return { events, views, rows: rows.length };
+    });
+    promise.catch(() => { if (mapHistoryCache.get(key)?.promise === promise) mapHistoryCache.delete(key); });
+    hit = { at: now, promise };
+    mapHistoryCache.set(key, hit);
+  }
+  try {
+    const { events, views, rows } = await hit.promise;
+    // PostHog already held the rows to the span; the slack keeps a first
+    // touch at its edge (and its ad tag) while the rows sit in the cache.
+    const shaped = shapeLive(events, signups, Date.now(), { ...opts, windowMinutes: minutes + 10 });
+    // The row's own pageview count; the events stand in for the visit, not for every page.
+    const visitors = shaped.visitors.map((v) => ({ ...v, views: views.get(v.id) ?? v.views }));
+    return { ...empty, status: "ok", visitors, truncated: rows >= MAP_HISTORY_LIMIT };
+  } catch (err) {
+    const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try a shorter span." : err instanceof Error ? err.message : "The map is unavailable.";
+    return { ...empty, status: "error", message: msg };
+  }
 }
 
 /** The live report: the window's visitors shaped with the day's signups. */

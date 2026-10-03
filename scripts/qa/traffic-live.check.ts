@@ -3,6 +3,8 @@
 // signups named after the organization the database made. Static imports
 // only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
+import { MAP_HISTORY_LIMIT, MAP_SPANS, buildMapHistoryQuery, isMapSpan, mapHistoryEventsFromRow, mapSpanLabel } from "../../src/lib/traffic-live";
+import { PRESIDENTIAL_2024, partyOf } from "../../src/lib/usPolitics";
 import { AD_PLATFORM_KEYS, adTagsOf, buildConvertedQuery, buildLiveQuery, prospectsOf, isAdId, landingTradeOf, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, eventStage, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
@@ -368,5 +370,57 @@ check("a member who signed up two hours ago is on it as signed up, with the wind
 check("a convert older than a day is gone", prospectsOf([], [{ ...dayWin.visitors[0], signedUpAt: new Date(NOW - 25 * 3_600_000).toISOString() }], NOW).length === 0);
 check("a convert is listed once, even when the window holds them too", prospectsOf([dayWin.visitors[0]], [dayWin.visitors[0]], NOW).length === 1);
 check("the tags to name include the converts' ads", adTagsOf({ visitors: [], platforms: [], converted: [{ ...looker, campaign: "120248923877540999" }] }).includes("120248923877540999"));
+
+// ── the map over longer spans (owner, 2026-10-03): 1 h to a month, one row per person
+check("the spans run from 5 min to a month, labelled the way the buttons read",
+  MAP_SPANS.map(mapSpanLabel).join("|") === "Now · 5 min|30 min|1 h|4 h|6 h|12 h|1 day|3 days|7 days|Month", MAP_SPANS.map(mapSpanLabel).join("|"));
+check("isMapSpan takes a span and nothing else", isMapSpan(240) && isMapSpan("1440") && isMapSpan(43200) && !isMapSpan(61) && !isMapSpan(null) && !isMapSpan("month"));
+const hq = buildMapHistoryQuery(1440);
+const selectColumns = (sql: string) => {
+  const body = sql.slice(sql.indexOf("SELECT") + 6, sql.indexOf("FROM events"));
+  let depth = 0, quoted = false, n = 1;
+  for (const ch of body) {
+    if (ch === "'") quoted = !quoted;
+    else if (!quoted && ch === "(") depth++;
+    else if (!quoted && ch === ")") depth--;
+    else if (!quoted && depth === 0 && ch === ",") n++;
+  }
+  return n;
+};
+// The visitor rule's \\b is the live query's own; the new columns carry no backslash.
+check("the span query: one row per person, newest first, capped, its columns free of backslashes, balanced",
+  /INTERVAL 1440 MINUTE/.test(hq) && new RegExp(`GROUP BY pid ORDER BY last_seen DESC LIMIT ${MAP_HISTORY_LIMIT}$`).test(hq) && !hq.slice(0, hq.indexOf("FROM events")).includes("\\") && hq.split("(").length === hq.split(")").length);
+check("the span query returns the 39 columns the row reader reads", selectColumns(hq) === 39, String(selectColumns(hq)));
+check("the span is held between the half hour and a month", /INTERVAL 43200 MINUTE/.test(buildMapHistoryQuery(99999)) && /INTERVAL 30 MINUTE/.test(buildMapHistoryQuery(1)));
+check("the span query keeps the page's visitor rule and the ad-launch floor", hq.includes("jobflex.app") && /2026-09-30/.test(hq) && !/2026-09-30/.test(buildMapHistoryQuery(1440, { fullHistory: true })));
+const hrow = (o: Record<number, unknown>) => {
+  const r: unknown[] = Array(39).fill("");
+  Object.assign(r, { 0: "0192aa00-1111-2222-3333-444455556666", 1: "d-ad", 2: NOW - 5 * 3_600_000, 3: NOW - 2 * 3_600_000, 4: 6, 22: "Desktop", 23: "Chrome", 24: "Mac OS X",
+    25: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36", 27: "jobflex.app", 28: "production",
+    31: 0, 34: 0, 35: 0, 36: 0, 15: null, 16: null });
+  for (const [k, v] of Object.entries(o)) r[Number(k)] = v;
+  return r;
+};
+const adRow = mapHistoryEventsFromRow(hrow({ 5: "/", 6: "https://jobflex.app/?utm_source=fb", 7: "l.facebook.com", 8: "fb", 9: "paid", 10: "120248923877540999", 11: "120248923877541000", 12: "fbclid",
+  13: "/dashboard/jobs", 14: "https://jobflex.app/dashboard/jobs", 15: 32.78, 16: -96.8, 17: "Dallas", 18: "Texas", 19: "tx", 20: "United States", 21: "us",
+  29: "org_9", 30: "user_9", 31: NOW - 3 * 3_600_000, 32: "pro", 33: "trial_started", 37: "/dashboard" }));
+check("a row reads back as its events: first touch, the signup, the app, the last page — the last one carries the place",
+  !!adRow && adRow.views === 6 && adRow.events.map((e) => e.event === "$pageview" ? e.pathname : e.event).join(" > ") === "/ > jf_signup_completed > /dashboard > /dashboard/jobs"
+  && adRow.events[adRow.events.length - 1].regionCode === "TX" && adRow.events.slice(0, -1).every((e) => e.at < adRow.events[adRow.events.length - 1].at && e.lat === null),
+  adRow?.events.map((e) => `${e.event}:${e.pathname}@${e.at}`).join(" "));
+const adDay = shapeLive(adRow?.events ?? [], [], NOW, { windowMinutes: 1440 + 10 }).visitors;
+check("…and shapes into one visitor from a Facebook ad who signed up, now in the app, pinned in Dallas",
+  adDay.length === 1 && adDay[0].fromAd && adDay[0].platform === "facebook" && adDay[0].stage === "signed-up" && adDay[0].page === "/dashboard/jobs"
+  && adDay[0].lat === 32.78 && adDay[0].regionCode === "TX" && adDay[0].campaign === "120248923877540999" && adDay[0].orgId === "org_9", JSON.stringify(adDay[0] ?? null).slice(0, 300));
+const lostRow = mapHistoryEventsFromRow(hrow({ 0: "0192bb00-1111-2222-3333-444455557777", 5: "/auth/login", 13: "/auth/reset", 38: "/auth/reset", 15: 0, 16: 0 }));
+const lost = shapeLive(lostRow?.events ?? [], [], NOW, { windowMinutes: 1440 + 10 }).visitors[0];
+check("a customer locked out is signing in, and a 0,0 place is no place", !!lost && lost.stage === "signing-in" && lost.lockedOut && lost.lat === null && lost.lon === null, JSON.stringify(lost ?? null).slice(0, 200));
+const stepRow = mapHistoryEventsFromRow(hrow({ 0: "0192cc00-1111-2222-3333-444455558888", 5: "/", 13: "/auth/register", 35: NOW - 2 * 3_600_000 - 5000, 36: 3 }));
+const stepper = shapeLive(stepRow?.events ?? [], [], NOW, { windowMinutes: 1440 + 10 }).visitors[0];
+check("a sign-up step reads as registering, with its number", !!stepper && stepper.stage === "registering" && stepper.steps.some((x) => x.kind === "registering" && /3/.test(x.label)), JSON.stringify(stepper?.steps ?? null));
+check("a row without a person or a time is skipped", mapHistoryEventsFromRow(hrow({ 0: "" })) === null && mapHistoryEventsFromRow(hrow({ 3: 0 })) === null);
+// ── the states in red and blue: the 2024 presidential vote
+check("every state and DC is painted, 20 blue and 31 red", Object.keys(PRESIDENTIAL_2024).length === 51 && Object.values(PRESIDENTIAL_2024).filter((p) => p === "D").length === 20);
+check("the swing states as they went in 2024, a territory unpainted", ["PA", "MI", "WI", "GA", "AZ", "NV", "NC"].every((c) => partyOf(c) === "R") && partyOf("mn") === "D" && partyOf("NH") === "D" && partyOf("VA") === "D" && partyOf("PR") === null && partyOf(null) === null);
 
 process.exit(bad ? 1 : 0);

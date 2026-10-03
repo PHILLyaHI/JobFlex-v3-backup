@@ -16,6 +16,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
+import { PARTY_LABEL, partyOf } from "@/lib/usPolitics";
 import type { LiveStage, LiveTotals, LiveVisitor } from "@/lib/traffic-live";
 import { Ago } from "./ticker";
 import { JourneyLine } from "./journey-line";
@@ -66,9 +67,13 @@ const EMPTY_NAMES: Record<string, string> = {};
 /** "3 min" — a relative time that the shared clock moves on its own. */
 const Since = ({ iso }: { iso: string }) => <Ago iso={iso} format={(x, at) => ago(at - Date.parse(x))}/>;
 
-/** The world: ocean, grid, countries and (zoomed over North America) the
- *  states, shaded by visitors. Re-rendered only when the shapes or the counts change. */
-const MapBase = memo(function MapBase({ map, shapes, states, perCountry, perState }: { map: WorldMap; shapes: Shape[]; states: Shape[] | null; perCountry: Map<string, number>; perState: Map<string, number> }) {
+/** A pulse on the red-and-blue map: an ink ring that reads on either colour. */
+const RING = { fill: "none", stroke: "var(--ink)", strokeWidth: 1.6, vectorEffect: "non-scaling-stroke" } as const;
+
+/** The world: ocean, grid, countries and the US states — red and blue by the
+ *  2024 vote while that switch is on, else (zoomed over North America) shaded
+ *  by visitors. Re-rendered only when the shapes, the counts or the switch change. */
+const MapBase = memo(function MapBase({ map, shapes, states, party, perCountry, perState }: { map: WorldMap; shapes: Shape[]; states: Shape[] | null; party: boolean; perCountry: Map<string, number>; perState: Map<string, number> }) {
   const mostCountry = Math.max(1, ...perCountry.values()), mostState = Math.max(1, ...perState.values());
   return <>
     <path d={map.sphere} className={s.mapOcean} />
@@ -78,14 +83,20 @@ const MapBase = memo(function MapBase({ map, shapes, states, perCountry, perStat
         const n = c.c ? perCountry.get(c.c) ?? 0 : 0;
         // With the states drawn, they carry the shading and the country itself stays plain.
         const plain = !n || (states && c.c === "US");
-        return <path key={`${c.c ?? c.n}-${i}`} d={c.d} data-country={c.c ?? undefined} data-tip={`${c.n}${n ? ` · ${plural(n, "visitor", "visitors")}` : ""}`} className={s.mapLand} style={plain ? undefined : { fill: `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostCountry))}%, var(--paper-deep))` }} strokeWidth={0.8} vectorEffect="non-scaling-stroke" />;
+        // Beside red and blue states a blue Canada reads as a vote: grey says "visitors" alone.
+        const wash = party ? `color-mix(in oklab, var(--ink) ${Math.round(14 + 22 * (n / mostCountry))}%, var(--paper-deep))` : `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostCountry))}%, var(--paper-deep))`;
+        return <path key={`${c.c ?? c.n}-${i}`} d={c.d} data-country={c.c ?? undefined} data-tip={`${c.n}${n ? ` · ${plural(n, "visitor", "visitors")}` : ""}`} className={s.mapLand} style={plain ? undefined : { fill: wash }} strokeWidth={0.8} vectorEffect="non-scaling-stroke" />;
       })}
     </g>
     {states && (
       <g>
         {states.map((x) => {
           const n = perState.get(x.r ?? "") ?? 0;
-          return <path key={x.r} d={x.d} data-tip={`${x.n}${n ? ` · ${plural(n, "visitor", "visitors")}` : ""}`} className={s.mapState} style={n ? { fill: `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostState))}%, var(--paper-deep))` } : undefined} strokeWidth={0.5} vectorEffect="non-scaling-stroke" />;
+          // Red and blue (2026-10-03): how the state voted for president in
+          // 2024, in tints pale enough that every pin colour reads on them.
+          const p = party ? partyOf(x.r) : null;
+          const tip = `${x.n}${p ? ` · ${PARTY_LABEL[p]} in 2024` : ""}${n ? ` · ${plural(n, "visitor", "visitors")}` : ""}`;
+          return <path key={x.r} d={x.d} data-tip={tip} data-party={p ?? undefined} className={p === "D" ? s.mapStateDem : p === "R" ? s.mapStateRep : s.mapState} style={!p && n ? { fill: `color-mix(in oklab, var(--blueprint) ${Math.round(28 + 52 * (n / mostState))}%, var(--paper-deep))` } : undefined} strokeWidth={0.5} vectorEffect="non-scaling-stroke" />;
         })}
       </g>
     )}
@@ -98,6 +109,8 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
   const [map, setMap] = useState<WorldMap | null>(null);
   const [fine, setFine] = useState<Shape[] | null>(null);
   const [states, setStates] = useState<Shape[] | null>(null);
+  /** The US states in red and blue (owner, 2026-10-03); on until turned off. */
+  const [party, setParty] = useState(true);
   const [view, setView] = useState<View | null>(null);
   const [failed, setFailed] = useState(false);
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -198,7 +211,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
   const overUS = Boolean(view && usBox && view.x < usBox.x1 && view.x + view.w > usBox.x0 && view.y < usBox.y1 && view.y + view.h > usBox.y0);
   const detailed = zoom >= 1.8;
   useEffect(() => { if (detailed && !fine) void load<{ countries: Shape[] }>("world-50m.json").then((m) => setFine(m.countries)).catch(() => undefined); }, [detailed, fine]);
-  useEffect(() => { if (detailed && overUS && !states) void load<{ states: Shape[] }>("us-states.json").then((m) => setStates(m.states)).catch(() => undefined); }, [detailed, overUS, states]);
+  useEffect(() => { if ((party || (detailed && overUS)) && !states) void load<{ states: Shape[] }>("us-states.json").then((m) => setStates(m.states)).catch(() => undefined); }, [party, detailed, overUS, states]);
 
   // Scroll and trackpad pinch zoom around the pointer (a native listener, so the page doesn't scroll instead).
   const ready = Boolean(view);
@@ -338,7 +351,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
   if (!map || !full || !view) return <div className={s.mapLoading}>Loading the map…</div>;
   const k = view.w / full.w; // pins, borders and labels keep their size on screen at any zoom
   const shapes = detailed && fine ? fine : map.countries;
-  const showStates = detailed && overUS && states;
+  const showStates = Boolean(states) && (party || (detailed && overUS));
   const labelled = zoom >= 2.5;
   const topCountries = [...perCountry].sort((a, b) => b[1] - a[1]).slice(0, 8);
   const unplaced = visitors.filter((v) => v.lat === null || v.lon === null).length;
@@ -361,10 +374,16 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           role="img" aria-label={`World map: ${plural(visitors.length - unplaced, "visitor", "visitors")} in ${plural(places.length, "place", "places")}.`}
           data-pins={visitors.length - unplaced}
         >
-          <MapBase map={map} shapes={shapes} states={showStates ? states : null} perCountry={perCountry} perState={perState} />
+          <MapBase map={map} shapes={shapes} states={showStates ? states : null} party={party} perCountry={perCountry} perState={perState} />
+          {/* The pulses go under every cluster and pin, so a later one never veils
+              an earlier pin; on the red-and-blue map they are ink rings, not
+              crimson that melts into a red state (2026-10-03). */}
+          <g pointerEvents="none" data-pulses>
+            {clusters.map((c) => c.active && <circle key={`ping-${c.key}`} cx={c.x} cy={c.y} r={13 * k} className={s.livePing} {...(party ? RING : { fill: "var(--map-visitor)" })} />)}
+            {pins.map(({ v, x, y, dx, dy }) => v.active && <ellipse key={`ping-${v.id}`} cx={x + dx * k} cy={y + dy * k} rx={7 * k} ry={2.6 * k} className={s.livePing} {...(party ? RING : { fill: PIN_META[PIN_KIND[v.stage]].colour })} />)}
+          </g>
           {clusters.map((c) => (
             <g key={`cluster-${c.key}`} data-cluster={c.key} data-tip={`${plural(c.count, "visitor", "visitors")} here · click to zoom in`} className={s.mapPin}>
-              {c.active && <circle cx={c.x} cy={c.y} r={13 * k} fill="var(--map-visitor)" className={s.livePing} />}
               <circle cx={c.x} cy={c.y} r={(c.count > 99 ? 14 : 11) * k} fill="var(--ink)" stroke="#fff" strokeWidth={2 * k} />
               <text x={c.x} y={c.y + 4 * k} textAnchor="middle" fontSize={11 * k} fontWeight={800} fill="#fff" pointerEvents="none">{c.count}</text>
             </g>
@@ -374,10 +393,10 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
             const px = x + dx * k, py = y + dy * k;
             const tipText = `${placeName(v)} · ${STAGE_LABEL[v.stage]}${v.signup ? ` (${v.signup.orgName})` : ""} · ${v.source}${v.active ? " · on the site now" : ""}`;
             return (
-              <g key={v.id} data-visitor={v.id} data-tip={tipText} className={s.mapPin} opacity={v.active || on ? 1 : 0.72}>
-                {v.active && <ellipse cx={px} cy={py} rx={7 * k} ry={2.6 * k} fill={colour} className={s.livePing} />}
-                <ellipse cx={px} cy={py} rx={3.2 * k} ry={1.2 * k} fill="rgba(0,0,0,.25)" />
+              <g key={v.id} data-visitor={v.id} data-tip={tipText} className={s.mapPin} opacity={v.active || on ? 1 : 0.86}>
+                <ellipse cx={px} cy={py} rx={3.6 * k} ry={1.4 * k} fill="rgba(0,0,0,.35)" />
                 <g transform={`translate(${px} ${py}) scale(${size})`}>
+                  <path d={PIN} fill="none" stroke="var(--ink)" strokeWidth={on ? 5.2 : 4.4} strokeLinejoin="round" opacity={0.9} />
                   <path d={PIN} fill={colour} stroke={on ? "var(--ink)" : "#fff"} strokeWidth={on ? 2.4 : 1.9} />
                   <circle cx={0} cy={-15} r={3} fill="#fff" />
                   {v.fromAd && <circle cx={0} cy={-15} r={5.6} fill="none" stroke="var(--map-ad)" strokeWidth={1.6} />}
@@ -398,6 +417,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAround(view.x + view.w / 2, view.y + view.h / 2, 1 / 0.6)}>−</button>
           <button type="button" title="Fit the visitors" aria-label="Fit the visitors" onClick={fitAll}>◎</button>
           <button type="button" title="Whole world" aria-label="Whole world" onClick={() => flyTo(full)}>⟲</button>
+          <button type="button" title={party ? "Plain US states" : "US states in red and blue (2024 vote)"} aria-label="US states in red and blue" aria-pressed={party} data-party-toggle onClick={() => setParty((x) => !x)}>◐</button>
           <button type="button" title={wide ? "Back to the page · Esc" : "Full screen"} aria-label={wide ? "Exit full screen" : "Full screen"} aria-pressed={wide} onClick={() => (wide ? closeWide() : openWide())}>{wide ? <Minimize2 size={14}/> : <Maximize2 size={14}/>}</button>
         </div>
         {zoom > 1.05 && <span className={s.mapZoomLevel} data-card={!!open}>{Math.round(zoom * 10) / 10}×{showStates ? " · US states" : detailed ? " · detailed" : ""}</span>}
@@ -471,11 +491,12 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
       <div className={s.mapLegend}>
         {(Object.keys(PIN_META) as PinKind[]).filter((key) => !prospects || (key !== "member" && key !== "signing-in")).map((key) => (
           <span key={key}>
-            <svg viewBox="-9.5 -25 19 26" aria-hidden="true"><path d={PIN} fill={PIN_META[key].colour} stroke="#fff" strokeWidth={1.9} /><circle cx={0} cy={-15} r={3} fill="#fff" /></svg>
+            <svg viewBox="-11 -27 22 30" aria-hidden="true"><path d={PIN} fill="none" stroke="var(--ink)" strokeWidth={4.4} strokeLinejoin="round" opacity={0.9} /><path d={PIN} fill={PIN_META[key].colour} stroke="#fff" strokeWidth={1.9} /><circle cx={0} cy={-15} r={3} fill="#fff" /></svg>
             {PIN_META[key].label} · <b>{visitors.filter((v) => PIN_KIND[v.stage] === key).length}</b>
           </span>
         ))}
         <span><i className={s.mapAdRing} aria-hidden="true"/>From an ad</span>
+        {party && <span className={s.mapLegendParty}><i data-party="D" aria-hidden="true"/>Democratic <i data-party="R" aria-hidden="true"/>Republican <em>US states · 2024 presidential vote</em></span>}
         <span className={s.mapLegendNote}>Pulsing: on the site in the last 5 minutes</span>
         {prospects && <span className={s.mapLegendNote}>Prospects: members and customers signing in are left off; a signup stays on the map for a day.</span>}
         {unplaced > 0 && <span className={s.mapLegendNote}>{plural(unplaced, "visitor", "visitors")} without a known place: counted, not on the map</span>}
@@ -488,7 +509,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           ))}
         </div>
       )}
-      <p className={s.mapNote}>Scroll or pinch to zoom, drag to move, double-click to zoom in; zoomed in, the map turns detailed and shows the US states. Hover for names, click a pin for who it is. The last button in the corner fills the screen with the map; Esc brings the page back.</p>
+      <p className={s.mapNote}>Scroll or pinch to zoom, drag to move, double-click to zoom in; zoomed in, the map turns detailed and shows the US states. Hover for names, click a pin for who it is. The US states are painted by how each voted for president in 2024; the half-circle button in the corner turns that off. The last button fills the screen with the map; Esc brings the page back.</p>
     </div>
   );
 });

@@ -2,21 +2,22 @@
 
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { fetchAnalystSessions, getLiveTraffic as liveTraffic, getStageVisitors, getTrafficExperiments, getTrafficReport, posthogApiConfig } from "@/lib/traffic-server";
+import { fetchAnalystSessions, getLiveTraffic as liveTraffic, getMapHistory as mapHistory, getStageVisitors, getTrafficExperiments, getTrafficReport, posthogApiConfig } from "@/lib/traffic-server";
 import { analyse, type AnalystReport } from "@/lib/traffic-analyst";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import { TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
 import type { SignupAttribution } from "@/lib/traffic-contract";
-import { adNameKey, adTagsOf, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type LiveVisitor, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
+import { adNameKey, adTagsOf, isMapSpan, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type LiveVisitor, type MapHistory, type MapSpan, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
-/** The organizations made in the last day, with the owner who made them —
- *  the rows a live signup is tied back to (lib/traffic-live). */
-async function freshSignups(): Promise<FreshSignup[]> {
+/** The organizations made in the last day (or the map's longer span), with
+ *  the owner who made them — the rows a live signup is tied back to
+ *  (lib/traffic-live). */
+async function freshSignups(hours = 24, take = 60): Promise<FreshSignup[]> {
   try {
     const rows = await db.organization.findMany({
-      where: { createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }, deletedAt: null },
+      where: { createdAt: { gte: new Date(Date.now() - hours * 60 * 60 * 1000) }, deletedAt: null },
       orderBy: { createdAt: "desc" },
-      take: 60,
+      take,
       select: {
         id: true, name: true, createdAt: true, utmSource: true, utmMedium: true, utmCampaign: true, landingIndustry: true,
         memberships: { orderBy: { createdAt: "asc" }, take: 1, select: { user: { select: { email: true, name: true } } } },
@@ -66,9 +67,14 @@ export async function getLiveTraffic(input: Record<string, unknown> = {}): Promi
  *  The report from lib/traffic-server is a shared cache — copied, not mutated. */
 async function withNames(report: LiveReport): Promise<LiveReport> {
   if (report.status !== "ok") return report;
-  const tags = adTagsOf(report);
   // The day's converts are named the same way: their ads, and their company once they are in the app.
-  const everyone = [...report.visitors, ...report.converted];
+  const { adNames, named } = await namesFor(adTagsOf(report), [...report.visitors, ...report.converted]);
+  return { ...report, adNames, visitors: report.visitors.map(named), converted: report.converted.map(named) };
+}
+
+/** The owner's names for these ad tags, and a function that puts the member's
+ *  company and person on a visitor (shared by the live window and the map's spans). */
+async function namesFor(tags: string[], everyone: LiveVisitor[]): Promise<{ adNames: Record<string, string>; named: (v: LiveVisitor) => LiveVisitor }> {
   const orgIds = [...new Set(everyone.map((v) => v.orgId).filter(Boolean))];
   const userIds = [...new Set(everyone.map((v) => v.userId).filter(Boolean))];
   const [names, orgs, users] = await Promise.all([
@@ -83,7 +89,21 @@ async function withNames(report: LiveReport): Promise<LiveReport> {
   const named = (v: LiveVisitor): LiveVisitor => (v.orgId && orgName.has(v.orgId)
     ? { ...v, member: { orgName: orgName.get(v.orgId) ?? "", userName: userName.get(v.userId) ?? "" } }
     : v);
-  return { ...report, adNames, visitors: report.visitors.map(named), converted: report.converted.map(named) };
+  return { adNames, named };
+}
+
+/** The map over a longer span than the live window (2026-10-03): 1 hour to a
+ *  month, one row per person (lib/traffic-server getMapHistory), named like
+ *  the live view and tied to the organizations made in the span. */
+export async function getMapHistory(input: Record<string, unknown> = {}): Promise<MapHistory> {
+  await requirePlatformAdmin();
+  const minutes: MapSpan = isMapSpan(input.minutes) && Number(input.minutes) >= 60 ? (Number(input.minutes) as MapSpan) : 60;
+  const signups = await freshSignups(Math.ceil(minutes / 60), 400);
+  const h = await mapHistory(minutes, signups, { includeDevelopment: input.includeDevelopment === true, fullHistory: input.fullHistory === true });
+  if (h.status !== "ok") return { ...h, adNames: {} };
+  const tags = [...new Set(h.visitors.flatMap((v) => [v.campaign, v.content]).filter((t) => t && t.length <= 120))];
+  const { adNames, named } = await namesFor(tags, h.visitors);
+  return { ...h, adNames, visitors: h.visitors.map(named) };
 }
 
 /** Name an ad or campaign id the way the owner knows it ("Roofing · 40 s v1").

@@ -992,6 +992,130 @@ export function buildConvertedQuery(hours = CONVERTED_HOURS): string {
     ORDER BY timestamp DESC LIMIT 3000`;
 }
 
+// ── The map over a longer span (2026-10-03) ───────────────────────────────
+// Owner: "add 1 hour, 4 hour, 6 hour, 12 hour, 1 day, 3 day, 7 day, month,
+// not only 5 min and 30". The live window is one row per event, and a month
+// of that is far past any query's rows. So a longer span asks for ONE row per
+// person: the first touch (where they came from), the furthest thing they
+// did, and the last place and page. mapHistoryEventsFromRow turns each row
+// into the two to four events that say exactly that, and shapeLive reads them
+// like any window; only the pageview count is the row's own.
+
+/** The spans the map offers, in minutes. Up to LIVE_WINDOW_MINUTES the live rows serve. */
+export const MAP_SPANS = [5, 30, 60, 240, 360, 720, 1440, 4320, 10080, 43200] as const;
+export type MapSpan = (typeof MAP_SPANS)[number];
+export const isMapSpan = (n: unknown): n is MapSpan => (MAP_SPANS as readonly number[]).includes(Number(n));
+/** "Now · 5 min", "30 min", "1 h", "1 day", "Month". */
+export function mapSpanLabel(m: MapSpan): string {
+  if (m === 5) return "Now · 5 min";
+  if (m < 60) return `${m} min`;
+  if (m < 1440) return `${m / 60} h`;
+  if (m === 43200) return "Month";
+  const d = m / 1440;
+  return `${d} ${d === 1 ? "day" : "days"}`;
+}
+/** The most people one span's query returns, newest first. */
+export const MAP_HISTORY_LIMIT = 5000;
+
+/** The map's people over a longer span (getMapHistory). */
+export interface MapHistory {
+  status: "ok" | "disabled" | "error";
+  message?: string;
+  minutes: MapSpan;
+  visitors: LiveVisitor[];
+  /** More people than MAP_HISTORY_LIMIT: the oldest were left off. */
+  truncated: boolean;
+  adNames: Record<string, string>;
+  fetchedAt: string;
+}
+
+/** One HogQL query, one row per person over the span. Only functions the
+ *  report and the analyst already run on production PostHog, plus argMax —
+ *  argMin's twin. The path rules are written out without backslashes. */
+export function buildMapHistoryQuery(minutes: number, opts: { includeDevelopment?: boolean; fullHistory?: boolean } = {}): string {
+  const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
+  const path = `ifNull(nullIf(${prop("$pathname")}, ''), path(${prop("$current_url")}))`;
+  const lat = "toFloat64OrNull(toString(properties.$geoip_latitude))";
+  const lon = "toFloat64OrNull(toString(properties.$geoip_longitude))";
+  const located = `${lat} IS NOT NULL AND ${lon} IS NOT NULL`;
+  const click = `multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, '')`;
+  const tagged = `${prop("utm_source")} != ''`;
+  const lastOf = (v: string) => `argMaxIf(${v}, timestamp, ${v} != '')`;
+  const ms = (when: string) => `toUnixTimestamp(maxIf(timestamp, ${when})) * 1000`;
+  const m = Math.max(LIVE_WINDOW_MINUTES, Math.min(43200, Math.round(minutes)));
+  return `SELECT toString(person_id) AS pid, any(toString(distinct_id)),
+    toUnixTimestamp(min(timestamp)) * 1000, toUnixTimestamp(max(timestamp)) * 1000 AS last_seen,
+    countIf(event = '$pageview'),
+    argMin(${path}, timestamp), argMin(${prop("$current_url")}, timestamp), argMin(${prop("$referring_domain")}, timestamp),
+    argMinIf(${prop("utm_source")}, timestamp, ${tagged}), argMinIf(${prop("utm_medium")}, timestamp, ${tagged}),
+    argMinIf(${prop("utm_campaign")}, timestamp, ${tagged}), argMinIf(${prop("utm_content")}, timestamp, ${tagged}),
+    argMinIf(${click}, timestamp, ${click} != ''),
+    argMax(${path}, timestamp), argMax(${prop("$current_url")}, timestamp),
+    argMaxIf(${lat}, timestamp, ${located}), argMaxIf(${lon}, timestamp, ${located}),
+    ${lastOf(prop("$geoip_city_name"))}, ${lastOf(prop("$geoip_subdivision_1_name"))}, ${lastOf(prop("$geoip_subdivision_1_code"))},
+    ${lastOf(prop("$geoip_country_name"))}, ${lastOf(prop("$geoip_country_code"))},
+    ${lastOf(prop("$device_type"))}, ${lastOf(prop("$browser"))}, ${lastOf(prop("$os"))},
+    ${lastOf(UA_SQL)}, anyIf(${BROWSER_TYPE_SQL}, ${BROWSER_TYPE_SQL} != ''), ${lastOf(HOST_SQL)}, ${lastOf(prop("jf_environment"))},
+    ${lastOf(prop("jf_org_id"))}, ${lastOf(prop("jf_user_id"))},
+    ${ms(`event = '${E.completed}' AND ${prop("verified")} IN ('true', '1', '')`)},
+    argMaxIf(${prop("plan")}, timestamp, event = '${E.completed}'), argMaxIf(${prop("outcome")}, timestamp, event = '${E.completed}'),
+    ${ms(`event IN ('${E.opened}', '${E.attempt}')`)},
+    ${ms(`event = '${E.step}' OR startsWith(${path}, '/auth/register')`)},
+    maxIf(toFloat64OrNull(${prop("step")}), event = '${E.step}'),
+    argMaxIf(${path}, timestamp, match(${path}, '^/(dashboard|mobile-|w/|portal|worker)')),
+    argMaxIf(${path}, timestamp, match(${path}, '^/auth/(login|signin|sign-in|forgot|reset|recover|verify|confirm)'))
+    FROM events
+    WHERE timestamp > now() - INTERVAL ${m} MINUTE AND timestamp <= now() AND event IN (${liveEventsSql()})
+      AND ${visitorRuleSql({ host: HOST_SQL, ua: UA_SQL, browserType: BROWSER_TYPE_SQL, event: "event" }, opts.includeDevelopment ? "with-local" : "production")}
+      AND ${sinceSql(!!opts.fullHistory)}
+    GROUP BY pid ORDER BY last_seen DESC LIMIT ${MAP_HISTORY_LIMIT}`;
+}
+
+/** One person's row as the events that say the same thing: the first touch,
+ *  the furthest step (a signup, the checkout, a sign-up step), the app or
+ *  sign-in screen they reached, and the last page and place — in that order,
+ *  so the last event is the one that tells where they are. */
+export function mapHistoryEventsFromRow(row: unknown[]): { person: string; views: number; events: LiveEvent[] } | null {
+  const str = (i: number) => (typeof row[i] === "string" ? (row[i] as string) : row[i] == null ? "" : String(row[i]));
+  const num = (i: number) => { const v = Number(row[i]); return Number.isFinite(v) ? v : 0; };
+  const coord = (i: number, limit: number) => {
+    const v = typeof row[i] === "number" ? (row[i] as number) : row[i] == null || row[i] === "" ? NaN : Number(row[i]);
+    return Number.isFinite(v) && Math.abs(v) <= limit && v !== 0 ? v : null;
+  };
+  const person = str(0);
+  const lastAt = num(3);
+  if (!person || !(lastAt > 0)) return null;
+  const firstAt = num(2) > 0 ? Math.min(num(2), lastAt) : lastAt;
+  const lat = coord(15, 90), lon = coord(16, 180);
+  const click = str(12).toLowerCase();
+  const base: LiveEvent = {
+    person, distinctId: str(1), event: "$pageview", at: firstAt, pathname: "", url: "", sessionId: "",
+    hostname: str(27), environment: str(28), utmSource: "", utmMedium: "", utmCampaign: "", utmContent: "", referrer: "",
+    device: str(22), browser: str(23), os: str(24), country: "", region: "", city: "", placement: "", label: "",
+    orgId: "", userId: "", step: "", outcome: "", plan: "", verified: "", lat: null, lon: null, countryCode: "", regionCode: "",
+    click: "", ua: str(25), browserType: str(26),
+  };
+  const events: LiveEvent[] = [{
+    ...base, pathname: str(5), url: str(6), referrer: str(7),
+    utmSource: str(8), utmMedium: str(9), utmCampaign: str(10), utmContent: str(11), click: CLICK_IDS[click] ? click : "",
+  }];
+  // A marker never takes the last word: that belongs to the last page.
+  const before = Math.max(firstAt, lastAt - 1);
+  const doneAt = num(31), checkoutAt = num(34), stepAt = num(35);
+  if (doneAt > 0) events.push({ ...base, event: E.completed, at: Math.min(doneAt, before), verified: "true", plan: str(32), outcome: str(33) });
+  else if (checkoutAt > 0) events.push({ ...base, event: E.opened, at: Math.min(checkoutAt, before) });
+  else if (stepAt > 0) events.push({ ...base, event: E.step, at: Math.min(stepAt, before), step: num(36) > 0 ? String(num(36)) : "" });
+  if (str(37)) events.push({ ...base, pathname: str(37), at: before });
+  else if (str(38)) events.push({ ...base, pathname: str(38), at: before });
+  events.push({
+    ...base, at: lastAt, pathname: str(13), url: str(14),
+    lat: lat !== null && lon !== null ? lat : null, lon: lat !== null && lon !== null ? lon : null,
+    city: str(17), region: str(18), regionCode: str(19).toUpperCase().slice(0, 3), country: str(20), countryCode: str(21).toUpperCase().slice(0, 2),
+    orgId: str(29).slice(0, 40), userId: str(30).slice(0, 40),
+  });
+  return { person, views: num(4), events };
+}
+
 /** The columns every live row carries, in the order liveEventFromRow reads them. */
 function liveSelectSql(): string {
   const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;

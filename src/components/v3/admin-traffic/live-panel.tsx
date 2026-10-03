@@ -7,8 +7,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Building2, Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } from "lucide-react";
-import { getLiveTraffic, nameAdTag } from "@/actions/trafficDashboard";
-import { isAdId, prospectsOf, type LiveReport, type LiveStage, type LiveVisitor } from "@/lib/traffic-live";
+import { getLiveTraffic, getMapHistory, nameAdTag } from "@/actions/trafficDashboard";
+import { MAP_HISTORY_LIMIT, MAP_SPANS, isAdId, mapSpanLabel, prospectsOf, type LiveReport, type LiveStage, type LiveVisitor, type MapHistory, type MapSpan } from "@/lib/traffic-live";
+import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
 import { LivePlatforms } from "./live-platforms";
 import { Ago, setClockPeriod } from "./ticker";
 import { sameReport } from "./live-diff";
@@ -62,8 +63,11 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
   const [adsOnly, setAdsOnly] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  /** Who the map shows: the last 5 minutes (on the site now) or the whole window. */
-  const [span, setSpan] = useState<5 | 30>(30);
+  /** Who the map shows (2026-10-03): the last 5 minutes (on the site now), the
+   *  live half hour, or a longer span — 1 hour to a month — read as one row
+   *  per person (getMapHistory) and asked again every two minutes while chosen. */
+  const [span, setSpan] = useState<MapSpan>(30);
+  const [history, setHistory] = useState<MapHistory | null>(null);
   // MAP VIEW (owner, 2026-10-02): everyone, or only the prospects — new
   // visitors trying to convert, members and customers signing in left off, a
   // signup kept for a day (lib/traffic-live prospectsOf). Remembered per
@@ -80,7 +84,7 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
    *  and the next poll brings them back from the server anyway. "" = forgotten. */
   const [named, setNamed] = useState<Record<string, string>>({});
   // One object per change, not per render: the memoised map, cards and rows take it as a prop.
-  const adNames = useMemo<Record<string, string>>(() => Object.fromEntries(Object.entries({ ...(report.adNames ?? {}), ...named }).filter(([, n]) => n)), [report.adNames, named]);
+  const adNames = useMemo<Record<string, string>>(() => Object.fromEntries(Object.entries({ ...(report.adNames ?? {}), ...(history?.adNames ?? {}), ...named }).filter(([, n]) => n)), [report.adNames, history?.adNames, named]);
   const onName = useCallback(async (tag: string, name: string) => {
     const r = await nameAdTag({ tag, name });
     if (r.ok) setNamed((m) => ({ ...m, [tag]: name.trim() }));
@@ -138,6 +142,25 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
     return () => { window.clearInterval(poll); document.removeEventListener("visibilitychange", onVisible); };
   }, [includeDev, liveMode, load]);
 
+  // A longer span: its own query, cached on the server for minutes; asked when
+  // the span is chosen and every two minutes while it stays chosen and in front.
+  const historyRequest = useRef(0);
+  const loadHistory = useCallback(async (minutes: MapSpan, dev: boolean) => {
+    const id = ++historyRequest.current;
+    try {
+      const next = await getMapHistory({ minutes, includeDevelopment: dev, fullHistory });
+      if (id === historyRequest.current) setHistory(next);
+    } catch (err) {
+      if (id === historyRequest.current) setHistory({ status: "error", message: err instanceof Error ? err.message : "Could not load the map.", minutes, visitors: [], truncated: false, adNames: {}, fetchedAt: new Date().toISOString() });
+    }
+  }, [fullHistory]);
+  useEffect(() => {
+    if (span < 60) return;
+    const first = window.setTimeout(() => void loadHistory(span, includeDev), 0);
+    const poll = window.setInterval(() => { if (document.visibilityState === "visible") void loadHistory(span, includeDev); }, 120_000);
+    return () => { window.clearTimeout(first); window.clearInterval(poll); };
+  }, [span, includeDev, loadHistory]);
+
   const c = report.counts;
   // Today against the same hour yesterday — the only honest comparison while
   // the day is still running. Null when yesterday had nobody to divide by.
@@ -147,12 +170,23 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
   const youngDay = report.dayAgeMinutes < 120;
   const dayAge = report.dayAgeMinutes < 60 ? `${Math.max(1, report.dayAgeMinutes)} min` : `${Math.floor(report.dayAgeMinutes / 60)} h`;
   const rows = useMemo(() => report.visitors.filter((v) => (!adsOnly || v.fromAd || v.stage === "signed-up") && (!platform || v.platform === platform)), [report.visitors, adsOnly, platform]);
+  const longSpan = span >= 60;
+  const historyReady = longSpan && history?.minutes === span;
+  // A span reaching back past the ad launch counts from it, as the whole page
+  // does — so 7 days and a month read the same until the launch is that old.
+  const spanFromLaunch = historyReady && !!history && !fullHistory && Date.parse(history.fetchedAt) - span * 60_000 < TRAFFIC_SINCE_MS;
   const onMap = useMemo(() => {
+    if (longSpan) {
+      // The span's people, through the same filters as the list; their own
+      // converts are already among them, so nothing is merged in.
+      const spanRows = (historyReady && history ? history.visitors : []).filter((v) => (!adsOnly || v.fromAd || v.stage === "signed-up") && (!platform || v.platform === platform));
+      return mapView === "prospects" ? prospectsOf(spanRows, []) : spanRows;
+    }
     const inWindow = rows.filter((v) => span === 30 || v.active);
     if (mapView !== "prospects") return inWindow;
     // The day's converts follow the platform card, never the span: they stay a day.
     return prospectsOf(inWindow, report.converted.filter((v) => !platform || v.platform === platform));
-  }, [rows, span, mapView, report.converted, platform]);
+  }, [longSpan, historyReady, history, adsOnly, rows, span, mapView, report.converted, platform]);
   const converts = useMemo(() => onMap.filter((v) => v.stage === "signed-up").length, [onMap]);
   const toggleRow = useCallback((id: string) => setSelected((cur) => (cur === id ? null : id)), []);
   const live = report.status === "ok";
@@ -219,13 +253,16 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
           <button type="button" aria-pressed={mapView === "everyone"} onClick={() => setMapView("everyone")}>Everyone</button>
           <button type="button" aria-pressed={mapView === "prospects"} onClick={() => setMapView("prospects")} title="New visitors trying to convert — no members, no one signing in; a signup stays on the map for a day">Prospects</button>
         </div>
-        <div className={s.dimensionTabs} style={{ margin: 0 }}>
-          <button type="button" aria-pressed={span === 5} onClick={() => setSpan(5)}>Now · 5 min</button>
-          <button type="button" aria-pressed={span === 30} onClick={() => setSpan(30)}>Last 30 min</button>
+        <div className={s.dimensionTabs} style={{ margin: 0 }} role="group" aria-label="How far back the map looks">
+          {MAP_SPANS.map((m) => <button key={m} type="button" aria-pressed={span === m} onClick={() => setSpan(m)}>{mapSpanLabel(m)}</button>)}
         </div>
         <span>{mapView === "prospects"
-          ? `${onMap.length} ${onMap.length === 1 ? "prospect" : "prospects"} on the map · ${converts} signed up in the last 24 h`
-          : `${onMap.length} ${onMap.length === 1 ? "visitor" : "visitors"} on the map`}{platform ? ` · ${report.platforms.find((p) => p.platform === platform)?.name ?? platform} only` : ""}</span>
+          ? `${onMap.length} ${onMap.length === 1 ? "prospect" : "prospects"} on the map · ${converts} signed up in the last ${longSpan ? spanWords(span) : "24 h"}`
+          : `${onMap.length} ${onMap.length === 1 ? "visitor" : "visitors"} on the map${longSpan ? ` · last ${spanWords(span)}` : ""}`}{platform ? ` · ${report.platforms.find((p) => p.platform === platform)?.name ?? platform} only` : ""}</span>
+        {longSpan && (!historyReady ? <span data-map-span-state="loading">Loading the last {spanWords(span)}…</span>
+          : history && history.status !== "ok" ? <span data-map-span-state="error">{history.message}</span>
+          : history?.truncated ? <span data-map-span-state="truncated">The newest {MAP_HISTORY_LIMIT.toLocaleString("en-US")} people</span> : null)}
+        {spanFromLaunch && <span data-map-span-state="since">Counted from {TRAFFIC_SINCE_LABEL}, the ad launch · Show full history reaches further</span>}
         {platform && <button type="button" className={s.textButton} onClick={() => setPlatform(null)}>Show everyone</button>}
       </div>
       <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals} adNames={adNames} view={mapView}/>
@@ -237,6 +274,15 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
     {report.otherSignups.length > 0 && <div className={s.liveOthers}><span className={s.micro}>Signed up today, outside the last {report.windowMinutes} minutes or with analytics blocked — the live list above only holds the window, this holds the day:</span>{report.otherSignups.map((o) => <span key={o.orgName + o.at} className={s.liveOther}><b>{o.orgName}</b> · {o.ownerEmail || "no owner yet"} · {o.source} · {clock(o.at, timezone)} <b className={s.livePlan}>{o.planLabel}</b></span>)}</div>}
     <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top; a click on a line shows it on the map. Source is what the first page of the visit carried: it is from an ad only when it carried utm_source or fbclid — a Facebook, Instagram or TikTok link with neither is that platform&apos;s link, not an ad. Colour is how far they got, and each stage has its own: crimson looking around, cyan signing in, amber on the sign-up form or at checkout, green signed up, near-black already a member. A visitor at the login, forgot-password or reset screen is an existing customer, counted as signing in rather than browsing; "locked out" means they asked for a reset link. Places come from PostHog&apos;s GeoIP reading of the browser&apos;s address — the town is usually right, the street never known. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
   </section>;
+}
+
+/** "hour", "4 hours", "day", "3 days", "month" — the span in a sentence. */
+function spanWords(m: MapSpan): string {
+  if (m === 60) return "hour";
+  if (m < 1440) return m < 60 ? `${m} min` : `${m / 60} hours`;
+  if (m === 1440) return "day";
+  if (m === 43200) return "month";
+  return `${m / 1440} days`;
 }
 
 /** An ad or campaign tag, by the owner's name when it has one (2026-10-01).
