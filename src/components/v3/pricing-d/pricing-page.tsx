@@ -24,6 +24,7 @@ import { Reveal } from "@/components/v3/landing-e/reveal";
 import { REGISTER } from "@/components/v3/landing-e/routes";
 import { PricingPlans } from "@/components/v3/landing-e/pricing-plans";
 import { TrialLine } from "@/components/v3/landing-e/trial-line";
+import { PricingVisit } from "./pricing-visit";
 import { priceCadence, type PlanDTO } from "@/lib/planCatalog";
 import { CUSTOM_BASE_CENTS, CUSTOM_PAGE_CENTS, CUSTOM_PAGES } from "@/lib/customPlan";
 import "@/components/v3/landing-e/landing-e.css";
@@ -64,7 +65,7 @@ export function PricingPage({
               <h1 className="mt-6 max-w-[22ch] text-[clamp(38px,5.4vw,72px)] font-bold leading-[1.04] tracking-[-0.03em]">
                 Pay for the shop you run.
               </h1>
-              {requiresCard ? null : <TrialLine className="mt-6" />}
+              {requiresCard ? null : <TrialLine className="mt-6" href={REGISTER} spot="pricing-page" />}
               <p className="mt-6 max-w-[52ch] text-[16px] leading-[1.65] text-slate-500 sm:text-[17px]">
                 Every plan carries unlimited clients and the client portal. Move up, move down, or
                 build your own from the pages you actually open. No setup fee, cancel whenever.
@@ -149,6 +150,7 @@ export function PricingPage({
 
         <CtaFooter />
       </main>
+      <PricingVisit />
     </div>
   );
 }

@@ -11,13 +11,17 @@ import type { LandingVariantKey } from "./landing-variants";
    document so the anchors stay plain server-rendered links; the capture phase
    runs before the navigation, and trackTraffic sends by beacon, so the event
    survives the page leaving. Properties: placement, the button's words,
-   the trade hero shown ("default" when none), the target path. */
-export function CtaTracker({ industry }: { industry: LandingVariantKey | undefined }) {
+   the trade hero shown ("default" when none), the target path; `spot` when
+   the element names which of a kind it is (the trial badges, 2026-10-02).
+   `only` limits the tracker to some placements — /pricing tracks its badge
+   and nothing else. */
+export function CtaTracker({ industry, only }: { industry: LandingVariantKey | undefined; only?: string[] }) {
   useEffect(() => {
     const onClick = (ev: MouseEvent) => {
       const target = ev.target instanceof Element ? ev.target.closest<HTMLElement>("[data-cta]") : null;
       if (!target) return;
       const placement = target.dataset.cta || "unknown";
+      if (only && !only.includes(placement)) return;
       const label = (target.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80);
       const href = target instanceof HTMLAnchorElement ? target.getAttribute("href") ?? "" : "";
       trackTraffic(TRAFFIC_EVENTS.ctaClick, {
@@ -26,10 +30,12 @@ export function CtaTracker({ industry }: { industry: LandingVariantKey | undefin
         industry: industry ?? "default",
         href: href.split("?")[0],
         variant: "e",
+        ...(target.dataset.ctaSpot ? { spot: target.dataset.ctaSpot } : {}),
       });
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `only` is a literal per page
   }, [industry]);
   return null;
 }

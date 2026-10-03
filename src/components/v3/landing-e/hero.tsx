@@ -144,7 +144,7 @@ export function Hero({
               Sign up with Google
             </GoogleSignupButton>
           </div>
-          {requiresCard ? null : <TrialLine tone="dark" size="bar" />}
+          {requiresCard ? null : <TrialLine tone="dark" size="bar" href={registerHref} spot="hero" />}
           </div>
           {requiresCard ? <CtaNote tone="dark" className="mt-3 text-center" /> : null}
         </div>

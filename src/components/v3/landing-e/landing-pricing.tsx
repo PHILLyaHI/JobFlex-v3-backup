@@ -38,7 +38,7 @@ export function LandingPricing({
           <h2 className="lp-sec-title lp-sec-title--on-ink">Subscription plans</h2>
           {/* U+2011 non-breaking hyphens: the line never breaks at "per-/seat" or "add-/ons". */}
           <p className="lp-sec-lede lp-sec-lede--on-ink">Flat monthly price · no per‑seat add‑ons</p>
-          {requiresCard ? null : <TrialLine tone="dark" className="mt-6" />}
+          {requiresCard ? null : <TrialLine tone="dark" className="mt-6" href={registerHref} spot="pricing" />}
         </Reveal>
 
         <Reveal delay={120} className="mt-9 sm:mt-11">

@@ -1935,6 +1935,23 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   .jf-lp .lp-trial-line--lg { padding: 8px 12px; font-size: 13.5px; letter-spacing: 0.04em; }
 }
 
+/* THE BADGE AS A LINK (owner, 2026-10-02): the stamp unchanged at rest; a
+   faint wash of its own ink on hover and a sky (or blue) ring on keyboard
+   focus — nothing that makes it a third button. The ::after reaches 4 px
+   past the frame above and below, so the 38 px hero badge is a 46 px target
+   without moving a pixel of the layout. */
+.jf-lp .lp-trial-line--link {
+  position: relative;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background-color 0.2s;
+}
+.jf-lp .lp-trial-line--link::after { content: ""; position: absolute; inset: -4px 0; }
+.jf-lp .lp-trial-line--link.lp-trial-line--dark:hover { background-color: rgba(255, 255, 255, 0.08); }
+.jf-lp .lp-trial-line--link.lp-trial-line--light:hover { background-color: #f1f4f8; }
+.jf-lp .lp-trial-line--link:focus-visible { outline: 2px solid #4a9eff; outline-offset: 3px; }
+.jf-lp .lp-trial-line--link.lp-trial-line--light:focus-visible { outline-color: #1854a0; }
+
 /* THE HERO'S BADGE (owner, 2026-10-01): under the button pair, exactly as
    wide as the pair's outer edges (width 0 + min-width 100%: it takes the
    column's width and never widens it), the pair's 12 px gap above it, the

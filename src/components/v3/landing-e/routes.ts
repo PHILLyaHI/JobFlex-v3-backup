@@ -3,3 +3,4 @@
    the path out, so the pair can move in one edit. */
 export const LOGIN = "/auth/login";
 export const REGISTER = "/auth/register";
+export const PRICING = "/pricing";
