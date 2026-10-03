@@ -45,10 +45,12 @@ const STATUS_COPY: Record<string, { chip: string; title: string; body: string }>
     title: "You're matched",
     body: "They have your details and will reach out. Most contractors call within a couple of hours.",
   },
+  // Neutral (owner, 2026-10-03): the same words whether the queue holds the
+  // lead by design (manual mode) or because no shop took it.
   MANUAL_QUEUE: {
     chip: "In progress",
-    title: "A person is placing your request",
-    body: "Automatic matching didn't land your project with the right contractor, so our team is placing it by hand. We'll be in touch — no action needed.",
+    title: "We're finding the right contractor for you",
+    body: "We're matching your project with a qualified local pro. You'll get an email the moment one takes it on — no action needed.",
   },
 };
 
@@ -106,7 +108,7 @@ export function RequestStatusCard(p: Props) {
       setDialogOpen(false);
       setDone(
         res.status === "MANUAL_QUEUE"
-          ? "Done — our team will now place your request by hand and be in touch."
+          ? "Done — we're finding the right contractor for you."
           : "Done — we're matching you with another contractor now.",
       );
       router.refresh();

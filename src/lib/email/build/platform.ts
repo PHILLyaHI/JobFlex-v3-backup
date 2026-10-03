@@ -272,14 +272,16 @@ export interface HomeownerManualQueueInput {
  */
 export function buildHomeownerManualQueue(i: HomeownerManualQueueInput): EmailDoc {
   return {
-    subject: "We're matching you by hand",
+    // Neutral (owner, 2026-10-03): the homeowner is not told HOW the match is
+    // made, only that it is being made.
+    subject: "We're finding the right contractor for you",
     lockup: PLATFORM_LOCKUP,
     kicker: { text: "In progress" },
-    headline: "A person is on it",
+    headline: "We're finding the right contractor for you",
     prose: [
-      `Hi ${i.name.split(" ")[0]} — matching your ${
+      `Hi ${i.name.split(" ")[0]} — we're finding the right local contractor for your ${
         i.projectType ?? "project"
-      } request automatically didn't land it with the right contractor, so our team is now placing it by hand. We'll be in touch as soon as it's placed.`,
+      } request. We'll email you as soon as one takes it on.`,
     ],
     ...(i.statusUrl ? { cta: { label: "Track your request", href: i.statusUrl } } : {}),
     footer: PLATFORM_FOOTER,

@@ -315,6 +315,7 @@ function destinationNote(l: PlatformLeadDTO): string {
   }
   if (l.status === "MANUAL_QUEUE") {
     if (l.queueReason === "TEST_LEAD") return "test lead · internal only";
+    if (l.queueReason === "RETURNED") return "came back · send it again";
     if (l.queueReason === "NO_CANDIDATES") return "no contractor covers this";
     // Manual mode parks every request here on purpose — saying "3 offers, no
     // takers" about a lead nobody was offered is the page lying to itself.
@@ -407,6 +408,18 @@ export function AdminLeadCenterContent({
     },
     [byId],
   );
+
+  // /admin/lead-center?lead=<id> — the admin's new-request mail lands on the
+  // lead's sheet, open.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("lead");
+    if (!id || !byId.has(id)) return;
+    // After the first paint: the sheet is a dialog the page has to be there for.
+    const t = window.setTimeout(() => openLead(id), 0);
+    return () => window.clearTimeout(t);
+    // first render only: the link names one lead
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const shopById = useMemo(() => new Map(orgs.map((o) => [o.id, o])), [orgs]);
 
@@ -506,11 +519,13 @@ export function AdminLeadCenterContent({
             <button
               className={cx("btn btn-primary", bulkBusy && ui.btnBusy)}
               type="button"
-              disabled={bulkBusy}
+              disabled={bulkBusy || mode === "MANUAL"}
+              title={mode === "MANUAL" ? "Off in manual mode — send each lead by hand" : undefined}
               onClick={() => void routeAll()}
             >
               <Ic name="check" />
               {bulkBusy ? "Routing…" : `Route all ${waiting}`}
+              {mode === "MANUAL" ? <span className={styles.modeTag}>Manual mode</span> : null}
             </button>
           ) : null}
         </div>
@@ -597,6 +612,7 @@ export function AdminLeadCenterContent({
       <DetailSheet
         handleRef={detailRef}
         orgs={orgs}
+        mode={mode}
         onClosed={() => setSelectedId(null)}
         onPlace={(id) => {
           armLead(id);
@@ -1075,11 +1091,14 @@ function AlgorithmCard() {
 function DetailSheet({
   handleRef,
   orgs,
+  mode,
   onClosed,
   onPlace,
 }: {
   handleRef: React.RefObject<DetailHandle | null>;
   orgs: OrgPickDTO[];
+  /** Manual mode switches the cascade off — and its button with it. */
+  mode: RoutingMode;
   onClosed: () => void;
   /** Hand this lead to the map: it arms, and the next contractor clicked gets
    *  it. The same journey as clicking the lead's pin, from the row. */
@@ -1235,10 +1254,12 @@ function DetailSheet({
                 className={cx("btn btn-primary", busy === "requeue" && ui.btnBusy)}
                 type="button"
                 onClick={requeue}
-                disabled={busy !== null}
+                disabled={busy !== null || mode === "MANUAL"}
+                title={mode === "MANUAL" ? "Off in manual mode — send it by hand" : undefined}
               >
                 <Ic name="send" />
                 {busy === "requeue" ? "Sending…" : "Try the cascade again"}
+                {mode === "MANUAL" ? <span className={styles.modeTag}>Manual mode</span> : null}
               </button>
             ) : null}
           </>
@@ -1610,6 +1631,9 @@ function whereItStands(l: PlatformLeadDTO): string {
     case "MANUAL_QUEUE":
       if (l.queueReason === "TEST_LEAD") {
         return "Test lead — it never goes to the cascade. Send it to an internal organization.";
+      }
+      if (l.queueReason === "RETURNED") {
+        return "Back from the shop it was sent to — it passed, ran out of time, or the homeowner asked for another. Send it again.";
       }
       if (l.queueReason === "NO_CANDIDATES") {
         return "No contractor covers this trade or area — send it by hand.";

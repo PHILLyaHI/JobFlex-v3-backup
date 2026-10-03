@@ -1,9 +1,9 @@
 // Offering a platform lead to ONE named contractor — the write itself, with no
 // opinion about who asked for it.
 //
-// Two callers need exactly this: the admin's manual send
-// (actions/adminLeadCenter.ts) and manual mode's re-route after a match falls
-// through (lib/leadCenter/unmatch.ts routeToNextBest). They ran different code
+// The admin's manual send (actions/adminLeadCenter.ts) and its bulk "Route all"
+// call this. Manual mode's automatic re-route after a match fell through
+// (unmatch.ts routeToNextBest) also did, until 2026-10-03. They ran different code
 // for the same act until 2026-08-27, which is how a decline could leave a
 // PlatformLead reading MATCHED to the shop that had just refused it.
 //

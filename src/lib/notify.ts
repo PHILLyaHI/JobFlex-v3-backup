@@ -31,6 +31,7 @@ import {
   buildOwnerAccepted,
   buildOwnerPaymentReceived,
   buildPaymentIssue,
+  buildAdminNewLead,
   buildSupportTicket,
 } from "@/lib/email/build/operator";
 import { parsePaymentSettings } from "@/lib/settings";
@@ -879,6 +880,46 @@ export async function notifyHomeownerManualQueue(platformLeadId: string) {
   );
   await sendEmail({ to: pl.email, subject, html });
   return { skipped: false as const, enabled: isEmailEnabled() };
+}
+
+// ── New homeowner request → the platform admin (2026-10-03) ──────────────────
+
+/**
+ * Every real homeowner request, to the operator: SUPPORT_NOTIFY_EMAIL (comma-
+ * separated) or support@jobflex.app. Trade, town, a short scope and the link
+ * that opens the lead in the Lead Center. Test leads are not announced. Never
+ * throws; one send per address, each failure logged.
+ */
+export async function notifyAdminNewLeadRequest(platformLeadId: string) {
+  const pl = await db.platformLead.findUnique({ where: { id: platformLeadId } });
+  if (!pl || pl.isTest) return { skipped: true as const };
+  const to = (process.env.SUPPORT_NOTIFY_EMAIL?.trim() || "support@jobflex.app")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s && !undeliverable(s));
+  if (!to.length) return { skipped: true as const };
+  const appUrl = await appBaseUrl();
+  const where = [pl.city, pl.state].filter(Boolean).join(", ") || pl.zip || "no location";
+  const { subject, html } = renderEmail(
+    buildAdminNewLead({
+      trade: pl.detectedTrade ?? pl.projectType ?? null,
+      where,
+      scope: pl.scope ?? pl.description ?? "",
+      ref: "#LD-" + pl.id.slice(-4).toUpperCase(),
+      queued: pl.status === "MANUAL_QUEUE",
+      href: `${appUrl}/admin/lead-center?lead=${encodeURIComponent(pl.id)}`,
+    }),
+  );
+  let delivered = 0;
+  for (const address of to) {
+    try {
+      await sendEmail({ to: address, subject, html });
+      delivered += 1;
+    } catch (err) {
+      console.error(`[lead-center] new-request alert to ${address} failed for ${pl.id}:`, err);
+    }
+  }
+  return { skipped: false as const, delivered, enabled: isEmailEnabled() };
 }
 
 // ── Support tickets ───────────────────────────────────────────────────────────

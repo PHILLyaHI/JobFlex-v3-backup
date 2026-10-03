@@ -22,7 +22,6 @@
 import { db } from "@/lib/db";
 import { advanceCascade } from "./cascade";
 import { buildRanking } from "./matching";
-import { getRoutingMode } from "./routingMode";
 
 /**
  * How long after a match the homeowner's "find me another contractor" button
@@ -157,19 +156,18 @@ export async function unmatchAndAdvance(
         data: { rankingJson: JSON.stringify(ranking) },
       });
     }
-    if ((await getRoutingMode()) === "MANUAL") {
-      rerouted = await routeToNextBest(platformLeadId);
-    } else {
-      // The cascade owns MAX_ATTEMPTS: at the cap it parks the lead in the
-      // manual queue instead of offering — a client rejection spends an
-      // attempt exactly like a contractor pass (owner's rule #2).
-      await advanceCascade(platformLeadId);
-      const after = await db.platformLead.findUnique({
-        where: { id: platformLeadId },
-        select: { status: true },
-      });
-      rerouted = after?.status === "OFFERED";
-    }
+    // advanceCascade decides (lib/leadCenter/cascade): in manual mode — and for
+    // a lead an admin had placed — it puts the lead back in the queue; in
+    // automatic mode it offers the next shop, and at MAX_ATTEMPTS it parks the
+    // lead: a client rejection spends an attempt exactly like a contractor pass
+    // (owner's rule #2). Manual mode used to hand the lead straight to the
+    // next-best shop here (routeToNextBest); since 2026-10-03 no path does.
+    await advanceCascade(platformLeadId);
+    const after = await db.platformLead.findUnique({
+      where: { id: platformLeadId },
+      select: { status: true },
+    });
+    rerouted = after?.status === "OFFERED";
   } catch (err) {
     console.warn("[lead-center] re-drive after unmatch failed:", err);
   }
@@ -179,40 +177,4 @@ export async function unmatchAndAdvance(
     select: { status: true },
   });
   return { changed: true, rerouted, status: pl?.status ?? "MATCHING" };
-}
-
-/**
- * Manual mode's version of "next": rank again, skip every shop that has
- * already seen this lead, and offer it to the best one left. False when nobody
- * is left — the lead drops into the admin queue rather than nowhere.
- */
-export async function routeToNextBest(platformLeadId: string): Promise<boolean> {
-  const pl = await db.platformLead.findUnique({
-    where: { id: platformLeadId },
-    include: { offers: { select: { organizationId: true } } },
-  });
-  if (!pl) return false;
-  // A test lead never goes on to a real shop (lib/leadCenter/testLeads).
-  if (pl.isTest) {
-    const { TEST_QUEUE_REASON } = await import("./testLeads");
-    await db.platformLead.update({
-      where: { id: platformLeadId },
-      data: { status: "MANUAL_QUEUE", queueReason: TEST_QUEUE_REASON },
-    });
-    return false;
-  }
-  const seen = new Set(pl.offers.map((o) => o.organizationId));
-  const ranking = await buildRanking(pl);
-  const next = ranking.find((c) => !seen.has(c.orgId));
-  if (!next) {
-    await db.platformLead.update({
-      where: { id: platformLeadId },
-      data: { status: "MANUAL_QUEUE", queueReason: "EXHAUSTED" },
-    });
-    return false;
-  }
-  // An offer, like every other way a shop is handed a lead (./route).
-  const { offerPlatformLeadToOrg } = await import("./route");
-  await offerPlatformLeadToOrg(platformLeadId, next.orgId, null);
-  return true;
 }

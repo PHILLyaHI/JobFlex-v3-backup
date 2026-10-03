@@ -42,10 +42,13 @@ export async function requeuePlatformLead(platformLeadId: string): Promise<{ ok:
   await requirePlatformAdmin();
   const pl = await db.platformLead.findUnique({ where: { id: platformLeadId }, select: { isTest: true } });
   if (pl?.isTest) throw new Error("A test lead never goes to the cascade — send it to an internal organization.");
+  if ((await getRoutingMode()) === "MANUAL") throw new Error("Manual mode — the cascade is off. Send the lead by hand.");
 
   const res = await db.platformLead.updateMany({
     where: { id: platformLeadId, status: "MANUAL_QUEUE" },
-    data: { status: "MATCHING", queueReason: null, attemptCount: 0 },
+    // assignedByAdminId cleared: the admin handed this lead to the cascade, so
+    // a pass now moves it on instead of returning it (cascade.ts RETURNED).
+    data: { status: "MATCHING", queueReason: null, attemptCount: 0, assignedByAdminId: null },
   });
   if (res.count === 0) throw new Error("Only leads in the manual queue can be requeued.");
 
@@ -90,6 +93,7 @@ export async function routeAllWaitingLeads(): Promise<{
   skipped: number;
 }> {
   await requirePlatformAdmin();
+  if ((await getRoutingMode()) === "MANUAL") throw new Error("Manual mode — send each lead by hand.");
 
   const waiting = await db.platformLead.findMany({
     // Test leads are placed by hand, with internal organizations only.

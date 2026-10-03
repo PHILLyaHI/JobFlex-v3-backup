@@ -180,6 +180,17 @@ export async function createHomeownerLead(data: HomeownerIntake, opts: { isTest:
     console.warn("[homeowner] confirmation notify failed:", err);
   }
 
+  // The platform admin hears about every real request (2026-10-03): in manual
+  // mode a person places each one, so a person must know it arrived.
+  if (!opts.isTest) {
+    try {
+      const { notifyAdminNewLeadRequest } = await import("@/lib/notify");
+      await notifyAdminNewLeadRequest(platformLead.id);
+    } catch (err) {
+      console.warn("[homeowner] admin notify failed:", err);
+    }
+  }
+
   // Record referral conversion if a valid ref code accompanied the submission.
   // A test lead credits nobody.
   if (data.referralCode && !opts.isTest) {

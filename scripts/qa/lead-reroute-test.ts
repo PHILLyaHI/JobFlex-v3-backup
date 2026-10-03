@@ -36,6 +36,7 @@ import {
   unmatchAndAdvance,
 } from "../../src/lib/leadCenter/unmatch";
 import { MAX_ATTEMPTS } from "../../src/lib/leadCenter/cascade";
+import { getRoutingMode, setRoutingMode, type RoutingMode } from "../../src/lib/leadCenter/routingMode";
 
 const db = new PrismaClient();
 // The lib modules import "@/lib/db" — same database file, separate client; fine
@@ -48,6 +49,9 @@ const check = (label: string, ok: boolean, detail = ""): void => {
 };
 
 const TAG = "qa-reroute";
+// The cascade rules below are the AUTOMATIC mode's; the default is manual
+// (2026-10-03), so the run switches to AUTO and puts the switch back after.
+let MODE_BEFORE: RoutingMode = "MANUAL";
 
 async function makeOrg(name: string, opts: { eligible: boolean }) {
   return db.organization.create({
@@ -118,6 +122,8 @@ async function cleanup() {
 
 async function main() {
   await cleanup(); // stale rows from an aborted previous run
+  MODE_BEFORE = await getRoutingMode();
+  await setRoutingMode("AUTO");
 
   // ── 1 · cooldown helper ────────────────────────────────────────────────────
   console.log("\n24h cooldown (rule #1):");
@@ -229,6 +235,30 @@ async function main() {
   check("изменение принято", r5.changed);
   check("пул пуст → MANUAL_QUEUE", r5.status === "MANUAL_QUEUE", r5.status);
 
+  // ── 7 · manual mode (2026-10-03): a rejection goes back to the queue ───────
+  console.log("\nручной режим: отказ возвращает лид в очередь, не в каскад:");
+  await setRoutingMode("MANUAL");
+  const orgE = await makeOrg("echo", { eligible: true });
+  const orgF = await makeOrg("foxtrot", { eligible: true });
+  const m4 = await makeMatchedLead(orgE.id, {
+    attemptCount: 1,
+    ranking: [
+      { orgId: orgE.id, orgName: orgE.name, score: 0.9, distanceMi: 1, distanceScore: 1, ratingScore: 1, respScore: 1, fallback: false },
+      { orgId: orgF.id, orgName: orgF.name, score: 0.8, distanceMi: 2, distanceScore: 0.9, ratingScore: 1, respScore: 1, fallback: false },
+    ], // orgF is right there — manual mode must not offer it
+  });
+  const r6 = await unmatchAndAdvance(m4.pl.id, {
+    offerStatus: "REJECTED_BY_CLIENT",
+    respondedById: null,
+    leadDisposition: "lost",
+    expectedOrgId: orgE.id,
+  });
+  const m4after = await db.platformLead.findUnique({ where: { id: m4.pl.id }, include: { offers: true } });
+  check("изменение принято", r6.changed);
+  check("лид в MANUAL_QUEUE (MANUAL_MODE), не переотправлен", r6.status === "MANUAL_QUEUE" && !r6.rerouted && m4after?.queueReason === "MANUAL_MODE", `${r6.status} ${m4after?.queueReason}`);
+  check("orgF не получил оффер", !m4after?.offers.some((o) => o.organizationId === orgF.id));
+  await setRoutingMode(MODE_BEFORE);
+
   await cleanup();
   console.log(failures ? `\n${failures} FAIL` : "\nALL PASS");
   process.exit(failures ? 1 : 0);
@@ -236,6 +266,7 @@ async function main() {
 
 main().catch(async (err) => {
   console.error(err);
+  await setRoutingMode(MODE_BEFORE).catch(() => {});
   await cleanup().catch(() => {});
   process.exit(1);
 });

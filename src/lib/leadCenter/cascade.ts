@@ -16,6 +16,7 @@ import { buildRanking, withinServiceRadius, type Candidate } from "./matching";
 import { parseTradeTypes, orgCoversTrade, isTradeType, type TradeType } from "@/lib/tradeTypes";
 import { notifyLeadOfferCreated } from "@/lib/notify";
 import { TEST_QUEUE_REASON } from "./testLeads";
+import { getRoutingMode, MANUAL_MODE_REASON, RETURNED_REASON } from "./routingMode";
 
 export const OFFER_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_ATTEMPTS = 3;
@@ -67,6 +68,12 @@ export async function startCascade(platformLeadId: string): Promise<void> {
     await parkInManualQueue(platformLeadId, TEST_QUEUE_REASON, { tellHomeowner: false });
     return;
   }
+  // Manual mode (lib/leadCenter/routingMode): the cascade does not start — the
+  // cron's re-drive of a stuck lead included.
+  if ((await getRoutingMode()) === "MANUAL") {
+    await parkInManualQueue(platformLeadId, MANUAL_MODE_REASON, { tellHomeowner: false });
+    return;
+  }
 
   // No usable detected trade — this lead must not cascade at all (owner,
   // 2026-09-04: the AI classification is the ONLY trade source, and an
@@ -105,6 +112,18 @@ export async function advanceCascade(platformLeadId: string): Promise<void> {
   // A test lead an internal shop passed on goes back to the admin, not onward.
   if (pl.isTest) {
     await parkInManualQueue(platformLeadId, TEST_QUEUE_REASON, { tellHomeowner: false });
+    return;
+  }
+  // Manual mode: a pass, a lapse or the homeowner's "another contractor" puts
+  // the lead back in the queue for a person — never on to the next shop.
+  if ((await getRoutingMode()) === "MANUAL") {
+    await parkInManualQueue(platformLeadId, MANUAL_MODE_REASON, { tellHomeowner: false });
+    return;
+  }
+  // Automatic mode, but an admin had placed this lead: it is the admin's to
+  // place again (switching to automatic cascades NEW requests only).
+  if (pl.assignedByAdminId) {
+    await parkInManualQueue(platformLeadId, RETURNED_REASON, { tellHomeowner: false });
     return;
   }
 

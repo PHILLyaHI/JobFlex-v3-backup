@@ -222,6 +222,38 @@ export interface SupportTicketInput {
 }
 
 /** Platform lockup — this reaches admins, never the submitting org. */
+export interface AdminNewLeadInput {
+  trade: string | null;
+  /** "Tucson, AZ" — city and state, else the ZIP. */
+  where: string;
+  /** The scope written for a contractor, else the homeowner's words. */
+  scope: string;
+  /** "#LD-WHPK". */
+  ref: string;
+  /** Waiting in the manual queue (manual mode). */
+  queued: boolean;
+  href: string;
+}
+
+/** A new homeowner request, to the platform admin (lib/notify notifyAdminNewLeadRequest). */
+export function buildAdminNewLead(i: AdminNewLeadInput): EmailDoc {
+  const trade = i.trade ?? "Unclassified";
+  return {
+    subject: `New homeowner request — ${trade} · ${i.where}`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: i.queued ? "Waiting for you" : "Lead Center" },
+    headline: `${trade} in ${i.where}`,
+    box: [
+      { type: "field", label: "Trade", value: trade },
+      { type: "field", label: "Where", value: i.where },
+      { type: "field", label: "Request", value: i.ref },
+    ],
+    after: i.scope ? [truncate(i.scope, 420)] : [],
+    cta: { label: "Open in Lead Center", href: i.href },
+    footer: { name: "JobFlex", ref: i.ref },
+  };
+}
+
 export function buildSupportTicket(i: SupportTicketInput): EmailDoc {
   const highPriority = i.priority === "high";
   const box: BoxRow[] = [
