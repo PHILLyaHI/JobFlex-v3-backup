@@ -1285,3 +1285,14 @@
   :global(.jf-blueprint .content) .rec-fold { flex-wrap: wrap; gap: 4px 12px; padding: 12px 14px; }
   :global(.jf-blueprint .content) .rec-fold-s { flex-basis: 100%; white-space: normal; }
 }
+
+/* In the handheld frame (≤768, responsive-shell/blueprint-handheld-frame) the
+   roof and fence pages drop their desk kicker and take the phone-size masthead
+   through the frame's :global(.kicker) / :global(.page-title) rules. This
+   page's header is module-scoped, so those rules never reached it and it kept
+   the desk's three-line head — kicker, 30px title — beside siblings that had
+   lost both. Same two rules, same numbers, scoped here. */
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .kicker { display: none; }
+  :global(.jf-blueprint .content) .page-title { font-size: clamp(34px, 10.6vw, 48px); line-height: 0.95; }
+}

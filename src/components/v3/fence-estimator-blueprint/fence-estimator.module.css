@@ -1472,6 +1472,19 @@
 .bp :global(.content .draw-ctl .tool-remove:hover) { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
 @media (max-width: 860px), (pointer: coarse) {
   .bp :global(.content .draw-ctl .tool) { min-height: 44px; padding: 0 14px; }
+  /* The whole map toolbar, not only the editing strip (2026-10-02 walk):
+     Close loop / Undo / Clear / Lot lines / House / Topo / Gate / Door were
+     30px tall on a phone, the zoom and full-screen buttons 30–32px square,
+     the address Find 30px. 44 is the floor for anything a thumb has to hit
+     over a map it is also trying to drag. */
+  .bp :global(.content .tool) { min-height: 44px; padding: 0 12px; }
+  .bp :global(.content .zoom-btn) { width: 44px; height: 44px; }
+  .bp :global(.content .fs-find) { min-height: 44px; padding: 0 14px; }
+  /* The panel's small ghost actions — Add run, Price book — share the desk's 30px .btn--sm. */
+  .bp :global(.content .btn--sm) { min-height: 44px; }
+  /* The rate on every fence type is a button that opens its editor; at 24px
+     it read as a price label. Still the price, now a tappable one. */
+  .bp :global(.content .mat-rate) { min-height: 40px; padding: 0 10px; border-color: var(--hair-soft); }
 }
 
 /* Buildings panel — the parcel panel's frame, one row per traced house. */
@@ -2192,3 +2205,11 @@
   .bp :global(.content .ledger-head--acts) { flex-wrap: wrap; }
 }
 
+/* The one-line blurb under each fence type was ellipsised at ~215px on a phone
+   ("Western red cedar, solid 6' privacy — th…"). Two lines instead: the
+   sentence the list exists to show is readable, and the row stays short. LAST
+   in the file on purpose: the base `.mat-sub` rule above has the same
+   specificity, and inside an earlier media block this lost the cascade. */
+@media (max-width: 860px), (pointer: coarse) {
+  .bp :global(.content .mat-sub) { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}

@@ -98,3 +98,10 @@ div.jf-lead-nudge .jf-lead-nudge-close {
   width: 15px;
   height: 15px;
 }
+
+/* On a phone the one action in this banner — "Complete your profile" — was a
+   36px link-button, under the 44px floor every other handheld control keeps
+   (2026-10-02 walk of the Leads page at 390px). */
+@media (max-width: 768px) {
+  .jf-lead-nudge-link { display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; }
+}

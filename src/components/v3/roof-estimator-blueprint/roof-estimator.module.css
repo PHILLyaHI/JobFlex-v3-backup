@@ -1929,6 +1929,20 @@
   .bp :global(.content .addr-grid) { grid-template-columns: 1fr 1fr; }
   .bp :global(.content .addr-wide) { grid-column: span 2; }
   .bp :global(.content .est-field--sm) { width: auto; }
+  /* The measure form on a phone (2026-10-02 walk): 13px fields made iOS zoom
+     the page on every tap into them, and 36px was under the 44px floor.
+     16px is the size the browser stops zooming at; the height is the floor. */
+  .bp :global(.content .est-in), .bp :global(.content .est-field .bp-sel-in) { height: 44px; font-size: 16px; }
+  /* Recent measurements: the row was address | source | figure in one line,
+     and at 390px the address got ~130px — "18412 92nd Ave NE…" with the
+     squares cut to "18". Two rows now: the address and its date on top, the
+     source badge and the figure under them. Nothing is hidden. */
+  .bp :global(.content .rf-recent-row) { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; row-gap: 6px; column-gap: 10px; padding: 12px 16px; }
+  .bp :global(.content .rf-recent-main) { grid-column: 1 / -1; }
+  .bp :global(.content .rf-recent-addr) { white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }
+  .bp :global(.content .rf-recent-meta) { white-space: normal; }
+  .bp :global(.content .rf-recent-src) { grid-column: 1; justify-self: start; }
+  .bp :global(.content .rf-recent-fig) { grid-column: 2; min-width: 0; }
   .bp :global(.content .rf-actions) { flex-wrap: wrap; }
   /* A column head stretches its children: a long address ellipsises inside
      the card instead of running past it (a phone review, 2026-09-17). */

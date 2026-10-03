@@ -26,13 +26,24 @@ import { Sprite } from "@/components/v3/blueprint-shell/sprite";
 import proposalStyles from "@/components/v3/proposals-blueprint/proposals.module.css";
 import dashboardStyles from "@/components/v3/dashboard-blueprint/blueprint.module.css";
 import jobsStyles from "@/components/v3/jobs-blueprint/jobs.module.css";
+import roofEstimatorStyles from "@/components/v3/roof-estimator-blueprint/roof-estimator.module.css";
+import fenceEstimatorStyles from "@/components/v3/fence-estimator-blueprint/fence-estimator.module.css";
 import styles from "./blueprint-handheld-frame.module.css";
 
 export function BlueprintHandheldFrame({ children }: { children: React.ReactNode }) {
   // The Inventory page filters its tables with the Jobs status strip (.jtabs),
   // the same registration the desk shell's PAGE_STYLES makes for it.
   const pathname = usePathname();
-  const pageStyles = pathname?.startsWith("/dashboard/inventory") ? jobsStyles.bp : null;
+  // The same per-page `.bp` the desk shell's PAGE_STYLES applies: the roof and
+  // fence pages' rules are addressable only under their own module class.
+  // HVAC scopes its stylesheet by its own classes and needs nothing here.
+  const pageStyles = pathname?.startsWith("/dashboard/inventory")
+    ? jobsStyles.bp
+    : pathname?.startsWith("/dashboard/roof-estimator")
+      ? roofEstimatorStyles.bp
+      : pathname?.startsWith("/dashboard/fence-estimator")
+        ? fenceEstimatorStyles.bp
+        : null;
   return (
     <div
       className={[proposalStyles.bp, dashboardStyles.bp, pageStyles, "jf-blueprint", styles.frame]

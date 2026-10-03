@@ -597,7 +597,7 @@ body:has(.jf-mobile-settings)::before { content: none; }
   border: var(--border-thin);
   border-radius: var(--radius);
   background: var(--sheet);
-  font-size: 14px;
+  font-size: 16px; /* 16, not 14: iOS zooms the page on focus under 16px */
   font-weight: 600;
   color: var(--ink);
   outline: none;
@@ -636,7 +636,7 @@ body:has(.jf-mobile-settings)::before { content: none; }
   border-radius: var(--radius);
   background: var(--sheet);
   color: var(--ink);
-  font-size: 14px;
+  font-size: 16px; /* 16, not 14: iOS zooms the page on focus under 16px */
   font-weight: 700;
   text-align: left;
 }

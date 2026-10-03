@@ -313,7 +313,7 @@
 .srchInput {
   flex: 1; min-width: 0;
   border: none; outline: none; background: transparent;
-  font-size: 15px; font-weight: 500;
+  font-size: 16px; /* 16, not 15: iOS zooms the page on focus under 16px */ font-weight: 500;
   color: var(--ink);
 }
 .srchInput::placeholder { color: var(--muted-light); }
@@ -584,8 +584,8 @@
 .agAdd {
   position: relative;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: 30px;
-  padding: 0 9px;
+  height: 44px; /* was 30: the one add control on the day row, 44 like every other target */
+  padding: 0 12px;
   margin: -5px -3px -5px 0;
   border: 1px solid var(--hair);
   border-radius: var(--radius);

@@ -293,6 +293,16 @@ const BLUEPRINT_HANDHELD = new Set([
   // becomes a list of rows that open, the sheet fills the width, and the
   // stock tab is the same responsive workspace it always was.
   "/dashboard/inventory",
+  // The three estimators (2026-10-02). Their pages already carry ≤860px
+  // rules and read fine on a phone; what a phone was getting around them was
+  // the DESK chrome — the sidebar's topbar with its search box clipped to
+  // "Search clients, p…", no product mark, no drawer — because their old
+  // handheld twins were fixtures (see the note above the dynamic imports) and
+  // the fall-through was the lesser evil. The frame is the middle path that
+  // note was waiting for: the real page, the handheld nav around it.
+  "/dashboard/roof-estimator",
+  "/dashboard/fence-estimator",
+  "/dashboard/hvac-estimator",
 ]);
 
 export function ResponsiveDashboardShell({
