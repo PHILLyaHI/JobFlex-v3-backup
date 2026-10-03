@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Check, Contrast, X, ListChecks } from "lucide-react";
+import { Check, X, ListChecks } from "lucide-react";
 import { LogoMark } from "./logo";
 import { CAVEAT_LABEL, COMPARE_COMPETITORS, type CompareCell, type CompetitorId } from "./landing-compare";
 export function CompareBrand({ id }: { id: CompetitorId | "jobflex" }) {
@@ -18,11 +18,10 @@ export function CompareAnswer({ cell }: { cell?: CompareCell }) {
     const Icon = status === "yes" ? Check : X;
     return <span className={'lp-compare-answer is-' + status}><Icon size={18} strokeWidth={2.5} aria-hidden="true" />{status === "yes" ? "Yes" : "No"}</span>;
   }
-  // A yes with a catch (owner, 2026-10-02): its own state — a half-filled
-  // mark, never a tick or a cross — and the caveat's name.
+  // A yes with a catch (owner, 2026-10-02): its own state — never a tick or
+  // a cross — just the caveat's name on an amber wash.
   if (status === "partial" && cell?.caveat) {
     return <span className="lp-compare-partial">
-      <Contrast size={16} strokeWidth={2.25} aria-hidden="true" />
       <span>{CAVEAT_LABEL[cell.caveat]}</span>
     </span>;
   }
