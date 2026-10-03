@@ -188,6 +188,21 @@ export function CompanyContent({ org, activity, members, canEdit }: CompanyConte
                 <span className="cf-lbl">Phone for lead alerts</span>
                 <input className="cf-in" data-l="phone" defaultValue={org.phone} />
               </label>
+              {/* Leads farther than this from the business address are never
+                  offered to the shop (lib/leadCenter/matching). */}
+              <label className="cf">
+                <span className="cf-lbl">Service radius, miles</span>
+                <input
+                  className="cf-in"
+                  data-l="radius"
+                  type="number"
+                  inputMode="numeric"
+                  min={5}
+                  max={500}
+                  step={5}
+                  defaultValue={org.serviceRadiusMiles}
+                />
+              </label>
             </div>
             <div className="co-trades">
               <div className="kpi-lbl">Trades you take</div>

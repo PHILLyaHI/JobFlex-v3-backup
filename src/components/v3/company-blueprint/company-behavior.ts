@@ -271,7 +271,14 @@ export function initCompanyContent(
       // otherwise, so the two can never disagree.
       otherTrade: co.trades.indexOf("Other") === -1 ? null : orNull(val('[data-l="otherTrade"]')),
       leadOffersEnabled: co.leadsOn,
+      serviceRadiusMiles: radiusOrUndefined(val('[data-l="radius"]')),
     });
+  }
+
+  /** 5–500 whole miles, or nothing sent (a half-typed number is not a radius). */
+  function radiusOrUndefined(raw: string): number | undefined {
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 5 && n <= 500 ? n : undefined;
   }
 
   /** Show / hide the "name the trade" field with the Other chip. Focused when

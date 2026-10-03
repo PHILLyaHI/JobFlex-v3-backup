@@ -66,6 +66,7 @@ export default async function CompanyPage() {
         tradeTypes: parseTradeTypes(org.tradeTypesJson),
         otherTrade: org.otherTrade ?? "",
         leadOffersEnabled: org.leadOffersEnabled,
+        serviceRadiusMiles: org.serviceRadiusMiles,
         geocoded: org.lat != null && org.lng != null,
         publicProfileEnabled: org.publicProfileEnabled,
         landingHeroTitle: org.landingHeroTitle ?? "",

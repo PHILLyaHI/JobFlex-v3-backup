@@ -12,7 +12,7 @@
 // each step re-validates the next candidate's live eligibility and skips orgs
 // that have since opted out, lost their geocode, or dropped the trade.
 import { db } from "@/lib/db";
-import { buildRanking, type Candidate } from "./matching";
+import { buildRanking, withinServiceRadius, type Candidate } from "./matching";
 import { parseTradeTypes, orgCoversTrade, isTradeType, type TradeType } from "@/lib/tradeTypes";
 import { notifyLeadOfferCreated } from "@/lib/notify";
 
@@ -130,10 +130,12 @@ async function offerToNext(platformLeadId: string): Promise<void> {
 
     const org = await db.organization.findUnique({
       where: { id: cand.orgId },
-      select: { id: true, leadOffersEnabled: true, lat: true, lng: true, tradeTypesJson: true },
+      select: { id: true, leadOffersEnabled: true, lat: true, lng: true, tradeTypesJson: true, serviceRadiusMiles: true },
     });
     if (!org || !org.leadOffersEnabled || org.lat == null || org.lng == null) continue;
     if (!orgCoversTrade(parseTradeTypes(org.tradeTypesJson), detected)) continue;
+    // The radius as it is NOW: a shop that narrowed it since the snapshot is skipped.
+    if (!withinServiceRadius(pl, org)) continue;
 
     const offer = await db.$transaction(async (tx) => {
       const created = await tx.leadOffer.create({

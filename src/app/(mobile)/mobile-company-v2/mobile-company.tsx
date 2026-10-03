@@ -339,6 +339,7 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
 
   /* ---- lead matching ---- */
   const [lead, setLead] = useState(() => ({ addr: seed.org.address, phone: seed.org.phone }));
+  const [radius, setRadius] = useState(() => String(seed.org.serviceRadiusMiles ?? 50));
   const [trades, setTrades] = useState<string[]>(() => [...seed.org.tradeTypes]);
   const [leadsOn, setLeadsOn] = useState(seed.org.leadOffersEnabled);
   /* The matcher's third condition. Held in state, not derived, because
@@ -401,6 +402,7 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
         phone?: string | null;
         tradeTypes?: string[];
         leadOffersEnabled?: boolean;
+        serviceRadiusMiles?: number;
       },
       delay?: number,
     ) =>
@@ -1065,6 +1067,30 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                           tradeTypes: trades,
                           leadOffersEnabled: leadsOn,
                         });
+                      }}
+                    />
+                  </div>
+                  {/* Leads farther than this from the business address are
+                      never offered (lib/leadCenter/matching). */}
+                  <div className={styles.fld}>
+                    <label className={styles.fldLbl} htmlFor="mcoLeadRadius">
+                      Service radius, miles
+                    </label>
+                    <input
+                      className={styles.pinput}
+                      id="mcoLeadRadius"
+                      type="number"
+                      inputMode="numeric"
+                      min={5}
+                      max={500}
+                      step={5}
+                      value={radius}
+                      onChange={(ev) => {
+                        const next = ev.target.value;
+                        setRadius(next);
+                        const n = Number(next);
+                        // 5–500 whole miles, or nothing sent yet.
+                        if (Number.isInteger(n) && n >= 5 && n <= 500) pushLead({ serviceRadiusMiles: n });
                       }}
                     />
                   </div>

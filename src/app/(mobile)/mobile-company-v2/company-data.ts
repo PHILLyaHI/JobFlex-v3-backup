@@ -116,6 +116,8 @@ export type CompanyOrg = {
   /** Canonical trades (lib/tradeTypes) the org takes platform leads for. */
   tradeTypes: string[];
   leadOffersEnabled: boolean;
+  /** Lead Center service radius, miles (5–500, default 50). */
+  serviceRadiusMiles: number;
   /** Has a geocoded pin — the matcher's hard filter, and the third condition
    *  the Lead matching badge reports (see the desk build's renderLeadState). */
   geocoded: boolean;

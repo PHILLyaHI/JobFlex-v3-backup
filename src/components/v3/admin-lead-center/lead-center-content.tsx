@@ -125,7 +125,16 @@ export interface PlatformLeadDTO {
   /** The hand-send list in the cascade's order: every shop taking platform
    *  leads, scored now, marked whether it covers this lead's trade. Empty once
    *  the lead is matched. */
-  shopOrder: { orgId: string; score: number; coversTrade: boolean }[];
+  shopOrder: {
+    orgId: string;
+    score: number;
+    coversTrade: boolean;
+    /** Lead pin within the shop's service radius (lib/leadCenter/matching). */
+    inRadius: boolean;
+    /** Pin to pin; null when the lead has no pin. */
+    distanceMi: number | null;
+    radiusMi: number;
+  }[];
   /** The admin's price for the lead, in cents; null = free (2026-10-02). */
   priceCents: number | null;
   /** What the shop paid to open it (lib/leadCenter/purchase), when it did. */
@@ -1065,6 +1074,7 @@ function DetailSheet({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAllShops, setShowAllShops] = useState(false);
+  const [showOutOfArea, setShowOutOfArea] = useState(false);
   const [showRanking, setShowRanking] = useState(false);
 
   const { ref: mdlRef, open: openDialog, close: closeDialog } = useMdl();
@@ -1079,6 +1089,7 @@ function DetailSheet({
       setError(null);
       setBusy(null);
       setShowAllShops(false);
+      setShowOutOfArea(false);
       setShowRanking(false);
       openDialog();
     },
@@ -1120,28 +1131,44 @@ function DetailSheet({
     }
   }
 
-  // Shops that take this lead's trade come first, in the cascade's own order
-  // (lib/leadCenter/matching rankWith). Everyone else stays behind "Show all":
-  // shops in other trades — still scored and in order, since sending one is an
-  // exception a person may make — then shops not set up for leads at all.
-  // Before 2026-10-02 the list was every set-up shop, trade unchecked: an HVAC
-  // lead offered a flooring shop first.
+  // The hand-send list keeps the cascade's rules (lib/leadCenter/matching):
+  // shops that take this lead's trade AND whose service radius reaches it come
+  // first, in the cascade's own order. Two exceptions a person may still make
+  // stay behind their own switches: "Show out of area" (the trade, but beyond
+  // the shop's miles or with no pin to measure), nearest first; and "Show all"
+  // (other trades, then shops not set up for leads at all).
+  // Before 2026-10-02 the list was every set-up shop, trade unchecked; before
+  // 2026-10-03 distance was only a score, so a Tucson lead listed a Missouri shop.
   const order = new Map((lead?.shopOrder ?? []).map((s, i) => [s.orgId, { i, ...s }]));
   const byOrder = (a: OrgPickDTO, b: OrgPickDTO) =>
     (order.get(a.id)?.i ?? 9999) - (order.get(b.id)?.i ?? 9999) || a.name.localeCompare(b.name);
-  const readyShops = orgs.filter((o) => isMatchable(o) && order.get(o.id)?.coversTrade === true).sort(byOrder);
+  const byDistance = (a: OrgPickDTO, b: OrgPickDTO) =>
+    (order.get(a.id)?.distanceMi ?? Infinity) - (order.get(b.id)?.distanceMi ?? Infinity) || byOrder(a, b);
+  const inTrade = (o: OrgPickDTO) => isMatchable(o) && order.get(o.id)?.coversTrade === true;
+  const readyShops = orgs.filter((o) => inTrade(o) && order.get(o.id)?.inRadius === true).sort(byOrder);
+  const outOfAreaShops = orgs.filter((o) => inTrade(o) && order.get(o.id)?.inRadius !== true).sort(byDistance);
   const otherShops = [
     ...orgs.filter((o) => isMatchable(o) && order.get(o.id)?.coversTrade !== true).sort(byOrder),
     ...orgs.filter((o) => !isMatchable(o)).sort(byOrder),
   ];
+  const listed = [...readyShops, ...(showOutOfArea ? outOfAreaShops : []), ...(showAllShops ? otherShops : [])];
   const tradeLabel = lead?.detectedTrade ?? "this trade";
-  /** The small line on a hand-send row: why it sits where it does. */
+  /** "12 mi", "1,113 mi", or why there is no number. */
+  const milesLabel = (o: OrgPickDTO): string | null => {
+    const s = order.get(o.id);
+    if (!s) return null;
+    if (s.distanceMi == null) return "no pin";
+    return `${Math.round(s.distanceMi).toLocaleString("en-US")} mi`;
+  };
+  /** The small line on a hand-send row: how far, and why it sits where it does. */
   const assignNote = (o: OrgPickDTO): string => {
     if (!isMatchable(o)) return eligibility(o);
     const s = order.get(o.id);
+    const miles = milesLabel(o);
     const score = s ? `match ${Math.round(s.score * 100)}` : null;
-    if (s?.coversTrade !== true) return ["other trade", score].filter(Boolean).join(" · ");
-    return [score, `★ ${ratingLabel(o.ratingAvg, o.ratingCount)}`].filter(Boolean).join(" · ");
+    if (s?.coversTrade !== true) return [miles, "other trade", score].filter(Boolean).join(" · ");
+    if (s && !s.inRadius) return [miles, `outside ${s.radiusMi} mi`].filter(Boolean).join(" · ");
+    return [miles, score, `★ ${ratingLabel(o.ratingAvg, o.ratingCount)}`].filter(Boolean).join(" · ");
   };
   // The ranking table reads stars off the snapshot when it carries them, else
   // off the live roster (snapshots taken before 2026-09-13 have no numbers).
@@ -1320,7 +1347,7 @@ function DetailSheet({
             <>
               <div className={styles.dSec}>Send it by hand</div>
               <div className={styles.assign}>
-                {(showAllShops ? readyShops.concat(otherShops) : readyShops).map((o) => (
+                {listed.map((o) => (
                   <button
                     key={o.id}
                     type="button"
@@ -1333,8 +1360,19 @@ function DetailSheet({
                     <i>{busy === o.id ? "sending…" : assignNote(o)}</i>
                   </button>
                 ))}
-                {readyShops.length === 0 && !showAllShops ? (
-                  <Empty>No shop that takes {tradeLabel} is set up for leads yet.</Empty>
+                {readyShops.length === 0 && !showAllShops && !showOutOfArea ? (
+                  <Empty>No shop that takes {tradeLabel} serves this area.</Empty>
+                ) : null}
+                {outOfAreaShops.length ? (
+                  <button
+                    type="button"
+                    className={cx(styles.disclose, showOutOfArea && styles.discloseOn)}
+                    aria-pressed={showOutOfArea}
+                    onClick={() => setShowOutOfArea((v) => !v)}
+                  >
+                    <Ic name="chev" />
+                    {showOutOfArea ? "Hide out of area" : `Show out of area · ${outOfAreaShops.length}`}
+                  </button>
                 ) : null}
                 {otherShops.length ? (
                   <button

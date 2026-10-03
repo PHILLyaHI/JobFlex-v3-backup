@@ -153,10 +153,14 @@ export default async function AdminLeadCenterPage() {
     const shopOrder =
       p.status === "MATCHED"
         ? []
-        : rankWith(p, rankingInputs, { anyTrade: true }).map((c) => ({
+        : rankWith(p, rankingInputs, { anyTrade: true, anyDistance: true }).map((c) => ({
             orgId: c.orgId,
             score: c.score,
             coversTrade: trade ? orgCoversTrade(tradesByOrg.get(c.orgId) ?? [], trade) : true,
+            // The service radius (2026-10-03): in it, how far, and the shop's miles.
+            inRadius: c.inRadius === true,
+            distanceMi: c.distanceMi,
+            radiusMi: c.radiusMi ?? 50,
           }));
     return {
       id: p.id,

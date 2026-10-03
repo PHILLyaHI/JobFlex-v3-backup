@@ -1,8 +1,14 @@
 // Lead Center matching — builds the ranked candidate list for a platform lead.
 // Plain server module; called from the cascade engine (guarded actions/cron).
 //
-// Hard filter: org opted in (leadOffersEnabled), geocoded (lat/lng), and its
-// canonical trades cover the detected trade. Score (all components 0–1):
+// Hard filter: org opted in (leadOffersEnabled), geocoded (lat/lng), its
+// canonical trades cover the detected trade, and — since 2026-10-03 — the lead
+// lies within the shop's service radius (Organization.serviceRadiusMiles,
+// default 50), measured pin to pin. A lead with no pin reaches nobody: there
+// is no distance to keep a radius against. Until then nothing bounded the
+// distance at all, and a Tucson lead was offered to a Missouri shop because
+// the distance term (≈0 at 1,000 mi) only weighs 45% of the score.
+// Score (all components 0–1):
 //   total = 0.45·distance + 0.35·rating + 0.20·responsiveness
 // The full breakdown is snapshotted per-candidate so the admin Lead Center can
 // show WHY an org ranked where it did.
@@ -25,6 +31,11 @@ export interface Candidate {
   // true when distance came from the zip fallback (lead not geocoded) rather
   // than a real haversine measurement.
   fallback: boolean;
+  /** The shop's service radius, miles. Absent on snapshots before 2026-10-03. */
+  radiusMi?: number;
+  /** Lead pin and shop pin within that radius. Only the admin's out-of-area
+   *  list ever holds a false here; the cascade never ranks one. */
+  inRadius?: boolean;
 }
 
 export interface PlatformLeadLike {
@@ -82,6 +93,8 @@ export interface RankingInputs {
     lat: number | null;
     lng: number | null;
     tradeTypesJson: string | null;
+    serviceRadiusMiles: number;
+    isInternal: boolean;
     createdAt: Date;
   }[];
   ratingByOrg: Map<string, { _sum: { rating: number | null }; _count: { rating: number } }>;
@@ -99,6 +112,8 @@ export async function loadRankingInputs(): Promise<RankingInputs> {
       lat: true,
       lng: true,
       tradeTypesJson: true,
+      serviceRadiusMiles: true,
+      isInternal: true,
       createdAt: true,
     },
   });
@@ -114,13 +129,14 @@ export async function loadRankingInputs(): Promise<RankingInputs> {
       _sum: { rating: true },
       _count: { rating: true },
     }),
+    // Test leads (PlatformLead.isTest) are rehearsals, not a shop's record.
     db.leadOffer.findMany({
-      where: { organizationId: { in: ids }, status: { in: ["ACCEPTED", "DECLINED", "EXPIRED"] } },
+      where: { organizationId: { in: ids }, status: { in: ["ACCEPTED", "DECLINED", "EXPIRED"] }, platformLead: { isTest: false } },
       select: { organizationId: true, status: true, createdAt: true, respondedAt: true },
     }),
     db.leadOffer.groupBy({
       by: ["organizationId"],
-      where: { organizationId: { in: ids }, status: "OFFERED" },
+      where: { organizationId: { in: ids }, status: "OFFERED", platformLead: { isTest: false } },
       _count: { _all: true },
     }),
   ]);
@@ -143,25 +159,46 @@ export async function buildRanking(lead: PlatformLeadLike): Promise<Candidate[]>
   return rankWith(lead, await loadRankingInputs());
 }
 
+/** Miles from the lead's pin to the shop's, or null when either has none. */
+export function leadToShopMiles(
+  lead: { lat: number | null; lng: number | null },
+  org: { lat: number | null; lng: number | null },
+): number | null {
+  if (lead.lat == null || lead.lng == null || org.lat == null || org.lng == null) return null;
+  return haversineMiles({ lat: lead.lat, lng: lead.lng }, { lat: org.lat, lng: org.lng });
+}
+
+/** The service-radius rule, in one place: both pins, and within the shop's miles. */
+export function withinServiceRadius(
+  lead: { lat: number | null; lng: number | null },
+  org: { lat: number | null; lng: number | null; serviceRadiusMiles: number },
+): boolean {
+  const miles = leadToShopMiles(lead, org);
+  return miles != null && miles <= org.serviceRadiusMiles;
+}
+
 /**
  * The cascade's ranking for one lead, from inputs already loaded.
  *
- * `anyTrade` drops the trade filter and nothing else — same score, same tie
- * breaks — for the admin's "show all" list, where a shop outside the lead's
- * trade is an exception a person may still choose.
+ * `anyTrade` drops the trade filter and `anyDistance` the service radius, and
+ * nothing else — same score, same tie breaks — for the admin's hand-send list,
+ * where a shop outside the lead's trade or area is an exception a person may
+ * still choose. Each candidate says whether it is in radius.
  */
 export function rankWith(
   lead: PlatformLeadLike,
   inputs: RankingInputs,
-  opts: { anyTrade?: boolean } = {},
+  opts: { anyTrade?: boolean; anyDistance?: boolean } = {},
 ): Candidate[] {
   const detected: TradeType =
     lead.detectedTrade && isTradeType(lead.detectedTrade) ? lead.detectedTrade : "Other";
   // tradeTypesJson is a JSON-string column (SQLite) — filter in JS; org count
   // is small at this stage of the platform.
-  const eligible = opts.anyTrade
-    ? inputs.orgs
-    : inputs.orgs.filter((o) => orgCoversTrade(parseTradeTypes(o.tradeTypesJson), detected));
+  const eligible = inputs.orgs.filter(
+    (o) =>
+      (opts.anyTrade || orgCoversTrade(parseTradeTypes(o.tradeTypesJson), detected)) &&
+      (opts.anyDistance || withinServiceRadius(lead, o)),
+  );
   if (!eligible.length) return [];
   const { ratingByOrg, openByOrg, resolvedByOrg } = inputs;
 
@@ -201,6 +238,8 @@ export function rankWith(
         ratingAvg,
         ratingCount: n,
         fallback: dist.fallback,
+        radiusMi: org.serviceRadiusMiles,
+        inRadius: withinServiceRadius(lead, org),
       } satisfies Candidate,
       openOffers: openByOrg.get(org.id) ?? 0,
       createdAt: org.createdAt,

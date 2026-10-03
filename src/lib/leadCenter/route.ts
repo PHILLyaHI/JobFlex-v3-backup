@@ -43,7 +43,7 @@ export async function offerPlatformLeadToOrg(
   // The shop's score as the cascade would compute it — trade filter off, since
   // a person may send a lead outside a shop's listed trades. A shop with no
   // address or with offers paused has no score: 0, as unmatch.ts records.
-  const scored = rankWith(before, await loadRankingInputs(), { anyTrade: true }).find(
+  const scored = rankWith(before, await loadRankingInputs(), { anyTrade: true, anyDistance: true }).find(
     (c) => c.orgId === organizationId,
   );
   // If this shop passes, the cascade walks the snapshot to the next one — so

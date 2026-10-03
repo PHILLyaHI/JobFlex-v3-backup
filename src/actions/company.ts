@@ -77,6 +77,8 @@ const leadProfileInput = z.object({
   // drops anything else on read (same rule the register form follows).
   otherTrade: z.string().trim().max(80).nullable().optional(),
   leadOffersEnabled: z.boolean().optional(),
+  // How far from the shop a lead may be (lib/leadCenter/matching, 2026-10-03).
+  serviceRadiusMiles: z.number().int().min(5).max(500).optional(),
 });
 
 export async function updateLeadProfile(
@@ -102,6 +104,7 @@ export async function updateLeadProfile(
         !data.tradeTypes.includes("Other") && { otherTrade: null }),
       ...(data.otherTrade !== undefined && { otherTrade: data.otherTrade || null }),
       ...(data.leadOffersEnabled !== undefined && { leadOffersEnabled: data.leadOffersEnabled }),
+      ...(data.serviceRadiusMiles !== undefined && { serviceRadiusMiles: data.serviceRadiusMiles }),
     },
   });
 
@@ -204,6 +207,7 @@ export async function getCompanySeed() {
       logoUrl: org.logoUrl,
       tradeTypes: parseTradeTypes(org.tradeTypesJson) as string[],
       leadOffersEnabled: org.leadOffersEnabled,
+      serviceRadiusMiles: org.serviceRadiusMiles,
       // The matcher's third condition, so the handheld badge can report the
       // same truth the desk one does (see company-blueprint renderLeadState).
       geocoded: org.lat != null && org.lng != null,

@@ -72,6 +72,13 @@ model Organization {
   lng                   Float?
   geocodedAt            DateTime?
   leadOffersEnabled     Boolean   @default(true)
+  // How far from the shop a homeowner's job may be for the Lead Center to
+  // offer it (2026-10-03): the cascade and the admin's hand-send list keep to
+  // it, measured lead pin → shop pin. The shop sets it on the Company page.
+  serviceRadiusMiles    Int       @default(50)
+  // JobFlex's own organizations (QA Co, the owner's): the only ones a TEST
+  // platform lead may be sent to. Flipped in the admin Lead Center.
+  isInternal            Boolean   @default(false)
   // Pre-signup attribution stamp (first-write-wins: set once at account creation,
   // never overwritten). The money record stays Stripe-truth (Attribution model);
   // this is captured intent used for the signup pill + checkout auto-apply.
@@ -567,6 +574,10 @@ model PlatformLead {
   matchedAt          DateTime?
   assignedByAdminId  String? // set when a platform admin manually assigns
   priceCents         Int? // schema-ready for pay-to-unlock; unused in v1
+  // A test lead (2026-10-03): made through /homeowner?test=<key> or the admin's
+  // "Create test lead". Never cascades, goes only to isInternal organizations,
+  // and stays out of the Lead Center's statistics.
+  isTest             Boolean   @default(false)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
