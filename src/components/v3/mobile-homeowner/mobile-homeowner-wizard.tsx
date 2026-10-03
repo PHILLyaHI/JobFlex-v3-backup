@@ -57,6 +57,10 @@ import { usePlaceholderCycle } from "../homeowner-landing/wizard/use-placeholder
 
 type Upload = { name: string; kind: "pdf" | "photo"; progress: number };
 
+/** The photo / video picker only simulates an upload — nothing leaves the browser and no
+ *  contractor ever sees the files — so it stays hidden until a real upload exists. */
+const UPLOADS_LIVE = false;
+
 /** useLayoutEffect warns during SSR; useEffect is inert there, so it stands in. */
 const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
@@ -408,24 +412,28 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         </div>
       ) : null}
       <div className="tools">
-        <input
-          type="file"
-          className="file"
-          multiple
-          accept="image/*,video/*,.pdf"
-          style={{ display: "none" }}
-          ref={fileRef}
-          onChange={(e) => {
-            const files = e.currentTarget.files;
-            if (files && files.length) addFiles(files);
-          }}
-        />
-        <button className="tool tool-photo" type="button" onClick={() => fileRef.current?.click()}>
-          <svg className="ic">
-            <use href="#jfmh-i-img" />
-          </svg>
-          <span className="tool-l">Photos &amp; video</span>
-        </button>
+        {UPLOADS_LIVE && (
+          <>
+            <input
+              type="file"
+              className="file"
+              multiple
+              accept="image/*,video/*,.pdf"
+              style={{ display: "none" }}
+              ref={fileRef}
+              onChange={(e) => {
+                const files = e.currentTarget.files;
+                if (files && files.length) addFiles(files);
+              }}
+            />
+            <button className="tool tool-photo" type="button" onClick={() => fileRef.current?.click()}>
+              <svg className="ic">
+                <use href="#jfmh-i-img" />
+              </svg>
+              <span className="tool-l">Photos &amp; video</span>
+            </button>
+          </>
+        )}
       </div>
       <div className="pane-foot">
         <button className="go go-refine" type="button" disabled={!canRefine} onClick={onRefine}>
@@ -555,7 +563,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
       <div className="pane-body">
         <div className="qs-h">Where should the quotes go?</div>
         <p className="pane-lede">
-          Verified local contractors reply with line-item proposals. No calls until you choose.
+          Your scope goes to a local pro on JobFlex, who will contact you to talk it through. Not the right fit? You can ask for another.
         </p>
         <div className="cform">
           {CONTACT_FIELDS.map((field, i) => {
@@ -608,8 +616,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
       </span>
       <div className="done-h">Your project is on its way.</div>
       <p className="done-p">
-        Verified local contractors are reviewing your scope now. Expect 3–5 line-item proposals in
-        your inbox — the first usually lands within 4 hours.
+        We’re matching your scope with a local pro on JobFlex. We’ve emailed you a link to follow your request — and if the pro isn’t the right fit, you can ask for another.
       </p>
       {/* The same link the confirmation email carries — where the request is
           followed and, later, re-matched. A plain anchor: the path is a runtime
@@ -643,6 +650,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
         className={dragging ? "win drag anim a4" : "win anim a4"}
         ref={rootRef}
         onDragOver={(e) => {
+          if (!UPLOADS_LIVE) return;
           e.preventDefault();
           setDragging(true);
         }}
@@ -652,6 +660,7 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
           if (e.target === root || !root.contains(e.relatedTarget as Node | null)) setDragging(false);
         }}
         onDrop={(e) => {
+          if (!UPLOADS_LIVE) return;
           e.preventDefault();
           setDragging(false);
           if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
@@ -659,9 +668,11 @@ export function MobileHomeownerWizard({ uid }: { uid: string }) {
           }
         }}
       >
-        <div className="drop-veil">
-          <span>Drop photos, video, or blueprint PDFs</span>
-        </div>
+        {UPLOADS_LIVE && (
+          <div className="drop-veil">
+            <span>Drop photos, video, or blueprint PDFs</span>
+          </div>
+        )}
         <div className="win-head">
           <div className="win-step">{headLabel}</div>
           <div className="win-ticks">

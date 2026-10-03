@@ -187,7 +187,7 @@ export function MobileStepsGrid({
         </div>
         <div className="st-n">01</div>
         <div className="st-t">Describe it</div>
-        <p className="st-b">Plain English is perfect. Photos help, too.</p>
+        <p className="st-b">Plain English is perfect — type it, or just say it.</p>
       </div>
 
       <div className="st">
@@ -231,7 +231,7 @@ export function MobileStepsGrid({
         </div>
         <div className="st-n">04</div>
         <div className="st-t">A pro takes your job</div>
-        <p className="st-b">Vetted pros reply with line-item quotes.</p>
+        <p className="st-b">A local pro on JobFlex takes it and follows up with a line-item proposal.</p>
       </div>
     </div>
   );

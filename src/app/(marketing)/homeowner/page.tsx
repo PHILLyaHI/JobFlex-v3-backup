@@ -43,14 +43,14 @@ import { HomeownerResponsive } from "./homeowner-responsive";
 export const metadata: Metadata = {
   title: "JobFlex Homeowner Portal — Describe your project, get real quotes",
   description:
-    "Describe your project in plain English. JobFlex turns it into a contractor-ready scope and verified local pros send line-item quotes — free, no account required.",
+    "Describe your project in plain English. JobFlex turns it into a contractor-ready scope and sends it to a local pro on JobFlex — free, no account required.",
   alternates: { canonical: "/homeowner" },
   openGraph: {
     type: "website",
     url: "/homeowner",
     siteName: "JobFlex",
     title: "JobFlex Homeowner Portal — Describe your project, get real quotes",
-    description: "Describe your project in plain English and verified local pros send line-item quotes — free, no account required.",
+    description: "Describe your project in plain English and JobFlex sends it to a local pro on JobFlex — free, no account required.",
   },
 };
 

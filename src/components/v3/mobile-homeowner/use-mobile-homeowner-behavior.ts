@@ -66,11 +66,11 @@ export function useBandParallax(elementId: string) {
   }, [elementId]);
 }
 
-const COUNT_TARGET = 2300;
+const COUNT_TARGET = 20; // the trades JobFlex routes (lib/tradeTypes, plus Other)
 const COUNT_DUR = 1600;
 
 /**
- * The 2,300+ network figure. Returns the literal string to render.
+ * The 20+ trades figure. Returns the literal string to render.
  *
  * Ships `"0"` until the band has been seen — which cannot happen before mount —
  * so `toLocaleString` never runs on the server and there is no locale for

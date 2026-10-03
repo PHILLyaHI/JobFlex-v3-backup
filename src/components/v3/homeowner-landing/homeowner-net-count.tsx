@@ -16,7 +16,7 @@
 import { useEffect, useState } from "react";
 import { useInViewOnce, useReducedMotion } from "./use-homeowner-behavior";
 
-const TARGET = 2300;
+const TARGET = 20; // the trades JobFlex routes (lib/tradeTypes, plus Other)
 const DUR = 1600;
 
 export function NetCount() {
