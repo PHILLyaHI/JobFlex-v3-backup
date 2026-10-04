@@ -18,8 +18,13 @@
  *    screenful with the rest of the builder unreachable. So the frame does what
  *    every mobile-*-v2 `.app` does: pins itself to the viewport, gives the
  *    topbar its row and hands the rest to `.layout`, which scrolls.
+ *
+ * Doubled class, like every rule below: the same root carries two desk `.bp`
+ * classes that declare --sidebar-w: 264px and --topbar-h: 62px at (0,1,0), and
+ * in the production build their stylesheets come AFTER this one — the drawer
+ * opened 264px wide under a 62px head (www.jobflex.app, 2026-10-03).
  */
-.frame {
+.frame.frame {
   /* ---- handheld shell tokens (mirrors mobile-*-v2 `.app`) ---- */
   --pad-x: clamp(12px, 3.8vw, 22px);
   --topbar-h: 64px;

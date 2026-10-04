@@ -90,7 +90,17 @@
   text-rendering: auto;     /* globals set optimizeLegibility — donor: auto */
 }
 
-.bp :global(*) {
+/* NOT THE HANDHELD NAV. The phone frame (responsive-shell/blueprint-handheld-
+   frame) puts this .bp on a root that also holds mobile-shell/mobile-nav, whose
+   own rules — `.tbar { padding }`, `.tbarRight { margin-left: auto }`, the
+   drawer's head and close button — are single classes, the same (0,1,0) as the
+   resets below. Whichever stylesheet the build emits later wins: in `next dev`
+   the nav came later and looked right; in the production build the resets
+   came later and zeroed the bar — burger flush with the edge, + and the bell
+   packed against the wordmark, the drawer's close button off its edge
+   (www.jobflex.app, 2026-10-03). `:not(:where(…))` adds nothing to the
+   specificity, so the resets stay (0,1,0) for everything else. */
+.bp :global(*:not(:where([data-mnav], [data-mnav] *))) {
   margin: 0; padding: 0; box-sizing: border-box;
   /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env
      (also re-declared in proposals-global.css with the same scope). */
@@ -99,12 +109,12 @@
 }
 /* preflight sets svg{display:block;vertical-align:middle} — donor: browser
    defaults. */
-.bp :global(svg) { display: inline; vertical-align: baseline; }
-.bp :global(button) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
-.bp :global(a) { text-decoration: none; color: inherit; }
-.bp :global(ul), .bp :global(ol) { list-style: none; }
-.bp :global(input), .bp :global(select) { font-family: inherit; }
-.bp :global(svg.ic) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; shape-rendering: geometricPrecision; }
+.bp :global(svg:not(:where([data-mnav], [data-mnav] *))) { display: inline; vertical-align: baseline; }
+.bp :global(button:not(:where([data-mnav], [data-mnav] *))) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+.bp :global(a:not(:where([data-mnav], [data-mnav] *))) { text-decoration: none; color: inherit; }
+.bp :global(ul:not(:where([data-mnav], [data-mnav] *))), .bp :global(ol:not(:where([data-mnav], [data-mnav] *))) { list-style: none; }
+.bp :global(input:not(:where([data-mnav], [data-mnav] *))), .bp :global(select:not(:where([data-mnav], [data-mnav] *))) { font-family: inherit; }
+.bp :global(svg.ic:not(:where([data-mnav], [data-mnav] *))) { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; shape-rendering: geometricPrecision; }
 
 .bp ::selection, .bp::selection { background: var(--blueprint); color: #fff; }
 

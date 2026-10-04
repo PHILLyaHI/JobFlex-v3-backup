@@ -241,7 +241,7 @@ export function MobileNav() {
           which have no session and no NavRoleProvider. */}
       <SupportWidget signedIn={signedIn} />
 
-      <header className={styles.tbar} onClick={press}>
+      <header className={styles.tbar} onClick={press} data-mnav="">
         <button
           className={styles.tbarBtn}
           type="button"
@@ -320,11 +320,13 @@ export function MobileNav() {
 
       <div
         className={`${styles.sbOverlay} ${open ? styles.on : ""}`}
+        data-mnav=""
         onClick={() => setOpen(false)}
         aria-hidden="true"
       />
       <aside
         className={`${styles.sb} ${open ? styles.open : ""}`}
+        data-mnav=""
         aria-label="Main navigation"
         aria-hidden={!open}
         onClick={press}
