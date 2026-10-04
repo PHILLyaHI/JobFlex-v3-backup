@@ -63,12 +63,21 @@
   color: var(--ink);
 }
 
-/* The blueprint page's own layout is a desk grid: `.layout` reserves a sidebar
+/* FIVE CLASSES ON EVERY RULE THAT RESHAPES THE PAGE INSIDE (2026-10-04). The
+   desk page's own rules reach the same elements at up to four classes —
+   `.bp :global(.content .page-title)`, `:global(.jf-blueprint
+   :is(.content, .inv-layer)) .kicker`, `html.eff-1000 … .page-title` — and at
+   an equal count the stylesheet that comes LATER wins. `next dev` emitted this
+   module after the desk's; the production build emits it before, and the fence
+   and roof estimators got the desk's 30px title and their kicker back on a
+   phone (the mobile sweep's dev ↔ prod diff). Five classes win in either order.
+
+   The blueprint page's own layout is a desk grid: `.layout` reserves a sidebar
    column and `.main` is the scrolling pane beside it. Here there is no sidebar
-   and `.layout` IS the scroller. Doubled class so this out-specifies
-   `.bp .layout { height: var(--app-h) }`, which would otherwise re-pin it to a
-   full viewport inside a shell that is already exactly that tall. */
-.frame.frame :global(.layout) {
+   and `.layout` IS the scroller; this out-specifies `.bp .layout { height:
+   var(--app-h) }`, which would otherwise re-pin it to a full viewport inside a
+   shell that is already exactly that tall. */
+.frame.frame.frame.frame.frame :global(.layout) {
   display: block;
   height: auto;
   min-height: 0;
@@ -80,10 +89,10 @@
 /* No visible track: the handheld fleet scrolls edge to edge. Width only —
    setting `scrollbar-width` here would disable ::-webkit-scrollbar styling in
    Chrome for the whole subtree. */
-.frame.frame :global(.layout)::-webkit-scrollbar {
+.frame.frame.frame.frame.frame :global(.layout)::-webkit-scrollbar {
   width: 0;
 }
-.frame.frame :global(.main) {
+.frame.frame.frame.frame.frame :global(.main) {
   height: auto;
   min-height: 0;
   overflow: visible;
@@ -94,7 +103,7 @@
    measuring that bar. A tall reserve here does not add clearance, it PUSHES the
    bar up off the bottom edge at full scroll — which is exactly where the plate
    had already been placed, so the two collided on the last screenful. */
-.frame.frame :global(.content) {
+.frame.frame.frame.frame.frame :global(.content) {
   /* 30 at the top, not 18. The masthead is a 40px+ caps heading landing
      directly under a solid ink topbar; at 18 the two read as one band of
      chrome with the title pinned to the bottom of it. The extra 12px is the
@@ -106,7 +115,7 @@
    JOBFLEX / CONTRACTOR OS, above a masthead that already says what the page is,
    so it is a third label in three lines of chrome saying one thing. Dropped on
    handheld only; the desk head keeps it (owner, 2026-09-01). */
-.frame.frame :global(.kicker) {
+.frame.frame.frame.frame.frame :global(.kicker) {
   display: none;
 }
 /* The masthead at the mobile fleet's size, not the desk shell's narrow-window
@@ -114,12 +123,12 @@
    which is right for a desk window being squeezed and wrong for a phone, where
    the title is the largest thing on the screen by design. Same clamp the
    mobile-*-v2 pages use for their mastheads (--fs-mast): ~41px at 390. */
-.frame.frame :global(.page-title) {
+.frame.frame.frame.frame.frame :global(.page-title) {
   font-size: clamp(34px, 10.6vw, 48px);
   line-height: 0.95;
 }
 /* The desk shell's graph-paper wash (the background of `.main`) stays off
    here, as it always has on the handheld frame. */
-.frame.frame :global(.main) {
+.frame.frame.frame.frame.frame :global(.main) {
   background-image: none;
 }

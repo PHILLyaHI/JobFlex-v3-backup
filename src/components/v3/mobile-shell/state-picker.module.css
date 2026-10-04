@@ -74,15 +74,15 @@
   transform: translateY(100%);
   visibility: hidden;
   transition: transform 0.3s var(--ease-out), visibility 0.3s;
-  padding-bottom: var(--safe-b);
-  max-height: 92%;
+  padding-bottom: var(--msheet-safe-b);
+  max-height: var(--msheet-max-h);
   display: flex;
   flex-direction: column;
 }
 .sheet.on { transform: none; visibility: visible; }
 
-.grab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
-.head { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.grab { width: var(--msheet-grab-w); height: var(--msheet-grab-h); background: var(--hair); margin: var(--msheet-grab-top) auto 0; flex-shrink: 0; }
+.head { padding: var(--msheet-head-pad); border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
 .kicker {
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600;

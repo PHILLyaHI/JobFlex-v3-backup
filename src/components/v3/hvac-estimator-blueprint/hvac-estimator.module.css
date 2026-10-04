@@ -750,7 +750,7 @@
   :global(.jf-blueprint .content) .sum-r dd { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   :global(.jf-blueprint .content) .sum-p dd { font-size: 16px; }
   :global(.jf-blueprint .content) .sum-a { margin: 0; display: flex; gap: 8px; }
-  :global(.jf-blueprint .content) .sum-a .btn { width: auto; height: 40px; min-height: 40px; padding: 0 12px; }
+  :global(.jf-blueprint .content) .sum-a .btn { width: auto; height: 44px; min-height: 44px; padding: 0 12px; }
   :global(.jf-blueprint .content) .sum-a .btn-ghost { display: none; }
   :global(.jf-blueprint .content) .rail { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   :global(.jf-blueprint .content) .rail-b { grid-template-columns: 1fr; justify-items: center; gap: 6px; padding: 9px 4px; }

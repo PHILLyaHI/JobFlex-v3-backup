@@ -160,7 +160,10 @@
      clip ~41px off every card behind this element's own `overflow: hidden`.
      Same fix as the sibling job-detail / project-detail pages. */
   grid-template-columns: minmax(0, 1fr);
-  height: var(--app-h, 100dvh);
+  /* Pinned by its edges and sized 100% of the fixed containing block (the
+     visible viewport) — not var(--app-h, 100dvh): docs/design/mobile.md. */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   font-family: var(--font);
   background: var(--paper);
@@ -1848,6 +1851,8 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
 .jf-mobile-video-estimator .mve-sheet-scrim {
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100%;
   z-index: 120;
   display: flex;
   align-items: flex-end;
@@ -1861,7 +1866,7 @@ body:has(.jf-mobile-video-estimator)::before { content: none; }
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-height: 88dvh;
+  max-height: var(--msheet-max-h);
   background: var(--sheet);
   border: var(--border);
   border-bottom: none;

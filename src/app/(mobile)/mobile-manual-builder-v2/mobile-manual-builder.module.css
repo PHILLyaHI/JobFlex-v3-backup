@@ -61,7 +61,13 @@
   z-index: 20;
   display: grid;
   grid-template-rows: var(--topbar-h) 1fr;
-  height: var(--app-h, 100dvh);
+  /* Sized by its own edges, 100% of the fixed containing block (the visible
+     viewport) — never var(--app-h, 100dvh): a height in viewport units
+     outranks bottom: 0, and iOS settles them only after its toolbar stops
+     moving, so the frame stood taller than the screen and cut its own
+     bottom row off (2026-10-04, the handheld sheet rule). */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   font-family: var(--font);
   background: var(--paper);
@@ -359,9 +365,9 @@
 
 /* ---- Scrim + bottom sheets (shared vocabulary with the other surfaces) ---- */
 .scrim {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 80;
+  z-index: var(--msheet-scrim-z);
   background: rgba(10, 10, 10, 0.38);
   opacity: 0;
   pointer-events: none;
@@ -369,25 +375,27 @@
 }
 .scrim.on { opacity: 1; pointer-events: auto; }
 
+/* THE SHEET RULE — absolute in `.app`, every number from the --msheet-* table
+   (globals.css); see mobile-clients.module.css for why. */
 .sheet {
-  position: fixed;
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 81;
+  z-index: var(--msheet-z);
   background: var(--paper);
   border-top: var(--border);
   transform: translateY(100%);
   visibility: hidden;
   transition: transform 0.3s var(--ease-out), visibility 0.3s;
-  padding-bottom: var(--safe-b);
-  max-height: 92%;
+  padding-bottom: var(--msheet-safe-b);
+  max-height: var(--msheet-max-h);
   display: flex;
   flex-direction: column;
 }
 .sheet.on { transform: none; visibility: visible; }
-.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
-.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetGrab { width: var(--msheet-grab-w); height: var(--msheet-grab-h); background: var(--hair); margin: var(--msheet-grab-top) auto 0; flex-shrink: 0; }
+.sheetHead { padding: var(--msheet-head-pad); border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
 .sheetKicker {
   margin-bottom: 6px;
   font-family: var(--font-mono);
@@ -398,7 +406,7 @@
   color: var(--muted);
 }
 .sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
-.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px var(--pad-x) 14px; }
+.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 4px var(--pad-x) 14px; flex: 0 1 auto; min-height: 0; }
 
 /* Totals sheet */
 .tLine {

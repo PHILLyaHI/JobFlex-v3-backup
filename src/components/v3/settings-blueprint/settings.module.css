@@ -517,10 +517,10 @@
    stayed bright while the page dimmed. Its enter/exit animations are in
    settings-global.css — declared here, the module pipeline hashed the
    keyframe names and the form never animated at all. */
-.bp :global(.set-layer .mask) { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center;
+.bp :global(.set-layer .mask) { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 120; display: flex; align-items: center;
   justify-content: center; padding: 20px; background: rgba(10,10,10,.38); }
 .bp :global(.set-layer .modal) { position: relative; display: flex; flex-direction: column; width: min(440px, 100%);
-  max-height: calc(var(--app-h, 100vh) - 40px); border: var(--border); border-radius: var(--radius);
+  max-height: 100%; border: var(--border); border-radius: var(--radius);
   background: #fff; box-shadow: 5px 5px 0 var(--ink); }
 .bp :global(.set-layer .modal-h) { display: flex; align-items: flex-start; gap: 12px; padding: 15px 17px;
   border-bottom: 1.5px solid var(--hair); }

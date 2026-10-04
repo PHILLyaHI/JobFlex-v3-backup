@@ -317,6 +317,7 @@ export function EstimatorPicker() {
   return (
     <div
       className={["estp", on ? "on" : "", leaving ? "leaving" : ""].filter(Boolean).join(" ")}
+      data-nest=""
       hidden={!open}
       role="dialog"
       aria-modal="true"

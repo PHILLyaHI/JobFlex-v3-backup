@@ -125,7 +125,10 @@
      scroller under it and clip ~41px off every card behind this element's own
      `overflow: hidden`. Same fix as the sibling project-detail page. */
   grid-template-columns: minmax(0, 1fr);
-  height: var(--app-h, 100dvh);
+  /* Pinned by its edges and sized 100% of the fixed containing block (the
+     visible viewport) — not var(--app-h, 100dvh): docs/design/mobile.md. */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   font-family: var(--font);
   background: var(--paper);

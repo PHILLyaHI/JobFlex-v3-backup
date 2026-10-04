@@ -129,6 +129,14 @@ short state transitions: about 120–180ms for hover and 200–350ms for a panel
 Support `prefers-reduced-motion`. Loading feedback follows actual work and
 keeps the layout stable. Never delay usable content for an animation.
 
+Handheld frames and sheets have one geometry (2026-10-04): a fixed frame is
+pinned by its edges and sized 100%, never in `vh`/`dvh`; a bottom sheet hangs
+from a box that states its size and reads every number — ceiling, grab, head
+and foot padding, scrim, safe area — from the `--msheet-*` table in
+`globals.css`. Its body scrolls; its foot stays on screen above the home
+indicator. Page-root resets step around nested components (`data-mnav`,
+`data-nest`). Details and the guard check: [mobile notes](docs/design/mobile.md).
+
 Long names must wrap or have an accessible way to view the full value. Use
 `min-width: 0` on flex/grid children and `overflow-wrap: anywhere` where needed.
 Keep key mobile data available; do not hide functionality to make a layout fit.

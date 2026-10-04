@@ -649,7 +649,8 @@ export function SupportWidget({
   const cls = ["jfsup", open && "jfsup--open", on && "jfsup--on"].filter(Boolean).join(" ");
 
   return (
-    <div className={cls}>
+    // data-nest: the widget resets itself (.jfsup *); a page root's reset steps around it (docs/design/mobile.md).
+    <div className={cls} data-nest="">
       {/* The launcher travels WITH the widget now: one mount is one button, so
           no host can end up with two or none. Hidden while the composer is up —
           the panel stands in that corner. */}

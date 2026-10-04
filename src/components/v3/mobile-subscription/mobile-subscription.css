@@ -141,7 +141,10 @@
      the right edge of every card at 320px. `minmax(0, 1fr)` pins the column
      to the container and lets the children shrink instead. */
   grid-template-columns: minmax(0, 1fr);
-  height: var(--app-h, 100dvh);
+  /* Pinned by its edges and sized 100% of the fixed containing block (the
+     visible viewport) — not var(--app-h, 100dvh): docs/design/mobile.md. */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   font-family: var(--font);
   /* Tailwind preflight sets `html { line-height: 1.5 }` and every block
@@ -1109,7 +1112,7 @@ body:has(.jf-mobile-subscription) div:has(> nav[aria-label="Primary"]) { display
    the shared use-sheet-drag hook.
    ============================================================ */
 .jf-mobile-subscription .jfms-scrim {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 80;
   background: rgba(10, 10, 10, 0.35);
@@ -1122,7 +1125,7 @@ body:has(.jf-mobile-subscription) div:has(> nav[aria-label="Primary"]) { display
    tab order and the accessibility tree rather than sitting off-screen
    and still focusable. */
 .jf-mobile-subscription .jfms-sheet {
-  position: fixed;
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
@@ -1132,8 +1135,8 @@ body:has(.jf-mobile-subscription) div:has(> nav[aria-label="Primary"]) { display
   transform: translateY(100%);
   visibility: hidden;
   transition: transform 0.3s var(--ease-out), visibility 0.3s;
-  padding-bottom: var(--safe-b);
-  max-height: 92%;
+  padding-bottom: var(--msheet-safe-b);
+  max-height: var(--msheet-max-h);
   display: flex;
   flex-direction: column;
 }

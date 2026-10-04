@@ -172,6 +172,7 @@ export function ConfirmPlanChange({
   return createPortal(
     <div
       className={"jf-confirm" + (on ? " is-on" : "")}
+      data-nest=""
       role="dialog"
       aria-modal="true"
       aria-labelledby="jf-confirm-title"

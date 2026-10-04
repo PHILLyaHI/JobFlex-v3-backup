@@ -85,7 +85,7 @@
    RESET / BASE (donor `*`, button, a, ul/ol, input/select, svg.ic)
    html/body rules are document scaffolding — the shell owns them.
    ============================================================ */
-.bp :global(.content *) {
+.bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))) {
   margin: 0; padding: 0; box-sizing: border-box;
   /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env. */
   scrollbar-width: auto;
@@ -701,7 +701,7 @@
 :global(html.eff-1000) .bp :global(.content .page-title) { font-size: 38px; }
 /* `html.eff-1000 .search { max-width: 240px }` is topbar chrome — skipped. */
 @media (prefers-reduced-motion: reduce) {
-  .bp :global(.content *), .bp :global(.content *)::before, .bp :global(.content *)::after { transition: none !important; animation: none !important; }
+  .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))), .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)))::before, .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)))::after { transition: none !important; animation: none !important; }
 }
 .bp :global(.content :focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
@@ -1420,13 +1420,13 @@
    stops creating that context and the overlay stacks exactly as the donor's
    did. Layout is untouched — `position: fixed` keeps `.mdl` out of the flex
    flow — and the rule stops matching the moment the dialog closes. */
-.bp :global(.content .mdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
+.bp :global(.content .mdl) { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
 .bp :global(.content .mdl.open) { display: flex; }
 .bp :global(.content:has(.mdl.open)) { z-index: auto; }
 .bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
 /* No offset shadow (owner request 2026-08-13) — the box also carries an
    inline `box-shadow: none` in the JSX as stale-sheet insurance. */
-.bp :global(.content .mdl-box) { position: relative; width: min(420px, 100%); max-height: 84vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; }
+.bp :global(.content .mdl-box) { position: relative; width: min(420px, 100%); max-height: 84%; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; }
 .bp :global(.content .mdl-head) { padding: 15px 17px 13px; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .mdl-title) { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
 .bp :global(.content .mdl-sub) { margin-top: 5px; font-size: 12.5px; color: var(--muted); }

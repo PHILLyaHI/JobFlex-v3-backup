@@ -625,8 +625,8 @@
     /* dvh, not vh: on iOS Safari vh is frozen to the LARGEST viewport, so a
        sheet sized in vh sits partly under the collapsing toolbar until the
        page is scrolled. vh first, as the fallback for engines without dvh. */
-    max-height: 86vh;
-    max-height: 86dvh;
+    /* a share of the fixed layer (the visible viewport), not vh/dvh — docs/design/mobile.md */
+    max-height: 86%;
     border-width: 2px 0 0;
     border-radius: 0;
     box-shadow: none;

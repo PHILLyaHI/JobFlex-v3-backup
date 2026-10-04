@@ -130,7 +130,10 @@
      clip the right edge off every card behind this element's own
      `overflow: hidden`. Same fix as the sibling job-detail and overhead pages. */
   grid-template-columns: minmax(0, 1fr);
-  height: var(--app-h, 100dvh);
+  /* Pinned by its edges and sized 100% of the fixed containing block (the
+     visible viewport) — not var(--app-h, 100dvh): docs/design/mobile.md. */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   font-family: var(--font);
   background: var(--paper);
@@ -953,7 +956,7 @@ body:has(.jf-mobile-hire)::before { content: none; }
    picker opening from inside the composer nests safely.
    ============================================================ */
 .jf-mobile-hire .mh-scrim {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 60;
   background: rgba(10, 10, 10, 0.4);
@@ -964,7 +967,7 @@ body:has(.jf-mobile-hire)::before { content: none; }
 .jf-mobile-hire .mh-scrim.is-on { opacity: 1; visibility: visible; }
 
 .jf-mobile-hire .mh-sheet {
-  position: fixed;
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
@@ -972,7 +975,8 @@ body:has(.jf-mobile-hire)::before { content: none; }
   display: flex;
   flex-direction: column;
   /* Viewport height only via --app-h — a bare vh is a scroll bug on a phone. */
-  max-height: calc(var(--app-h, 100dvh) * 0.86);
+  max-height: var(--msheet-max-h);
+  padding-bottom: var(--msheet-safe-b);
   border-top: var(--border);
   border-radius: var(--radius) var(--radius) 0 0;
   background: var(--paper);
@@ -981,7 +985,7 @@ body:has(.jf-mobile-hire)::before { content: none; }
   transition: transform 0.3s var(--ease-out), visibility 0.3s;
 }
 /* The composer is a six-field form and takes the taller stop. */
-.jf-mobile-hire .mh-sheet--tall { max-height: calc(var(--app-h, 100dvh) * 0.94); }
+.jf-mobile-hire .mh-sheet--tall { max-height: 94%; }
 .jf-mobile-hire .mh-sheet.is-on { transform: none; visibility: visible; }
 /* Stacked sheets: the trade picker opens from inside the composer, so it and
    its scrim have to clear both. */

@@ -169,7 +169,10 @@
      container, which also lets the nav's own `min-width: 0` + ellipsis guards
      finally do their job instead of being bypassed by an oversized track. */
   grid-template-columns: minmax(0, 1fr);
-  height: var(--app-h, 100dvh);
+  /* Pinned by its edges and sized 100% of the fixed containing block (the
+     visible viewport) — not var(--app-h, 100dvh): docs/design/mobile.md. */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   font-family: var(--font);
   background: var(--paper);
@@ -521,7 +524,7 @@ body:has(.jf-mobile-project-detail)::before { content: none; }
    ============================================================ */
 .jf-mobile-project-detail [hidden] { display: none !important; }
 .jf-mobile-project-detail .mpd-scrim {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 60;
   background: rgba(10, 10, 10, 0.4);
@@ -531,7 +534,7 @@ body:has(.jf-mobile-project-detail)::before { content: none; }
 }
 .jf-mobile-project-detail .mpd-scrim.mpd-on { opacity: 1; visibility: visible; }
 .jf-mobile-project-detail .mpd-sheet {
-  position: fixed;
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
@@ -539,8 +542,8 @@ body:has(.jf-mobile-project-detail)::before { content: none; }
   display: flex;
   flex-direction: column;
   /* Viewport height only via --app-h — a bare vh is a scroll bug on a phone. */
-  max-height: calc(var(--app-h, 100dvh) * 0.86);
-  padding-bottom: var(--safe-b);
+  max-height: var(--msheet-max-h);
+  padding-bottom: var(--msheet-safe-b);
   border-top: var(--border);
   border-radius: var(--radius) var(--radius) 0 0;
   background: var(--paper);

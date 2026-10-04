@@ -84,7 +84,7 @@
    RESET / BASE (donor `*`, button, a, ul/ol, input/select, svg.ic)
    html/body rules are document scaffolding — the shell owns them.
    ============================================================ */
-.bp :global(.content *) {
+.bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))) {
   margin: 0; padding: 0; box-sizing: border-box;
   /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env. */
   scrollbar-width: auto;
@@ -700,7 +700,7 @@
 :global(html.eff-1000) .bp :global(.content .page-title) { font-size: 38px; }
 /* `html.eff-1000 .search { max-width: 240px }` is topbar chrome — skipped. */
 @media (prefers-reduced-motion: reduce) {
-  .bp :global(.content *), .bp :global(.content *)::before, .bp :global(.content *)::after { transition: none !important; animation: none !important; }
+  .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))), .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)))::before, .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)))::after { transition: none !important; animation: none !important; }
 }
 .bp :global(.content :focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
@@ -1446,7 +1446,7 @@
    mdlBgIn / mdlBoxIn are declared in dashboard-blueprint/blueprint-global.css
    — the modules pipeline rejects @keyframes.
    ============================================================ */
-.bp :global(.content .mdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
+.bp :global(.content .mdl) { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
 .bp :global(.content .mdl.open) { display: flex; }
 .bp :global(.content:has(.mdl.open)) { z-index: auto; }
 .bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); animation: mdlBgIn 150ms linear; }
@@ -1454,7 +1454,7 @@
   position: relative;
   display: flex; flex-direction: column;
   width: min(520px, 100%);
-  max-height: calc(var(--app-h, 100vh) - 40px);
+  max-height: 100%;
   border: var(--border); border-radius: var(--radius);
   background: #fff;
   box-shadow: 5px 5px 0 var(--ink);
@@ -1549,7 +1549,7 @@
   /* handheld: the create dialog docks to the bottom as a sheet, and every
      control clears the 44px target */
   .bp :global(.content .mdl) { padding: 0; align-items: flex-end; }
-  .bp :global(.content .mdl-box) { width: 100%; max-height: calc(var(--app-h, 100vh) - 56px); border-width: 2px 0 0; box-shadow: none; }
+  .bp :global(.content .mdl-box) { width: 100%; max-height: calc(100% - 56px); border-width: 2px 0 0; box-shadow: none; }
   .bp :global(.content .mdl-x) { width: 44px; height: 44px; }
   .bp :global(.content .mdl .pinput) { height: 44px; font-size: 13.5px; }
   .bp :global(.content .fchk) { min-height: 44px; }

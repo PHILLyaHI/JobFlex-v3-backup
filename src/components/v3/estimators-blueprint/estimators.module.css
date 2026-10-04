@@ -81,7 +81,7 @@
    RESET / BASE — matches the ported pages so shared class names
    (.ic, buttons, inputs) behave identically across the fleet.
    ============================================================ */
-.bp :global(.content *) {
+.bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))) {
   margin: 0; padding: 0; box-sizing: border-box;
   scrollbar-width: auto;
   scrollbar-color: auto;
@@ -606,6 +606,8 @@
 .bp :global(.content .mdl) {
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100%;
   z-index: 60;
   display: flex;
   align-items: center;
@@ -616,7 +618,7 @@
 .bp :global(.content .mdl-box) {
   position: relative;
   width: min(440px, 100%);
-  max-height: calc(100vh - 80px);
+  max-height: calc(100% - 40px);
   overflow-y: auto;
   padding: 18px;
   background: #fff;

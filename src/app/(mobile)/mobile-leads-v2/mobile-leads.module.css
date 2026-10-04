@@ -89,7 +89,13 @@
   /* Two rows: the shared nav fills the first, the scroller takes the rest.
      No bottom bar — no page in this family has one. */
   grid-template-rows: var(--topbar-h) 1fr;
-  height: var(--app-h, 100dvh);
+  /* Sized by its own edges, 100% of the fixed containing block (the visible
+     viewport) — never var(--app-h, 100dvh): a height in viewport units
+     outranks bottom: 0, and iOS settles them only after its toolbar stops
+     moving, so the frame stood taller than the screen and cut its own
+     bottom row off (2026-10-04, the handheld sheet rule). */
+  width: 100%;
+  height: 100%;
   overflow: hidden;
   font-family: var(--font);
   background: var(--paper);
@@ -926,8 +932,8 @@
    ============================================================ */
 .scrim {
   position: absolute; inset: 0;
-  z-index: 80;
-  background: rgba(10, 10, 10, 0.35);
+  z-index: var(--msheet-scrim-z);
+  background: var(--msheet-scrim);
   opacity: 0; pointer-events: none;
   transition: opacity 0.22s ease;
 }
@@ -937,7 +943,7 @@
 .sheet {
   position: absolute;
   left: 0; right: 0; bottom: 0;
-  z-index: 81;
+  z-index: var(--msheet-z);
   background: var(--paper);
   border-top: var(--border);
   /* translate + visibility:hidden, so a closed sheet leaves the tab order and
@@ -945,13 +951,13 @@
   transform: translateY(100%);
   visibility: hidden;
   transition: transform 0.3s var(--ease-out), visibility 0.3s;
-  padding-bottom: var(--safe-b);
-  max-height: 92%;
+  padding-bottom: var(--msheet-safe-b);
+  max-height: var(--msheet-max-h);
   display: flex; flex-direction: column;
 }
 .sheet.on { transform: none; visibility: visible; }
-.sheetGrab { width: 44px; height: 3px; background: var(--hair); margin: 10px auto 0; flex-shrink: 0; }
-.sheetHead { padding: 14px var(--pad-x) 12px; border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
+.sheetGrab { width: var(--msheet-grab-w); height: var(--msheet-grab-h); background: var(--hair); margin: var(--msheet-grab-top) auto 0; flex-shrink: 0; }
+.sheetHead { padding: var(--msheet-head-pad); border-bottom: 1.5px solid var(--ink); flex-shrink: 0; }
 .sheetKicker {
   font-family: var(--font-mono);
   font-size: 11px; font-weight: 600;
@@ -1002,8 +1008,8 @@
 .lmenuItemS { display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--muted-light); }
 .lmenuItemDanger .lmenuItemT { color: var(--danger); }
 .sheetCancel {
-  min-height: 52px;
-  margin: 12px var(--pad-x) 14px;
+  min-height: var(--msheet-cancel-h);
+  margin: 12px var(--msheet-pad-x) 14px;
   display: flex; align-items: center; justify-content: center;
   border: var(--border-thin);
   border-radius: var(--radius);
@@ -1175,12 +1181,14 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
-  padding: var(--card-pad) var(--pad-x) calc(var(--card-pad) + var(--safe-b));
+  padding: var(--msheet-foot-pad-y) var(--msheet-pad-x) calc(var(--msheet-foot-pad-y) + var(--msheet-safe-b));
   margin-top: 18px;
   border-top: 1.5px solid var(--ink);
   background: var(--paper-deep);
   flex-shrink: 0;
 }
+/* The foot pays the home indicator itself; the sheet under it does not pay it again. */
+.sheet:has(> .formFoot) { padding-bottom: 0; }
 /* The real file picker behind the drawn dropzone. Off-screen rather than
    display:none so the button's click can still open it on every browser. */
 .fileInput {

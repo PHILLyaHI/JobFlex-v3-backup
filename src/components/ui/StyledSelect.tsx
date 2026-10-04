@@ -51,6 +51,10 @@ export function StyledSelect({
   align = "left",
 }: StyledSelectProps) {
   const [open, setOpen] = React.useState(false);
+  // The edge the panel opens from, settled at the moment it opens: the asked-for one unless the
+  // 260px panel would leave the screen that way — on a phone a field in the right-hand column
+  // ran its panel 90px past the edge and the page scrolled sideways (2026-10-04, mobile sweep).
+  const [side, setSide] = React.useState(align);
   const [query, setQuery] = React.useState("");
   const rootRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -116,6 +120,11 @@ export function StyledSelect({
     if (open) {
       setOpen(false);
     } else {
+      const r = rootRef.current?.getBoundingClientRect();
+      const w = Math.max(260, r?.width ?? 0);
+      if (r && align === "left" && r.left + w > window.innerWidth - 8 && r.right - w >= 8) setSide("right");
+      else if (r && align === "right" && r.right - w < 8 && r.left + w <= window.innerWidth - 8) setSide("left");
+      else setSide(align);
       setQuery("");
       setOpen(true);
     }
@@ -161,7 +170,7 @@ export function StyledSelect({
           role="listbox"
           className={cn(
             "paper-card absolute top-[calc(100%+6px)] z-50 w-full min-w-[260px] overflow-hidden",
-            align === "right" ? "right-0" : "left-0",
+            side === "right" ? "right-0" : "left-0",
           )}
           style={{
             boxShadow: "0 28px 56px -12px rgba(17,17,19,0.22), 0 2px 0 rgba(31,122,82,0.06)",

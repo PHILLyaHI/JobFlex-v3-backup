@@ -29,7 +29,7 @@ export function UpgradeGate({ pathname }: { pathname: string }) {
   const page = pageFor(pathname);
   const label = page?.label ?? "This page";
   return (
-    <div className="jf-upgate">
+    <div className="jf-upgate" data-nest="">
       <div className="jf-upgate-card">
         <div className="jf-upgate-kick">Custom plan · not included</div>
         <svg className="jf-upgate-lock" viewBox="0 0 24 24" aria-hidden="true">

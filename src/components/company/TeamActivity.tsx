@@ -367,6 +367,9 @@ function PersonFilter({
   onSelect: (id: string | null) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  // The 240px list opens toward the side with room: anchored right it ran off the left edge
+  // of a phone when the chip sat at the start of its row (2026-10-04, mobile sweep).
+  const [fromLeft, setFromLeft] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -392,7 +395,11 @@ function PersonFilter({
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const r = ref.current?.getBoundingClientRect();
+          setFromLeft(!!r && r.right - 240 < 8);
+          setOpen((o) => !o);
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
@@ -416,7 +423,10 @@ function PersonFilter({
       {open && (
         <div
           role="listbox"
-          className="absolute right-0 z-20 mt-1.5 w-60 overflow-hidden rounded-[12px] border border-[color:var(--ink-line)] bg-[color:var(--paper)] py-1 shadow-[var(--shadow-md)]"
+          className={cn(
+            "absolute z-20 mt-1.5 w-60 max-w-[calc(100vw-24px)] overflow-hidden rounded-[12px] border border-[color:var(--ink-line)] bg-[color:var(--paper)] py-1 shadow-[var(--shadow-md)]",
+            fromLeft ? "left-0" : "right-0",
+          )}
         >
           <div className="max-h-72 overflow-y-auto">
             {members.length === 0 ? (

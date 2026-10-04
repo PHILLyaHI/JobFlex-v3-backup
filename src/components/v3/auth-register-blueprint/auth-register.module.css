@@ -72,7 +72,7 @@
   min-height: 100dvh;
 }
 
-.bp, .bp :global(*) {
+.bp, .bp :global(*:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))) {
   box-sizing: border-box; margin: 0; padding: 0;
   /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env. */
   scrollbar-width: auto; scrollbar-color: auto;

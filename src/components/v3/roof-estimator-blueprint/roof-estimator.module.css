@@ -120,7 +120,7 @@
    ============================================================ */
 /* Exclude independently styled mounts. `:where()` keeps reset specificity
    at (0,2,0), below donor content rules such as .bp .content .rf-head. */
-.bp :global(.content :where(*:not(.rfx):not(.rfx *):not(.codex-roof-preview):not(.codex-roof-preview *))) {
+.bp :global(.content :where(*:not(.rfx):not(.rfx *):not([data-mnav]):not([data-mnav] *):not([data-nest]):not([data-nest] *):not(.codex-roof-preview):not(.codex-roof-preview *))) {
   margin: 0; padding: 0; box-sizing: border-box;
   /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env. */
   scrollbar-width: auto;
@@ -1826,11 +1826,11 @@
 
 /* Billable-order dialog — the shared .mdl shape every create dialog uses
    (announcements / workers / leads carry the identical block). */
-.bp :global(.content .mdl) { position: fixed; inset: 0; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
+.bp :global(.content .mdl) { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 120; display: none; align-items: center; justify-content: center; padding: 20px; }
 .bp :global(.content .mdl.open) { display: flex; }
 .bp :global(.content:has(.mdl.open)) { z-index: auto; }
 .bp :global(.content .mdl-bg) { position: absolute; inset: 0; background: rgba(10, 10, 10, 0.38); }
-.bp :global(.content .mdl-box) { position: relative; width: min(460px, 100%); max-height: 88vh; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; }
+.bp :global(.content .mdl-box) { position: relative; width: min(460px, 100%); max-height: 88%; display: flex; flex-direction: column; border: var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; }
 .bp :global(.content .mdl-head) { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 15px 17px 13px; border-bottom: 1.5px solid var(--hair-soft); }
 .bp :global(.content .mdl-title) { font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.02em; }
 .bp :global(.content .mdl-x) {

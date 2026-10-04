@@ -86,7 +86,7 @@
    RESET / BASE   (donor * / button / a / ul,ol / input,select / svg.ic)
    The html/body rules are document scaffolding and stay with the shell.
    ============================================================ */
-.bp :global(.content *) { margin: 0; padding: 0; box-sizing: border-box; }
+.bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))) { margin: 0; padding: 0; box-sizing: border-box; }
 .bp :global(.content button) { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
 .bp :global(.content a) { text-decoration: none; color: inherit; }
 .bp :global(.content ul), .bp :global(.content ol) { list-style: none; }
@@ -681,7 +681,7 @@
    is dropped entirely.)
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
-  .bp :global(.content *), .bp :global(.content *)::before, .bp :global(.content *)::after { transition: none !important; animation: none !important; }
+  .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))), .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)))::before, .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)))::after { transition: none !important; animation: none !important; }
 }
 .bp :global(.content :focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 

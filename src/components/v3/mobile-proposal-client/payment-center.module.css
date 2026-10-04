@@ -1,7 +1,7 @@
 /* Payment center — current Blueprint (DESIGN.md): framed sheet, paper header
    band, mono annotation labels, edge-to-edge section rules, one primary action. */
 .dialog, .dialog * { box-sizing: border-box; }
-.dialog { --pc-pad: 24px; border: 2px solid var(--ink); border-radius: var(--r-sm); padding: 0; width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; overflow: auto; background: var(--sheet, var(--paper-deep)); color: var(--ink); font: 14px/1.5 var(--font-sans); }
+.dialog { --pc-pad: 24px; border: 2px solid var(--ink); border-radius: var(--r-sm); padding: 0; width: min(520px, calc(100vw - 32px)); max-height: calc(100% - 48px); margin: auto; overflow: auto; background: var(--sheet, var(--paper-deep)); color: var(--ink); font: 14px/1.5 var(--font-sans); }
 .dialog[open] { animation: pc-in 220ms var(--ease-out); }
 .dialog::backdrop { background: color-mix(in srgb, var(--ink) 55%, transparent); }
 .dialog :is(h2, p) { margin: 0; overflow-wrap: anywhere; }
@@ -66,7 +66,7 @@
 @media (prefers-reduced-motion: reduce) { .dialog[open] { animation: none; } .dialog * { transition: none !important; } }
 
 @media (max-width: 768px) {
-  .dialog { --pc-pad: 20px; width: 100%; max-width: none; max-height: calc(100dvh - 24px); margin: auto 0 0; border-bottom: 0; }
+  .dialog { --pc-pad: 20px; width: 100%; max-width: none; max-height: calc(100% - 24px); margin: auto 0 0; border-bottom: 0; }
   .amount strong { font-size: 32px; }
   .targets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .targets button { padding: 12px; gap: 8px; }

@@ -155,7 +155,7 @@
 /* ============================================================
    RESET / BASE
    ============================================================ */
-:global(.jf-blueprint) * { margin: 0; padding: 0; box-sizing: border-box; }
+:global(.jf-blueprint) *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)) { margin: 0; padding: 0; box-sizing: border-box; }
 /* [chrome / shell-supplied — dropped in the port: html, body, body] */
 :global(.jf-blueprint) button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
 :global(.jf-blueprint) a { text-decoration: none; color: inherit; }

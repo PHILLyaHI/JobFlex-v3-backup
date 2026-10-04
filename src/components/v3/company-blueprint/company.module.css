@@ -99,7 +99,7 @@
 /* ============================================================
    RESET / BASE
    ============================================================ */
-.bp :global(.content), .bp :global(.content *) {
+.bp :global(.content), .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))) {
   margin: 0; padding: 0; box-sizing: border-box;
   /* globals.css sets *{scrollbar-width:thin; …} — restore the donor env. */
   scrollbar-width: auto;
@@ -711,7 +711,7 @@
 :global(html.eff-1000) .bp :global(.content .grid-11) { grid-template-columns: 1fr; }
 :global(html.eff-1000) .bp :global(.content .page-title) { font-size: 38px; }
 @media (prefers-reduced-motion: reduce) {
-  .bp :global(.content), .bp :global(.content *), .bp :global(.content *)::before, .bp :global(.content *)::after { transition: none !important; animation: none !important; }
+  .bp :global(.content), .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *))), .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)))::before, .bp :global(.content *:not(:where([data-mnav], [data-mnav] *, [data-nest], [data-nest] *)))::after { transition: none !important; animation: none !important; }
 }
 .bp :global(.content :focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
 
