@@ -2,7 +2,7 @@
 // when its reminder lands, how it reads, and who may see the dashboard key
 // right after a submission. Pure functions, no database.
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/home-portal.check.ts
-import { localHourAt, mayShowHomeKey, planDate, planWhen, reminderFor, validTimeZone } from "../../src/lib/home/dates";
+import { localHourAt, mayShowHomeKey, planDate, planWhen, reminderFor, remindModeOf, validTimeZone } from "../../src/lib/home/dates";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -29,6 +29,13 @@ const now = new Date("2026-10-03T20:00:00Z");
 check("a plan for next month is reminded about on its first day at 9 AM", iso(reminderFor(planDate("2026-11", true)!, "America/Los_Angeles", now)) === "2026-11-01T17:00:00.000Z", iso(reminderFor(planDate("2026-11", true)!, "America/Los_Angeles", now)));
 check("a plan for a later month too", iso(reminderFor(planDate("2027-03", true)!, "America/Los_Angeles", now)) === "2027-03-01T17:00:00.000Z");
 check("a plan whose month has begun is reminded about a week from now", iso(reminderFor(planDate("2026-10", true)!, "America/Los_Angeles", now)) === "2026-10-10T20:00:00.000Z");
+// the form's choice (2026-10-04): two weeks or a week ahead, or none
+const nov = planDate("2026-11", true)!;
+check("'two weeks before' November lands Oct 18 at 9 AM Pacific (daylight time: 16:00 UTC)", iso(reminderFor(nov, "America/Los_Angeles", now, "2w")) === "2026-10-18T16:00:00.000Z", iso(reminderFor(nov, "America/Los_Angeles", now, "2w")));
+check("'a week before' November lands Oct 25", iso(reminderFor(nov, "America/Los_Angeles", now, "1w")) === "2026-10-25T16:00:00.000Z");
+check("'don't remind me' is no reminder", reminderFor(nov, "America/Los_Angeles", now, "none") === null);
+check("a lead time already passed falls back to the month's start", iso(reminderFor(nov, "America/Los_Angeles", new Date("2026-10-20T00:00:00Z"), "2w")) === "2026-11-01T17:00:00.000Z");
+check("the stored time reads back as the choice", remindModeOf(nov, reminderFor(nov, "America/Los_Angeles", now, "2w")) === "2w" && remindModeOf(nov, reminderFor(nov, "America/Los_Angeles", now, "1w")) === "1w" && remindModeOf(nov, reminderFor(nov, "America/Los_Angeles", now, "start")) === "start" && remindModeOf(nov, null) === "none");
 
 // ── how it reads
 check("a month plan reads as the month", planWhen(planDate("2026-11", true)!, true) === "November 2026");

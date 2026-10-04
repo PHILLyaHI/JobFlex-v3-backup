@@ -25,7 +25,8 @@
 //
 // Plain server module — imported only by the page.
 import { db } from "@/lib/db";
-import { contractTotal } from "@/lib/contractTotal";
+import { contractSchedule, contractTotal } from "@/lib/contractTotal";
+import { fromMinor, resolveSchedule } from "@/lib/paymentSchedule";
 import { orgReplyTo } from "@/lib/email/orgSend";
 import { findClientForLead } from "@/lib/leadClient";
 import { orgRatingsByIds } from "@/lib/reviews/publicSummary";
@@ -62,6 +63,11 @@ export interface PortalProposal {
   taxTotal: number;
   /** Σ approved change orders (0 when none) — the contract is total + this. */
   approvedChanges: number;
+  /** Money so far on an accepted proposal (lib/paymentSchedule); zeros before acceptance. */
+  paid: number;
+  remaining: number;
+  /** The stage payable next, when one is scheduled. */
+  nextDue: { label: string; amount: number } | null;
   stage: ProposalStage;
   sentAt: string | null;
   validUntil: string | null;
@@ -235,6 +241,8 @@ export async function buildRequestPortal(pl: RequestLeadRow): Promise<RequestPor
           declinedAt: true,
           validUntil: true,
           createdAt: true,
+          currency: true,
+          installments: { orderBy: { position: "asc" }, select: { id: true, label: true, amount: true, isPercent: true, position: true, status: true, paidAmount: true, changeOrderId: true } },
           lineItems: { orderBy: { position: "asc" }, select: { name: true, total: true } },
           changeOrders: {
             where: { status: { in: ["SENT", "APPROVED", "DECLINED"] } },
@@ -245,6 +253,23 @@ export async function buildRequestPortal(pl: RequestLeadRow): Promise<RequestPor
     : [];
   const proposals: PortalProposal[] = proposalRows.map((p) => {
     const rest = p.lineItems.slice(LINE_CAP);
+    const st = stageOf(p);
+    // Money only once the proposal is theirs to pay on: the same resolver the
+    // proposal page and the payment emails use.
+    let paid = 0;
+    let remaining = 0;
+    let nextDue: PortalProposal["nextDue"] = null;
+    if (st === "ACCEPTED" || st === "PAID" || st === "COMPLETED") {
+      try {
+        const sched = resolveSchedule({ ...contractSchedule(p.total, p.changeOrders.filter((c) => c.status === "APPROVED")), currency: p.currency, installments: p.installments });
+        paid = fromMinor(sched.paidMinor);
+        remaining = fromMinor(sched.remainingMinor);
+        const due = sched.stages.find((x) => x.payable);
+        nextDue = due ? { label: due.label, amount: fromMinor(due.amountMinor) } : null;
+      } catch {
+        // A schedule that cannot be read costs the money line, never the page.
+      }
+    }
     return {
       publicId: p.publicId,
       title: p.title,
@@ -254,7 +279,10 @@ export async function buildRequestPortal(pl: RequestLeadRow): Promise<RequestPor
       taxRate: p.taxRate,
       taxTotal: p.taxTotal,
       approvedChanges: Math.round((contractTotal(p.total, p.changeOrders) - p.total) * 100) / 100,
-      stage: stageOf(p),
+      paid,
+      remaining,
+      nextDue,
+      stage: st,
       sentAt: (p.sentAt ?? p.createdAt).toISOString(),
       validUntil: p.validUntil?.toISOString() ?? null,
       orgId: p.organizationId,

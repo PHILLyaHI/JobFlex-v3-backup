@@ -86,6 +86,13 @@ export async function loadGsapNow(): Promise<GsapCore> {
   return fetchCore();
 }
 
+/** The core with no wait at all — the hero's entrance on a desk the page has
+ *  armed (hero-entrance.tsx, 2026-10-04): the copy is held back until this
+ *  arrives, so every tenth of a second here is the visitor's. */
+export function loadGsapAtOnce(): Promise<GsapCore> {
+  return fetchCore();
+}
+
 /** The core, gated or not: eager for anything inside the hero. */
 export async function loadGsapFor(eager: boolean): Promise<GsapCore> {
   if (eager) return loadGsapNow();

@@ -17,12 +17,12 @@ function monthGrid(year: number, month: number): Array<string | null> {
   return cells;
 }
 
-export function Calendar({ items, timeZone, icsHref }: { items: HomeCalendarItem[]; timeZone: string; icsHref: string }) {
+export function Calendar({ items, timeZone, icsHref, months: count = 3 }: { items: HomeCalendarItem[]; timeZone: string; icsHref: string; months?: number }) {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const [ty, tm] = [Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1];
   const byDay = new Map<string, HomeCalendarItem[]>();
   for (const it of items) byDay.set(it.date, [...(byDay.get(it.date) ?? []), it]);
-  const months = [0, 1, 2].map((i) => {
+  const months = Array.from({ length: count }, (_, i) => i).map((i) => {
     const d = new Date(Date.UTC(ty, tm + i, 1));
     return { y: d.getUTCFullYear(), m: d.getUTCMonth(), label: d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }) };
   });
@@ -30,7 +30,6 @@ export function Calendar({ items, timeZone, icsHref }: { items: HomeCalendarItem
   return (
     <div className={s.calendar}>
       <div className={s.calHead}>
-        <h3 className={s.subLabel}>Your calendar</h3>
         <a className={s.link} href={icsHref}>Add to my phone&apos;s calendar</a>
       </div>
       <div className={s.months}>

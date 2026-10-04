@@ -5,6 +5,8 @@ import { isSalesRole, isWorkerRole, NoOrgError, requireOrg, UnauthorizedError } 
 import { longDate } from "@/lib/format";
 import { contactsLocked } from "@/lib/leadCenter/contacts";
 import { LeadDetailContent } from "@/components/v3/lead-detail-blueprint/lead-detail-content";
+import { contractorFolder, listFolder } from "@/lib/home/files";
+import { findClientForLead } from "@/lib/leadClient";
 
 // ONE LEAD (2026-09-22) — under the blueprint shell, the same design as the
 // Leads list it opens from. Session-scoped, never static.
@@ -56,8 +58,21 @@ export default async function LeadDetailPage({
           select: { priceCents: true, unlockedAt: true },
         })
       : null;
+  // THE JOB FOLDER (2026-10-03, lib/home/files): a Lead Center lead carries the
+  // homeowner's folder — their pictures, videos and PDFs — and the proposals
+  // of this client a picture could go on.
+  let folder: { leadId: string; homeownerFirstName: string; files: Awaited<ReturnType<typeof listFolder>>["files"]; requests: Awaited<ReturnType<typeof listFolder>>["requests"]; proposals: Array<{ id: string; title: string; status: string }> } | null = null;
+  if (!locked) {
+    const door = await contractorFolder(organizationId, lead.id).catch(() => null);
+    if (door) {
+      const [{ files, requests }, client] = await Promise.all([listFolder(door.pl.id, null), findClientForLead(organizationId, { email: lead.email, phone: lead.phone })]);
+      const proposals = client ? await db.proposal.findMany({ where: { organizationId, clientId: client.id }, orderBy: { createdAt: "desc" }, take: 12, select: { id: true, title: true, status: true } }) : [];
+      folder = { leadId: lead.id, homeownerFirstName: door.home.name.trim().split(/\s+/)[0] || "the homeowner", files, requests, proposals };
+    }
+  }
   return (
     <LeadDetailContent
+      folder={folder}
       lead={{
         id: lead.id,
         name: lead.name,

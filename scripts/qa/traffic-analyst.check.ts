@@ -16,7 +16,8 @@ const sess = (p: Partial<LandingSession> = {}): LandingSession => {
     id: `s${seq}`, person: `p${seq}`, startedAt: NOW - 3_600_000 * ((seq % 100) + 1), endedAt: NOW - 3_600_000 * ((seq % 100) + 1) + 60_000,
     industry: "roofing", utmSource: ad ? "fb" : "", utmMedium: ad ? "paid" : "", utmCampaign: ad ? "C1" : "", utmContent: ad ? "A1" : "", referrer: ad ? "l.facebook.com" : "google.com", fbclid: ad,
     device: "Mobile", browser: "Mobile Safari", os: "iOS", inApp: false, views: 1, landingViews: 1, dwell: 40, scroll: 0.6, sections: ["hero", "compare", "showcase"],
-    cta: 0, placements: [], registerViews: 0, step: 0, flow: "", attempts: 0, cardless: 0, opened: 0, errors: [], completed: false, outcome: "", plan: "", ...p,
+    cta: 0, placements: [], registerViews: 0, step: 0, flow: "", attempts: 0, cardless: 0, opened: 0, errors: [], completed: false, outcome: "", plan: "",
+    heroMs: null, paintMs: null, readyMs: null, trackedMs: null, kb: null, connection: "", leftUnshown: 0, formReadyMs: null, typedEarly: 0, submittedEarly: 0, step1Errors: [], step1Passed: 0, ...p,
   };
 };
 const many = (n: number, p: Partial<LandingSession> | ((i: number) => Partial<LandingSession>) = {}) => Array.from({ length: n }, (_, i) => sess(typeof p === "function" ? p(i) : p));
@@ -93,6 +94,37 @@ const shallow = analyse(many(30, (i) => ({ views: i % 3 ? 2 : 1, dwell: 20, scro
 check("half stopping early on the page is a finding that names the pricing's reach", !!find(shallow, "scroll") && /stop before 20% of the page/.test(find(shallow, "scroll")!.title) && /only 0% reach the pricing/.test(find(shallow, "scroll")!.evidence));
 check("every finding carries a sample and a confidence", shallow.findings.every((f) => f.n > 0 && ["low", "medium", "high"].includes(f.confidence)) && find(shallow, "scroll")!.confidence === "low");
 check("the minimum is the exported constant", ANALYST_MIN_AD_VISITS === 20 && few.sample.needed === 20);
+
+// ── the first screen, the form before it is ready, the demo's place, the counting (2026-10-04)
+const sql2 = buildAnalystQuery();
+check("the query reads the two beacons and stays balanced", /landing_timing/.test(sql2) && /signup_step1/.test(sql2) && /hero_ms/.test(sql2) && /typed_before_ready/.test(sql2) && sql2.split("(").length === sql2.split(")").length);
+const row45 = [...row, 7600, 2900, 5000, 5200, 1450, "4g", 0, 3300, 1, 0, "email_taken,password_mismatch", 1];
+const p45 = analystSessionFromRow(row45)!;
+check("a 45-column row carries the timings", p45.heroMs === 7600 && p45.paintMs === 2900 && p45.readyMs === 5000 && p45.trackedMs === 5200 && p45.kb === 1450 && p45.connection === "4g" && p45.leftUnshown === 0 && p45.formReadyMs === 3300 && p45.typedEarly === 1 && p45.submittedEarly === 0 && p45.step1Errors.join() === "email_taken,password_mismatch" && p45.step1Passed === 1);
+check("a row from before the beacons parses with nothing known; -1 is not a time", parsed.heroMs === null && parsed.formReadyMs === null && parsed.step1Errors.length === 0 && analystSessionFromRow([...row, -1, -1])!.heroMs === null);
+const slowScreen = analyse([...many(30, (i) => ({ views: 1, dwell: 20, scroll: 0, sections: ["hero"], heroMs: 6000 + (i % 5) * 800, paintMs: 2800, readyMs: 5000, trackedMs: 5100, kb: 1400, connection: i % 2 ? "4g" : "3g", inApp: i % 3 !== 0 })), ...many(10, { views: 2, cta: 1, placements: ["hero"], registerViews: 1, step: 1, heroMs: 2000, paintMs: 900, readyMs: 1500, trackedMs: 1600, kb: 1300 })], { now: NOW });
+const fs = find(slowScreen, "first-screen")!;
+check("a headline arriving seconds after the tap is a bad finding, with the split and the steps", !!fs && fs.tone === "bad" && /On phones the headline shows \d\.\d s after the tap/.test(fs.title) && /Median \d\.\d s over 40 phone visits/.test(fs.evidence) && /in Facebook's browser vs/.test(fs.evidence) && /by connection/.test(fs.evidence) && /JavaScript takes over at 5\.0 s after 1\.4 MB downloaded/.test(fs.evidence) && (fs.steps?.length ?? 0) >= 5 && /lp-enter/.test(fs.steps![0]), fs?.evidence);
+check("held back after the first paint: the evidence says by how much, and step 1 is to show the copy", /the headline \d\.\d s after it/.test(fs.evidence) && /held back after the first paint/.test(fs.action) && /Show the hero copy from the first paint/.test(fs.steps![0]));
+const latePaint = analyse(many(30, (i) => ({ views: 1, dwell: 20, scroll: 0, sections: ["hero"], heroMs: 3300 + (i % 5) * 300, paintMs: 3250 + (i % 5) * 300, readyMs: 5200, trackedMs: 5300, kb: 1400 })), { now: NOW });
+const lp = find(latePaint, "first-screen")!;
+check("once the headline comes with the first paint, the advice is the page's weight, not the entrance", !!lp && lp.tone === "warn" && /comes with the first paint/.test(lp.action) && !/lp-enter/.test(lp.steps!.join(" ")) && /WOFF2/.test(lp.steps![0]) && !/after it,/.test(lp.evidence), lp?.action);
+check("the bounce finding then points at the first screen, not the words", /first screen is slow/.test(find(slowScreen, "bounce")!.action));
+check("the tracking starting late is a note that explains the 5-second number", !!find(slowScreen, "undercount") && /Counting starts 5\.1 s into a phone visit/.test(find(slowScreen, "undercount")!.title));
+check("the sample line carries the phone median", slowScreen.stats.heroMedianPhone !== null && slowScreen.stats.heroMedianPhone >= 2000);
+const fastScreen = analyse(many(30, { heroMs: 900, paintMs: 600, readyMs: 800, trackedMs: 1000 }), { now: NOW });
+check("a fast first screen says nothing", !find(fastScreen, "first-screen") && !find(fastScreen, "undercount"));
+const slowForm = analyse([...many(25, (i) => ({ registerViews: 1, step: 1, formReadyMs: 3200, typedEarly: i < 6 ? 1 : 0, submittedEarly: i < 2 ? 1 : 0, step1Errors: i < 3 ? ["email_taken"] : i < 5 ? ["password_mismatch"] : [], step1Passed: i >= 5 ? 1 : 0 })), ...many(5)], { now: NOW });
+const fr = find(slowForm, "form-ready")!;
+check("a form usable seconds after it appears, with early typing, is a finding with the diet steps", !!fr && /24% start filling the sign-up form before it is ready/.test(fr.title) && /25 form loads on phones/.test(fr.evidence) && /6 had already typed and 2 had already pressed Continue/.test(fr.evidence) && (fr.steps?.length ?? 0) === 4, fr?.title);
+const se = find(slowForm, "step1-errors")!;
+check("step 1's refusals are counted by reason, the first with its advice, the rest as steps", !!se && /Step 1 refused 5 times/.test(se.title) && /email taken × 3, password mismatch × 2/.test(se.evidence) && /Sign in instead/.test(se.action) && se.steps!.length === 1 && /confirmation field/.test(se.steps![0]), se?.evidence);
+const order = analyse([...many(30, { sections: ["hero", "compare"] }), ...many(10, { sections: ["hero", "compare", "showcase", "proposals"] })], { now: NOW });
+const od = find(order, "order")!;
+check("the demo sitting third behind the comparison is called, with the reorder", !!od && /The demo is the 3rd screen; «JobFlex vs other apps» comes before it/.test(od.title) && /100% of 40 measured visits reach «JobFlex vs other apps», 25% reach the demo/.test(od.evidence) && /Reorder landing-e-page.tsx/.test(od.steps![0]), od?.title);
+const adDefault = analyse([...many(20, { utmContent: "A3", industry: "default", views: 1, dwell: 8, scroll: 0.05, sections: ["hero"] }), ...many(12, { utmContent: "A1", registerViews: 1, step: 1 })], { now: NOW, adNames: { A3: "Business · crew" } });
+check("an ad whose clicks land on the general hero is told to carry ?industry= and a ?hook=", !!find(adDefault, "bounce-A3") && /100% land on the general hero/.test(find(adDefault, "bounce-A3")!.evidence) && /\?industry=<trade>/.test(find(adDefault, "bounce-A3")!.action), find(adDefault, "bounce-A3")?.evidence);
+check("every new finding carries steps the panel can list, or none", slowScreen.findings.every((f) => f.steps === undefined || (Array.isArray(f.steps) && f.steps.every((x) => typeof x === "string" && x.length > 10))));
 
 console.log(bad ? `\n${bad} FAILED` : "\nall green");
 process.exit(bad ? 1 : 0);

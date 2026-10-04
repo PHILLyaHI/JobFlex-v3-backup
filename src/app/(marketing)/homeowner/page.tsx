@@ -60,6 +60,6 @@ export const metadata: Metadata = {
 // that dashboard. Anything else is the plain intake.
 export default async function HomeownerLandingPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
-  const prefill = await loadWizardPrefill(typeof sp.home === "string" ? sp.home : null, typeof sp.plan === "string" ? sp.plan : null);
+  const prefill = await loadWizardPrefill(typeof sp.home === "string" ? sp.home : null, typeof sp.plan === "string" ? sp.plan : null, typeof sp.with === "string" ? sp.with : null);
   return <HomeownerResponsive prefill={prefill} />;
 }

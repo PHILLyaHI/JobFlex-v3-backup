@@ -19,7 +19,9 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { buildRequestPortal, type PortalOrg, type RequestPortalView } from "@/lib/requestPortal";
 import { parseBookingSettings } from "@/lib/booking";
 import { parseTradeTypes } from "@/lib/tradeTypes";
-import { planWhen, validTimeZone } from "./dates";
+import { planWhen, remindModeOf, validTimeZone, type RemindMode } from "./dates";
+import { listFolder, type FolderFileView, type FolderRequestView } from "./files";
+import { storageMode, type StorageMode } from "@/lib/media/privateStore";
 import type { WizardPrefill } from "./prefill";
 
 export { mayShowHomeKey, planDate, planWhen, reminderFor, validTimeZone } from "./dates";
@@ -103,11 +105,19 @@ export async function findOrCreateHome(input: NewHomeInput): Promise<{ home: Hom
 
 /** Requests made with this home's email before it existed join it. Returns how many did. */
 /** The intake prefilled from a home (and a plan on it) — /homeowner?home=&plan=. */
-export async function loadWizardPrefill(key: string | null | undefined, planId?: string | null): Promise<WizardPrefill | null> {
+export async function loadWizardPrefill(key: string | null | undefined, planId?: string | null, withOrgId?: string | null): Promise<WizardPrefill | null> {
   if (!key) return null;
   const home = await findHomeByKey(key);
   if (!home) return null;
   const plan = planId ? await db.homePlan.findFirst({ where: { id: planId, homeId: home.id, status: "PLANNED" } }) : null;
+  // "Hire again": only a shop that had one of this home's requests; the ask
+  // goes in the homeowner's own words, where the Lead Center reads it.
+  let again = "";
+  if (withOrgId) {
+    const had = await db.platformLead.findFirst({ where: { homeId: home.id, OR: [{ matchedOrgId: withOrgId }, { offers: { some: { organizationId: withOrgId } } }] }, select: { detectedTrade: true, projectType: true, createdAt: true } });
+    const org = had ? await db.organization.findUnique({ where: { id: withOrgId }, select: { name: true, deletedAt: true } }) : null;
+    if (had && org && !org.deletedAt) again = `Please send this to ${org.name} again — they did my ${(had.detectedTrade ?? had.projectType ?? "last project").toLowerCase()} in ${had.createdAt.getFullYear()}. `;
+  }
   return {
     name: home.name,
     email: home.email,
@@ -116,7 +126,7 @@ export async function loadWizardPrefill(key: string | null | undefined, planId?:
     zip: home.zip ?? "",
     homeKey: key,
     planId: plan?.id ?? null,
-    description: plan ? `${plan.title}${plan.notes ? ` — ${plan.notes}` : ""}` : "",
+    description: `${again}${plan ? `${plan.title}${plan.notes ? ` — ${plan.notes}` : ""}` : ""}`,
   };
 }
 
@@ -139,7 +149,12 @@ export interface HomePlanView {
   wholeMonth: boolean;
   when: string;
   status: string;
+  /** The next reminder, when one is booked. */
   remindAt: string | null;
+  /** The form's choice this reminder stands for. */
+  remindMode: RemindMode;
+  /** The first reminder went; the next is the last nudge. */
+  reminded: boolean;
   /** The request it became, when submitted. */
   token: string | null;
 }
@@ -157,10 +172,22 @@ export interface HomeContractor {
   lastAt: string;
   /** /book/<slug> when the shop takes bookings; null otherwise. */
   bookingHref: string | null;
+  /** The intake, asking for this shop again (the Lead Center reads the ask). */
+  hireHref: string;
+}
+
+export interface HomeMembership {
+  name: string;
+  orgName: string;
+  /** SENT (offered, not yet accepted) | ACTIVE */
+  status: string;
+  href: string;
+  nextVisit: { label: string; at: string } | null;
+  endsAt: string | null;
 }
 
 export interface HomeNeed {
-  kind: "proposal" | "change" | "visit" | "review" | "plan";
+  kind: "proposal" | "change" | "visit" | "review" | "plan" | "files";
   text: string;
   href: string;
   at: string | null;
@@ -174,10 +201,36 @@ export interface HomeCalendarItem {
   href: string | null;
 }
 
+export interface HomeDocument {
+  label: string;
+  href: string;
+  kind: "proposal" | "pdf" | "change";
+  orgName: string;
+  at: string;
+}
+
+export interface HomeActivity {
+  at: string;
+  text: string;
+  /** "Roofing · Bothell, WA" — which project it belongs to. */
+  project: string;
+  href: string;
+}
+
 export interface HomeDashboard {
   key: string;
   name: string;
   firstName: string;
+  /** Seen the dashboard before this visit. */
+  returning: boolean;
+  /** What the homeowner told us, editable on the dashboard. */
+  details: { name: string; email: string; phone: string; address: string; city: string; state: string; zip: string };
+  documents: HomeDocument[];
+  activity: HomeActivity[];
+  /** Each project's job folder, by the request's token (lib/home/files). */
+  folders: Record<string, { files: FolderFileView[]; requests: FolderRequestView[] }>;
+  /** How files are stored on this server: "inline" = small pictures only. */
+  storage: StorageMode;
   email: string;
   phone: string | null;
   address: string | null;
@@ -187,11 +240,14 @@ export interface HomeDashboard {
   projects: RequestPortalView[];
   needs: HomeNeed[];
   contractors: HomeContractor[];
+  memberships: HomeMembership[];
   plans: HomePlanView[];
   calendar: HomeCalendarItem[];
   messages: Record<string, HomeMessageView[]>;
   stats: { projects: number; hired: number; spent: number };
 }
+
+const usd0 = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 function ymdIn(iso: string, tz: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
@@ -201,6 +257,7 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
   const home = await findHomeByKey(key);
   if (!home) return null;
   await adoptLeads(home);
+  const returning = Boolean(home.lastSeenAt);
   db.home.update({ where: { id: home.id }, data: { lastSeenAt: now } }).catch(() => null);
   const tz = home.timezone && validTimeZone(home.timezone) ? home.timezone : HOME_TZ_DEFAULT;
 
@@ -215,6 +272,8 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     db.homeMessage.findMany({ where: { homeId: home.id }, orderBy: { createdAt: "desc" }, take: 60 }),
   ]);
   const projects = await Promise.all(leads.map((pl) => buildRequestPortal(pl)));
+  const folders: HomeDashboard["folders"] = {};
+  await Promise.all(leads.map(async (pl) => { folders[pl.accessToken ?? ""] = await listFolder(pl.id, key); }));
   const tokenById = new Map(leads.map((l) => [l.id, l.accessToken ?? ""]));
 
   // Contractors: every shop a project is or was with, newest first.
@@ -226,7 +285,7 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
       const c = seen.get(org.id);
       if (c) c.projects += 1;
       else {
-        seen.set(org.id, { org, projects: 1, lastAt: p.submittedAt, bookingHref: null });
+        seen.set(org.id, { org, projects: 1, lastAt: p.submittedAt, bookingHref: null, hireHref: `/homeowner?home=${encodeURIComponent(key)}&with=${encodeURIComponent(org.id)}` });
         orgIds.push(org.id);
       }
     }
@@ -239,11 +298,27 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     }
   }
 
-  // Reviews waiting: a shop asked, the homeowner has not answered.
+  // Reviews waiting: a shop asked, the homeowner has not answered. And the
+  // memberships (service plans) a shop offered or runs for them.
   const clientIds = projects.flatMap((p) => p.clients.map((c) => c.clientId));
-  const reviews = clientIds.length
-    ? await db.reviewRequest.findMany({ where: { clientId: { in: clientIds }, status: "SENT", completedAt: null, hiddenAt: null }, select: { publicToken: true, organizationId: true, sentAt: true } })
-    : [];
+  const [reviews, planRowsSp] = clientIds.length
+    ? await Promise.all([
+        db.reviewRequest.findMany({ where: { clientId: { in: clientIds }, status: "SENT", completedAt: null, hiddenAt: null }, select: { publicToken: true, organizationId: true, sentAt: true } }),
+        db.servicePlan.findMany({
+          where: { clientId: { in: clientIds }, status: { in: ["SENT", "ACTIVE"] } },
+          orderBy: { createdAt: "desc" },
+          include: { organization: { select: { name: true } }, visits: { where: { status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, take: 1 } },
+        }),
+      ])
+    : [[], []];
+  const memberships: HomeMembership[] = planRowsSp.map((sp) => ({
+    name: sp.name,
+    orgName: sp.organization.name,
+    status: sp.status,
+    href: `/plan/${encodeURIComponent(sp.acceptToken)}`,
+    nextVisit: sp.visits[0] ? { label: sp.visits[0].label, at: sp.visits[0].dueAt.toISOString() } : null,
+    endsAt: sp.endsAt?.toISOString() ?? null,
+  }));
 
   // What needs the homeowner now, most pressing first.
   const needs: HomeNeed[] = [];
@@ -261,6 +336,17 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     const org = seen.get(r.organizationId)?.org;
     needs.push({ kind: "review", text: `${org?.name ?? "A contractor"} asked for a review`, href: `/review/${encodeURIComponent(r.publicToken)}`, at: r.sentAt?.toISOString() ?? null });
   }
+  for (const m of memberships) if (m.status === "SENT") needs.push({ kind: "plan", text: `${m.orgName} offered you a plan: ${m.name}`, href: m.href, at: null });
+  for (const p of projects) {
+    for (const r of folders[p.token]?.requests ?? []) {
+      if (!r.fulfilledAt) needs.push({ kind: "files", text: `${r.orgName} asks for pictures${r.note ? `: “${r.note}”` : ""}`, href: `#folder-${encodeURIComponent(p.token)}`, at: r.at });
+    }
+  }
+  for (const p of projects) {
+    for (const q of p.proposals) {
+      if (q.current && q.nextDue && q.remaining > 0) needs.push({ kind: "proposal", text: `${q.orgName}: ${q.nextDue.label} due — ${usd0(q.nextDue.amount)}`, href: `/portal/q/${encodeURIComponent(q.publicId)}`, at: null });
+    }
+  }
   for (const pl of planRows) {
     if (pl.status === "PLANNED" && pl.plannedFor.getTime() <= now.getTime()) needs.push({ kind: "plan", text: `You planned: ${pl.title} — ready to submit it?`, href: `/homeowner?home=${encodeURIComponent(key)}&plan=${encodeURIComponent(pl.id)}`, at: pl.plannedFor.toISOString() });
   }
@@ -274,12 +360,15 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     when: planWhen(p.plannedFor, p.wholeMonth),
     status: p.status,
     remindAt: p.remindAt?.toISOString() ?? null,
+    remindMode: p.remindedAt ? (p.remindAt ? "start" : "none") : remindModeOf(p.plannedFor, p.remindAt),
+    reminded: Boolean(p.remindedAt),
     token: p.platformLeadId ? tokenById.get(p.platformLeadId) || null : null,
   }));
 
   // The calendar: plans, visits, the requests and what came of them.
   const calendar: HomeCalendarItem[] = [];
   for (const p of plans) if (p.status === "PLANNED") calendar.push({ date: p.date, kind: "plan", label: p.title, href: null });
+  for (const m of memberships) if (m.nextVisit) calendar.push({ date: ymdIn(m.nextVisit.at, tz), kind: "visit", label: `${m.orgName}: ${m.nextVisit.label} (${m.name})`, href: m.href });
   for (const p of projects) {
     const href = `/request/${encodeURIComponent(p.token)}`;
     calendar.push({ date: ymdIn(p.submittedAt, tz), kind: "request", label: `Sent: ${p.trade ?? "request"}`, href });
@@ -298,6 +387,22 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     (messages[token] ??= []).push({ id: m.id, body: m.body, at: m.createdAt.toISOString(), emailed: m.emailed });
   }
 
+  // The paperwork, newest first: every proposal (and its PDF) and every change order.
+  const documents: HomeDocument[] = [];
+  const activity: HomeActivity[] = [];
+  for (const p of projects) {
+    const project = `${p.trade ?? "Project"}${p.place ? ` · ${p.place}` : ""}`;
+    const href = `/request/${encodeURIComponent(p.token)}`;
+    for (const q of p.proposals) {
+      documents.push({ label: q.title, href: `/portal/q/${encodeURIComponent(q.publicId)}`, kind: "proposal", orgName: q.orgName, at: q.sentAt ?? p.submittedAt });
+      documents.push({ label: `${q.title} — PDF`, href: `/api/public-quote/${encodeURIComponent(q.publicId)}/pdf`, kind: "pdf", orgName: q.orgName, at: q.sentAt ?? p.submittedAt });
+    }
+    for (const c of p.changeOrders) documents.push({ label: c.number ? `Change order #${c.number} · ${c.title}` : c.title, href: `/co/${encodeURIComponent(c.token)}`, kind: "change", orgName: p.current?.org.name ?? "", at: p.submittedAt });
+    for (const e of p.events) activity.push({ at: e.at, text: e.note ? `${e.text} — ${e.note}` : e.text, project, href });
+  }
+  documents.sort((a, b) => b.at.localeCompare(a.at));
+  activity.sort((a, b) => b.at.localeCompare(a.at));
+
   const hired = projects.filter((p) => p.status2 === "HIRED" || p.status2 === "DONE");
   const spent = Math.round(hired.reduce((n, p) => n + p.proposals.filter((q) => q.current && (q.stage === "ACCEPTED" || q.stage === "PAID" || q.stage === "COMPLETED")).reduce((m, q) => m + q.total + q.approvedChanges, 0), 0) * 100) / 100;
   const place = [home.city, home.state].filter(Boolean).join(", ") || home.zip || projects[0]?.place || null;
@@ -305,6 +410,12 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     key,
     name: home.name,
     firstName: home.name.trim().split(/\s+/)[0] || "there",
+    returning,
+    details: { name: home.name, email: home.email, phone: home.phone ?? "", address: home.address ?? "", city: home.city ?? "", state: home.state ?? "", zip: home.zip ?? "" },
+    documents: documents.slice(0, 12),
+    activity: activity.slice(0, 10),
+    folders,
+    storage: storageMode(),
     email: home.email,
     phone: home.phone,
     address: home.address ?? projects.find((p) => p.place)?.place ?? null,
@@ -314,6 +425,7 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     projects,
     needs,
     contractors: [...seen.values()],
+    memberships,
     plans,
     calendar,
     messages,

@@ -20,7 +20,7 @@ export default function FindHomePage() {
         <header className={s.top}>
           <Link href="/" className={s.brand}>
             <span className={s.mark} aria-hidden="true">J</span>
-            JobFlex
+            <span className={s.brandText}>JobFlex <em>Home</em></span>
           </Link>
         </header>
         <section className={s.hero} aria-labelledby="find-title">

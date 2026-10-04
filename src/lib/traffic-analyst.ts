@@ -64,6 +64,23 @@ export interface LandingSession {
   completed: boolean;
   outcome: string;
   plan: string;
+  /** The first screen as the phone drew it (landing_timing, 2026-10-04), ms
+   *  from the tap; null when the visit sent none. */
+  heroMs: number | null;
+  paintMs: number | null;
+  readyMs: number | null;
+  trackedMs: number | null;
+  kb: number | null;
+  /** "4g", "3g"… where Chrome names it; "" elsewhere. */
+  connection: string;
+  /** They left the landing before the headline had appeared. */
+  leftUnshown: number;
+  /** Step 1 of the sign-up as it became usable (signup_step1, 2026-10-04). */
+  formReadyMs: number | null;
+  typedEarly: number;
+  submittedEarly: number;
+  step1Errors: string[];
+  step1Passed: number;
 }
 
 export interface AnalystFinding {
@@ -74,6 +91,8 @@ export interface AnalystFinding {
   evidence: string;
   /** One concrete thing to try. */
   action: string;
+  /** The fix as steps, when one line is not enough (2026-10-04). */
+  steps?: string[];
   /** What it is about — an ad's name, a trade, a browser — when not the whole site. */
   about?: string;
   n: number;
@@ -92,7 +111,9 @@ export interface AnalystReport {
   ads: AnalystSegment[];
   trades: AnalystSegment[];
   placements: Array<{ placement: string; n: number }>;
-  stats: { bounce: number | null; fast: number | null; dwellMedian: number | null; scrollMedian: number | null; inApp: number | null };
+  stats: { bounce: number | null; fast: number | null; dwellMedian: number | null; scrollMedian: number | null; inApp: number | null;
+    /** Median ms from the tap to the headline on phones, and to a usable sign-up form (2026-10-04). */
+    heroMedianPhone: number | null; formReadyMedian: number | null };
 }
 
 // ── The query ──────────────────────────────────────────────────────────────
@@ -108,7 +129,7 @@ export function buildAnalystQuery(days = ANALYST_DAYS): string {
   const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
   const num = (name: string) => `toFloat64OrNull(toString(properties.${name}))`;
   const path = `ifNull(nullIf(${prop("$pathname")}, ''), path(${prop("$current_url")}))`;
-  const events = ["'$pageview'", "'$pageleave'", ...[E.landingView, E.landingSection, E.ctaClick, E.step, E.attempt, E.opened, E.error, E.completed].map((e) => `'${e}'`)].join(", ");
+  const events = ["'$pageview'", "'$pageleave'", ...[E.landingView, E.landingSection, E.ctaClick, E.step, E.attempt, E.opened, E.error, E.completed, E.landingTiming, E.signupStep1].map((e) => `'${e}'`)].join(", ");
   // The landing's own numbers ride on the event that leaves it: $pageleave, or the next $pageview on an in-app navigation.
   const left = `((event = '$pageleave' OR event = '$pageview') AND ${prop("$prev_pageview_pathname")} = '/')`;
   const joined = (value: string, when: string) => `arrayStringConcat(groupUniqArrayIf(${value}, ${when} AND ${value} != ''), ',')`;
@@ -131,7 +152,13 @@ export function buildAnalystQuery(days = ANALYST_DAYS): string {
     countIf(event = '${E.attempt}'), countIf(event = '${E.attempt}' AND ${prop("card")} = 'false'), countIf(event = '${E.opened}'),
     ${joined(prop("reason"), `event = '${E.error}'`)},
     countIf(event = '${E.completed}' AND ${prop("verified")} IN ('true', '1', '')),
-    anyIf(${prop("outcome")}, event = '${E.completed}'), anyIf(${prop("plan")}, event = '${E.completed}')
+    anyIf(${prop("outcome")}, event = '${E.completed}'), anyIf(${prop("plan")}, event = '${E.completed}'),
+    maxIf(${num("hero_ms")}, event = '${E.landingTiming}' AND ${prop("shown")} = 'true'), maxIf(${num("paint_ms")}, event = '${E.landingTiming}'),
+    maxIf(${num("ready_ms")}, event = '${E.landingTiming}'), maxIf(${num("tracked_ms")}, event = '${E.landingTiming}'), maxIf(${num("kb")}, event = '${E.landingTiming}'),
+    anyIf(${prop("connection")}, event = '${E.landingTiming}' AND ${prop("connection")} != ''), countIf(event = '${E.landingTiming}' AND ${prop("shown")} = 'false'),
+    maxIf(${num("ready_ms")}, event = '${E.signupStep1}' AND ${prop("outcome")} = 'ready'),
+    countIf(event = '${E.signupStep1}' AND ${prop("typed_before_ready")} = 'true'), countIf(event = '${E.signupStep1}' AND ${prop("early_submit")} = 'true'),
+    ${joined(prop("reason"), `event = '${E.signupStep1}' AND ${prop("outcome")} = 'error'`)}, countIf(event = '${E.signupStep1}' AND ${prop("outcome")} = 'continue')
     FROM events
     WHERE timestamp > now() - INTERVAL ${d} DAY AND timestamp <= now() AND event IN (${events})
       AND ${prop("$session_id")} != '' AND ${path} != '/admin' AND NOT startsWith(${path}, '/admin/')
@@ -143,6 +170,8 @@ const text = (v: unknown) => (v == null ? "" : String(v));
 const count = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const maybe = (v: unknown) => { if (v == null || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 const list = (v: unknown) => text(v).split(",").map((s) => s.trim()).filter(Boolean);
+/** A measured moment in ms: positive, else null (the beacons send -1 for "not known"). */
+const ms = (v: unknown) => { const n = maybe(v); return n !== null && n > 0 ? n : null; };
 
 /** The landing's trade from its URL when landing_view did not arrive (beacon fallback). */
 function industryOfUrl(url: string): string {
@@ -164,6 +193,8 @@ export function analystSessionFromRow(row: unknown[]): LandingSession | null {
     registerViews: count(row[23]), step: count(row[24]), flow: text(row[25]),
     attempts: count(row[26]), cardless: count(row[27]), opened: count(row[28]), errors: list(row[29]),
     completed: count(row[30]) > 0, outcome: text(row[31]), plan: text(row[32]),
+    heroMs: ms(row[33]), paintMs: ms(row[34]), readyMs: ms(row[35]), trackedMs: ms(row[36]), kb: ms(row[37]), connection: text(row[38]), leftUnshown: count(row[39]),
+    formReadyMs: ms(row[40]), typedEarly: count(row[41]), submittedEarly: count(row[42]), step1Errors: list(row[43]), step1Passed: count(row[44]),
   };
 }
 
@@ -202,6 +233,12 @@ export const pct = (x: number | null, digits = 0): string => (x === null ? "—"
 const people = (n: number) => `${n} ${n === 1 ? "person" : "people"}`;
 const conf = (n: number): AnalystFinding["confidence"] => (n >= 100 ? "high" : n >= 40 ? "medium" : "low");
 const secs = (x: number | null) => (x === null ? "—" : x < 60 ? `${Math.round(x)} s` : `${Math.round(x / 60)} min`);
+/** Milliseconds as the eye reads them: "7.6 s", "0.9 s". */
+const secsMs = (x: number | null) => (x === null ? "—" : `${(x / 1000).toFixed(1)} s`);
+const quantile = (xs: number[], q: number): number | null => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(q * s.length))]; };
+const size = (kb: number) => (kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${Math.round(kb)} KB`);
+const nums = (xs: readonly Read[], pick: (r: Read) => number | null) => xs.map(pick).filter((x): x is number => x !== null);
+const ordinal = (n: number) => `${n}${n === 1 ? "st" : n === 2 ? "nd" : n === 3 ? "rd" : "th"}`;
 
 function segment(key: string, name: string, xs: Read[], platform?: string): AnalystSegment {
   return { key, name, n: xs.length, bounce: share(xs, (r) => r.bounced), cta: share(xs, (r) => r.pressed), form: share(xs, (r) => r.form), completed: xs.filter((r) => r.done).length, platform };
@@ -261,6 +298,8 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
     dwellMedian: median(base.map((r) => r.dwell).filter((x): x is number => x !== null)),
     scrollMedian: median(base.map((r) => r.scroll).filter((x): x is number => x !== null)),
     inApp: share(base, (r) => r.inApp),
+    heroMedianPhone: median(nums(base.filter((r) => !/desktop/i.test(r.device)), (r) => r.heroMs)),
+    formReadyMedian: median(nums(all.filter((r) => !/desktop/i.test(r.device)), (r) => r.formReadyMs)),
   };
   // Sections: of the visits that reported any section, how many reached each.
   const sections = LANDING_SECTIONS.map((sec) => ({ key: sec.key, label: sec.label, shown: sec.shown, reach: measured.length ? measured.filter((r) => r.sections.includes(sec.key)).length / measured.length : null }));
@@ -303,16 +342,102 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
       action: leak ? `Fix the biggest leak first — ${leak.from} → ${leak.to} loses ${pct(1 - leak.b / leak.a)}.` : "Get people to the form first: a clear price and a 'free trial, no card' button in the first screen.", n });
   }
 
+  // The phones that reported their first screen (landing_timing): the hero's
+  // moment on each, for the bounce rule and the first-screen finding below.
+  const phonesTimed = base.filter((r) => !/desktop/i.test(r.device) && (r.heroMs !== null || r.leftUnshown > 0 || r.readyMs !== null));
+  const heroPhones = nums(phonesTimed, (r) => r.heroMs);
+  const heroMedian = median(heroPhones);
+
   // Bouncing.
   const bounce = stats.bounce ?? 0;
   if (enough && n >= 20 && bounce >= 0.45) {
     const fastShare = stats.fast ?? 0;
     const inAppBounce = share(base.filter((r) => r.inApp), (r) => r.bounced), browserBounce = share(base.filter((r) => !r.inApp), (r) => r.bounced);
     const quick = bounce > 0 && fastShare / bounce >= 0.5;
+    // A measured slow first screen (below) explains the leaving before the words do.
+    const slowScreen = heroPhones.length >= 12 && heroMedian !== null && heroMedian >= 2500;
     add({ id: "bounce", tone: bounce >= 0.6 ? "bad" : "warn", title: `${pct(bounce)} of ad clicks leave the landing without a second page`,
       evidence: `${Math.round(bounce * n)} of ${n}; ${pct(fastShare)} of all visits were gone inside 5 seconds without scrolling${inAppBounce !== null && browserBounce !== null ? `; Facebook's in-app browser bounces ${pct(inAppBounce)} vs ${pct(browserBounce)} in a real browser` : ""}. Median time on the landing ${secs(stats.dwellMedian)}.`,
-      action: quick ? "Most of these never looked: accidental taps or a slow first screen in the in-app browser. Optimise the ad set for landing-page views (not link clicks), keep the first screen light, and check the hero loads under 2 s on 4G."
+      action: slowScreen ? `The first screen is slow before it is anything else: on phones the headline shows ${secsMs(heroMedian)} after the tap (the first-screen finding). Fix that first, then judge the words.`
+        : quick ? "Most of these never looked: accidental taps or a slow first screen in the in-app browser. Optimise the ad set for landing-page views (not link clicks), keep the first screen light, and check the hero loads under 2 s on 4G."
         : "They looked and left: the ad's promise is not in the first screen. Put the ad's exact claim, the trade, the price and 'free trial, no card' in the hero, above the fold.", n });
+  }
+
+  // THE FIRST SCREEN AS THE PHONES DREW IT (landing_timing, 2026-10-04). The
+  // lab found the headline arriving 7–8 s after the tap on Google's mobile
+  // profile — the hero's copy is kept invisible until the JavaScript is in —
+  // and this is the same moment measured on real visits, phones only (a desk
+  // draws it in under a second).
+  if (heroPhones.length >= 12 && heroMedian !== null && heroMedian >= 2500) {
+    const p75 = quantile(heroPhones, 0.75);
+    const slow = heroPhones.filter((x) => x >= 4000).length / heroPhones.length;
+    const inA = median(nums(phonesTimed.filter((r) => r.inApp), (r) => r.heroMs)), brw = median(nums(phonesTimed.filter((r) => !r.inApp), (r) => r.heroMs));
+    const unshown = phonesTimed.filter((r) => r.leftUnshown > 0).length;
+    const kbMed = median(nums(phonesTimed, (r) => r.kb)), readyMed = median(nums(phonesTimed, (r) => r.readyMs)), paintMed = median(nums(phonesTimed, (r) => r.paintMs));
+    const byConn = [...groupBy(phonesTimed.filter((r) => r.connection), (r) => r.connection)].map(([c, xs]) => ({ c, n: xs.length, med: median(nums(xs, (r) => r.heroMs)) })).filter((x) => x.n >= 5 && x.med !== null).sort((a, b) => (b.med ?? 0) - (a.med ?? 0));
+    // Is the headline held back AFTER the first paint (the entrance waiting
+    // for the JavaScript — fixed for phones on 2026-10-04), or does it come
+    // with a first paint that is itself late (the page's weight)? The advice
+    // follows whichever the visits show.
+    const lag = median(phonesTimed.filter((r) => r.heroMs !== null && r.paintMs !== null).map((r) => (r.heroMs as number) - (r.paintMs as number)));
+    const heldBack = lag !== null && lag >= 1000;
+    add({ id: "first-screen", tone: heroMedian >= 4000 ? "bad" : "warn",
+      title: `On phones the headline shows ${secsMs(heroMedian)} after the tap`,
+      evidence: `Median ${secsMs(heroMedian)} over ${heroPhones.length} phone visits; a quarter wait ${secsMs(p75)} or more, ${pct(slow)} wait over 4 s${inA !== null && brw !== null ? `; ${secsMs(inA)} in Facebook's browser vs ${secsMs(brw)} in a real one` : ""}${byConn.length ? `; by connection ${byConn.map((x) => `${x.c} ${secsMs(x.med)}`).join(", ")}` : ""}${unshown ? `; ${unshown} left before the headline ever appeared` : ""}. The first paint comes at ${secsMs(paintMed)}${heldBack ? ` and the headline ${secsMs(lag)} after it` : ""}, the page's JavaScript takes over at ${secsMs(readyMed)}${kbMed !== null ? ` after ${size(kbMed)} downloaded` : ""}.`,
+      action: heldBack ? "The headline is held back after the first paint: the hero's copy is kept invisible until the JavaScript is in, for an entrance animation — that is most of the wait. Show it from the first paint, then make the page lighter."
+        : "The headline now comes with the first paint — it is the first paint that is late. The page is heavy for a phone: make what the first screen needs small, and everything else wait.",
+      steps: [
+        ...(heldBack ? ["Show the hero copy from the first paint: hold `.lp-enter` back only where an entrance is about to play (landing-e.css, hero-entrance.tsx), and render the pill and the product shot visible from the server (reveal.tsx `shown`). Never animate it in on phones."] : []),
+        "Serve the fonts as subset WOFF2 files instead of the full variable TTFs (a fraction of the size); the mono font is for a few small labels and can go.",
+        "Merge the stylesheets into one or two and inline the hero's own CSS in the HTML, so the first paint waits for nothing.",
+        "Fetch the sections under the fold on scroll, not at start — today every section's JavaScript arrives before the page can respond.",
+        "Defer Meta's pixel script until after the first paint; PageView still goes out.",
+        "Aim for the headline under 1.5 s on Google's mobile profile (pagespeed.web.dev). This finding stops on its own once the median drops under 2.5 s.",
+      ], n: heroPhones.length });
+  }
+
+  // THE SIGN-UP FORM BEFORE IT IS USABLE (signup_step1 "ready", 2026-10-04).
+  // The page's prelude now keeps what was typed early and holds an early
+  // Continue, so nothing is lost any more — but a form that is usable only
+  // seconds after it is drawn is still a form that loses people.
+  const forms = all.filter((r) => r.formReadyMs !== null && !/desktop/i.test(r.device));
+  const formMedian = median(nums(forms, (r) => r.formReadyMs));
+  const early = forms.filter((r) => r.typedEarly > 0 || r.submittedEarly > 0).length;
+  if (forms.length >= 10 && formMedian !== null && (formMedian >= 2500 || early / forms.length >= 0.1)) {
+    const typed = forms.filter((r) => r.typedEarly > 0).length, pressed1 = forms.filter((r) => r.submittedEarly > 0).length;
+    add({ id: "form-ready", tone: formMedian >= 4000 || early / forms.length >= 0.25 ? "bad" : "warn",
+      title: early / forms.length >= 0.1 ? `${pct(early / forms.length)} start filling the sign-up form before it is ready` : `The sign-up form is usable only ${secsMs(formMedian)} after it appears on phones`,
+      evidence: `${forms.length} form loads on phones: the form's JavaScript takes over ${secsMs(formMedian)} after the tap (a quarter wait ${secsMs(quantile(nums(forms, (r) => r.formReadyMs), 0.75))} or more); ${typed} had already typed and ${pressed1} had already pressed Continue by then — kept and restored now, each one a reload with empty fields before 2026-10-04.`,
+      action: "A four-field form should be usable in a second. Make the sign-up page light, and ask for less on step 1.",
+      steps: [
+        "Send phones no decorative picture: the sign-up page's side image is over a megabyte and hidden on a phone, yet downloaded before the form's own code.",
+        "Trim the sign-up page's JavaScript to the form itself.",
+        "Ask for the email alone on step 1 — the name on the company step, the password after the trial starts (and one field with 'show', not a confirmation).",
+        "Carry the ad's promise onto the form: 'Your first roof report is two steps away' instead of 'Register.'",
+      ], n: forms.length });
+  }
+
+  // Step 1's refusals, by reason (signup_step1 "error").
+  const s1err = new Map<string, number>();
+  for (const r of all) for (const e of r.step1Errors) s1err.set(e, (s1err.get(e) ?? 0) + 1);
+  const s1total = [...s1err.values()].reduce((a, c) => a + c, 0);
+  if (s1total >= 3) {
+    const STEP1_ADVICE: Record<string, string> = {
+      email_taken: "'Already registered': put a one-tap 'Sign in instead' right there, with a reset link — these are customers coming back through an ad.",
+      email_google: "'Signs in with Google' inside a webview, where Google is not offered: send a code by email instead.",
+      password_short: "Password rules at step 1 cost sign-ups: one field with 'show', or no password until the trial has started.",
+      password_mismatch: "The confirmation field is the only reason this error exists: drop it and keep 'show password'.",
+      email_disposable: "Throwaway mailboxes refused — fine; say why in one line and offer the Google route in a real browser.",
+      rate_limited: "The email check's rate limit hit: 30 a minute per address is too tight for a shared office IP — raise it.",
+      check_failed: "The server check failed: read the server log for checkEmailAvailable.",
+      email_invalid: "A bad address reached Continue: validate the field as it is left, not on submit.",
+      missing: "Empty fields reached Continue: mark required fields as they are left, and keep the button off until they are filled.",
+    };
+    const rows = [...s1err].sort((a, b) => b[1] - a[1]);
+    add({ id: "step1-errors", tone: "warn", title: `Step 1 refused ${s1total} ${s1total === 1 ? "time" : "times"}`,
+      evidence: rows.map(([k, c]) => `${k.replace(/_/g, " ")} × ${c}`).join(", ") + ".",
+      action: `The first reason is ${rows[0][0].replace(/_/g, " ")}: ${STEP1_ADVICE[rows[0][0]] ?? "look at the form's own message for it."}`,
+      steps: rows.slice(1).map(([k]) => STEP1_ADVICE[k]).filter((x): x is string => !!x), n: s1total });
   }
 
   // Scrolling but not far.
@@ -337,6 +462,32 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
     if (cliff) add({ id: "cliff", tone: "warn", title: `They leave at «${cliff.at.label}»`,
       evidence: `${pct(cliff.at.reach)} of ${measured.length} measured visits reach «${cliff.at.label}», ${pct(cliff.next.reach)} reach the next section («${cliff.next.label}»).`,
       action: `Shorten «${cliff.at.label}» or move what matters below it («${cliff.next.label}») above it — and put a sign-up button right there, at the point where they stop.`, n: measured.length });
+  }
+
+  // The demo is not the second screen (2026-10-04): the ad showed the
+  // estimator, the page shows something else first.
+  if (measured.length >= 20) {
+    const second = LANDING_SECTIONS[1];
+    const demoIndex = LANDING_SECTIONS.findIndex((x) => x.key === "showcase");
+    const secondReach = sections.find((x) => x.key === second.key)?.reach ?? null;
+    const demoReach = sections.find((x) => x.key === "showcase")?.reach ?? null;
+    if (second.key !== "showcase" && demoIndex > 1 && secondReach !== null && demoReach !== null && secondReach >= 0.25 && demoReach < secondReach) {
+      add({ id: "order", tone: "warn", title: `The demo is the ${ordinal(demoIndex + 1)} screen; «${second.label}» comes before it`,
+        evidence: `${pct(secondReach)} of ${measured.length} measured visits reach «${second.label}», ${pct(demoReach)} reach the demo («${LANDING_SECTIONS[demoIndex].label}») after it.`,
+        action: "Put the estimator demo directly under the hero — it is what the ad showed — and move the rest down.",
+        steps: [`Reorder landing-e-page.tsx: hero → the estimators showcase → …; «${second.label}» after the proof, near the pricing.`, "Let the hero's product shot play its sequence on phones too (it opens as a still today), with the sign-up button under it."], n: measured.length });
+    }
+  }
+
+  // When the counting starts (landing_timing tracked_ms): the tracking
+  // library loads after the page, so whoever leaves before it is in no
+  // number here.
+  const tracked = nums(phonesTimed, (r) => r.trackedMs);
+  const trackedMed = median(tracked);
+  if (enough && tracked.length >= 12 && trackedMed !== null && trackedMed >= 1500) {
+    add({ id: "undercount", tone: "info", title: `Counting starts ${secsMs(trackedMed)} into a phone visit`,
+      evidence: `The tracking loads ${secsMs(trackedMed)} after the tap (median of ${tracked.length} phone visits); anyone gone before that is in no number here — which is why "gone inside 5 s" reads only ${pct(stats.fast)}.`,
+      action: "Compare the week's link clicks in Ads Manager with the landed count here: the gap is the people who left before the counter started. For a true picture, run the tracking from the first paint for a week.", n: tracked.length });
   }
 
   // Reading, not pressing.
@@ -405,8 +556,15 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
       // bouncers (gone without a look) are different ads with different fixes.
       if (xs.length >= 12 && eng >= 0.5 && (a.form ?? 0) <= 0.06) add({ id: `readers-${a.key}`, tone: "warn", title: `«${a.name}» brings readers, not sign-ups`,
         evidence: `${pct(eng)} of its ${xs.length} visits read the page, ${pct(a.form)} open the form.`, action: "The ad's audience is curious, not buying: make the ad's offer the landing's first line, and add the price. If the ad targets homeowners, retarget to contractors.", about: a.name, n: xs.length });
-      else if (xs.length >= 12 && eng < 0.5 && (a.bounce ?? 0) >= 0.75) add({ id: `bounce-${a.key}`, tone: "warn", title: `«${a.name}»: ${pct(a.bounce)} leave without pressing anything`,
-        evidence: `${Math.round((a.bounce ?? 0) * xs.length)} of ${xs.length} clicks; ${pct(share(xs, (r) => r.fast))} gone inside 5 s; median ${secs(median(xs.map((r) => r.dwell).filter((x): x is number => x !== null)))} on the page.`, action: "Pause it or swap the creative: the click does not match what the landing shows. Check the ad's landing URL carries the right ?industry=.", about: a.name, n: xs.length });
+      else if (xs.length >= 12 && eng < 0.5 && (a.bounce ?? 0) >= 0.75) {
+        // Where its clicks land: the general hero, or a trade's hero that does not continue the ad's line.
+        const onDefault = share(xs, (r) => r.industry === "default") ?? 0;
+        const adHero = median(nums(xs.filter((r) => !/desktop/i.test(r.device)), (r) => r.heroMs));
+        add({ id: `bounce-${a.key}`, tone: "warn", title: `«${a.name}»: ${pct(a.bounce)} leave without pressing anything`,
+          evidence: `${Math.round((a.bounce ?? 0) * xs.length)} of ${xs.length} clicks; ${pct(share(xs, (r) => r.fast))} gone inside 5 s; median ${secs(median(xs.map((r) => r.dwell).filter((x): x is number => x !== null)))} on the page${onDefault >= 0.5 ? `; ${pct(onDefault)} land on the general hero` : ""}${adHero !== null ? `; its phones see the headline after ${secsMs(adHero)}` : ""}.`,
+          action: onDefault >= 0.5 ? "Its clicks land on the general hero («Turn your trade into a business»), not on the trade's: put ?industry=<trade> on the ad's URL so the first screen is the trade's own, and a ?hook= (to build: the ad's opening line as the headline) so the page continues the ad's sentence."
+            : "The hero does not continue the ad's first line: give the landing a ?hook= parameter (to build) that puts the ad's own opening line in the headline and its second line under it, and send this ad there. Until then, pause it or swap the creative.", about: a.name, n: xs.length });
+      }
     }
   }
 

@@ -13,6 +13,7 @@ import { signIn } from "next-auth/react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useInAppBrowser } from "@/components/auth/use-in-app-browser";
+import type { InAppBrowser } from "@/lib/inAppBrowser";
 import { rememberFbclidForGoogle, writeLandingCookies } from "./landing-variant-effects";
 import { signupHref, type LandingVariantKey, type UtmParams } from "./landing-variants";
 import { REGISTER } from "./routes";
@@ -33,7 +34,10 @@ export function GoogleSignupButton({
   industry,
   utm,
   fbclid,
+  inApp: inAppInitial = null,
 }: {
+  /** What the server read from the request's user agent (src/app/page.tsx). */
+  inApp?: InAppBrowser | null;
   className: string;
   children: ReactNode;
   industry?: LandingVariantKey;
@@ -44,9 +48,10 @@ export function GoogleSignupButton({
   const [busy, setBusy] = useState(false);
   /* Not offered inside Instagram / Facebook / LINE / TikTok (2026-10-01):
      Google answers "403 disallowed_useragent" in a webview, so the email
-     button is the hero's only — and full-width — action there. The page is
-     static, so this corrects on hydration, under the hero's entrance mask. */
-  const inApp = useInAppBrowser();
+     button is the hero's only — and full-width — action there. The server
+     says so from the request (2026-10-04: the hero is on screen from the
+     first paint, so a button taken away on hydration would be seen going). */
+  const inApp = useInAppBrowser(inAppInitial);
   if (inApp) return null;
   return (
     <button

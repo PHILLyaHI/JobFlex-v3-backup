@@ -332,25 +332,112 @@ export interface HomePlanReminderInput {
   title: string;
   /** "November 2026" or "Nov 14, 2026". */
   when: string;
+  /** Days until the plan's month; 0 when it has come. */
+  daysAway: number;
+  /** The second nudge, two weeks after the first; the series ends with it. */
+  followUp: boolean;
   notes: string | null;
   /** The intake, prefilled with the plan. */
   submitUrl: string;
   homeUrl: string;
 }
 
-/** The month a planned project comes: a nudge to submit it. */
+/** The time the homeowner chose has come: a nudge to submit the plan. */
 export function buildHomePlanReminder(i: HomePlanReminderInput): EmailDoc {
+  const first = i.name.split(" ")[0];
+  const away = i.daysAway >= 12 ? "about two weeks away" : i.daysAway >= 5 ? "about a week away" : i.daysAway > 0 ? `${i.daysAway} day${i.daysAway === 1 ? "" : "s"} away` : null;
+  const lead = i.followUp
+    ? `Hi ${first} — still planning this${i.daysAway > 0 ? ` for ${i.when}` : ""}? Submit it in a minute and we'll find you a local contractor — or move it to another month, or take it off your plans. Either way, this is our last nudge about it.`
+    : away
+      ? `Hi ${first} — ${i.when} is ${away}, and you planned this for it. Ready? Describe it in a minute and we'll find you a local contractor on JobFlex, so they can look before the month starts.`
+      : `Hi ${first} — you planned this for ${i.when}. Ready? Describe it in a minute and we'll find you a local contractor on JobFlex.`;
   return {
-    subject: `Ready for your ${truncate(i.title, 60)}?`,
+    subject: i.followUp ? `Still planning your ${truncate(i.title, 50)}?` : `Ready for your ${truncate(i.title, 60)}?`,
     lockup: PLATFORM_LOCKUP,
-    kicker: { text: "Your plan" },
+    kicker: { text: i.followUp ? "Your plan · last nudge" : "Your plan" },
+    headline: truncate(i.title, TITLE_MAX),
+    prose: [lead, ...(i.notes ? [`Your note: “${truncate(i.notes, 240)}”`] : [])],
+    cta: { label: "Submit it now", href: i.submitUrl },
+    after: [`${i.followUp ? "Move it or remove it" : "Not yet? It stays"} on your home dashboard: ${i.homeUrl}`],
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface HomePlanSavedInput {
+  name: string;
+  title: string;
+  when: string;
+  /** "Oct 18, 2026" — when the reminder lands; null when they chose none. */
+  remindOn: string | null;
+  notes: string | null;
+  homeUrl: string;
+}
+
+/** The moment a plan is saved: what was planned, when the reminder comes. */
+export function buildHomePlanSaved(i: HomePlanSavedInput): EmailDoc {
+  return {
+    subject: `Planned: ${truncate(i.title, 50)} — ${i.when}`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "On your plans" },
     headline: truncate(i.title, TITLE_MAX),
     prose: [
-      `Hi ${i.name.split(" ")[0]} — you planned this for ${i.when}. Ready? Describe it in a minute and we'll find you a local contractor on JobFlex.`,
+      `Hi ${i.name.split(" ")[0]} — it's on your home dashboard for ${i.when}.`,
+      i.remindOn ? `We'll email you on ${i.remindOn} to get it started — one tap sends it to a local pro on JobFlex. If nothing happens, one more nudge two weeks later, then we leave it to you.` : "No reminder, as you chose — whenever you're ready, one tap on your dashboard sends it to a local pro on JobFlex.",
       ...(i.notes ? [`Your note: “${truncate(i.notes, 240)}”`] : []),
     ],
-    cta: { label: "Submit it now", href: i.submitUrl },
-    after: [`Not yet? It stays on your home dashboard: ${i.homeUrl}`],
+    cta: { label: "Open your home dashboard", href: i.homeUrl },
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface HomeFilesRequestInput {
+  name: string;
+  orgName: string;
+  project: string;
+  note: string | null;
+  /** The dashboard, at that project's folder. */
+  href: string;
+}
+
+/** To the homeowner: the shop asks for pictures (lib/home/files). */
+export function buildHomeFilesRequest(i: HomeFilesRequestInput): EmailDoc {
+  return {
+    subject: `${truncate(i.orgName, 40)} asks for photos of your ${truncate(i.project, 40)}`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Photos wanted" },
+    headline: `${truncate(i.orgName, 40)} could use some pictures`,
+    prose: [
+      `Hi ${i.name.split(" ")[0]} — ${i.orgName} would like to see a bit more before they price your ${i.project}.`,
+      ...(i.note ? [`They wrote: “${truncate(i.note, 400)}”`] : []),
+      "Add them from your home dashboard — a few photos from your phone, or a short video walking through it. They go straight to the contractor's folder for this job.",
+    ],
+    cta: { label: "Add photos", href: i.href },
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface HomeFilesAddedInput {
+  homeownerName: string;
+  /** "3 photos", "a video". */
+  what: string;
+  project: string;
+  note: string | null;
+  leadUrl: string;
+}
+
+/** To the shop: the homeowner added files to the job folder. Reply-to is the homeowner. */
+export function buildHomeFilesAdded(i: HomeFilesAddedInput): EmailDoc {
+  return {
+    subject: `${truncate(i.homeownerName, 40)} added ${i.what} — ${truncate(i.project, 50)}`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Job folder" },
+    headline: `${truncate(i.homeownerName, 40)} added ${i.what}`,
+    prose: [
+      `About: ${truncate(i.project, 120)}. The files are in the job folder on the lead — open it to look, download, or put a picture on the proposal.`,
+      ...(i.note ? [`Their note: “${truncate(i.note, 400)}”`] : []),
+    ],
+    cta: { label: "Open the job folder", href: i.leadUrl },
+    after: ["Reply to this email to answer — it goes straight to them."],
     footer: PLATFORM_FOOTER,
   };
 }

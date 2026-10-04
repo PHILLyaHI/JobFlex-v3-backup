@@ -9,7 +9,10 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { addHomePlan, updateHomePlan } from "@/actions/homePortal";
 import type { HomePlanView } from "@/lib/home/portal";
+import { REMIND_MODES, type RemindMode } from "@/lib/home/dates";
 import s from "./home.module.css";
+
+const remindOn = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null);
 
 const IDEAS = ["Garage epoxy floor", "Exterior paint", "New gutters", "Kitchen backsplash", "Bathroom remodel", "Fence repair", "AC tune-up", "Hardwood floors"];
 
@@ -31,6 +34,7 @@ export function Planner({ homeKey, plans }: { homeKey: string; plans: HomePlanVi
   const [title, setTitle] = React.useState("");
   const [when, setWhen] = React.useState(months[1]?.value ?? months[0].value);
   const [notes, setNotes] = React.useState("");
+  const [remind, setRemind] = React.useState<RemindMode>("start");
   const [busy, setBusy] = React.useState(false);
   const [note, setNote] = React.useState<{ ok: boolean; text: string } | null>(null);
   const [open, setOpen] = React.useState(plans.length === 0);
@@ -40,7 +44,7 @@ export function Planner({ homeKey, plans }: { homeKey: string; plans: HomePlanVi
     setBusy(true);
     setNote(null);
     try {
-      const r = await addHomePlan({ key: homeKey, title, when, notes: notes || undefined });
+      const r = await addHomePlan({ key: homeKey, title, when, notes: notes || undefined, remind });
       setNote({ ok: r.ok, text: r.ok ? r.note : r.error });
       if (r.ok) {
         setTitle("");
@@ -54,11 +58,11 @@ export function Planner({ homeKey, plans }: { homeKey: string; plans: HomePlanVi
     }
   }
 
-  async function change(id: string, status: "DONE" | "DROPPED") {
+  async function change(id: string, patch: { status?: "DONE" | "DROPPED"; remind?: RemindMode }) {
     if (busy) return;
     setBusy(true);
     try {
-      const r = await updateHomePlan({ key: homeKey, id, status });
+      const r = await updateHomePlan({ key: homeKey, id, ...patch });
       setNote({ ok: r.ok, text: r.ok ? r.note : r.error });
       if (r.ok) router.refresh();
     } finally {
@@ -77,13 +81,22 @@ export function Planner({ homeKey, plans }: { homeKey: string; plans: HomePlanVi
             <li key={p.id} className={s.plan}>
               <div className={s.rowMain}>
                 <div className={s.rowTitle}>{p.title}</div>
-                <div className={s.mono}>{p.when}{p.remindAt ? " · reminder by email" : ""}</div>
+                <div className={s.mono}>
+                  {p.when}
+                  {p.remindAt ? ` · ${p.reminded ? "last nudge" : "reminder"} by email ${remindOn(p.remindAt)}` : p.reminded ? " · reminded" : " · no reminder"}
+                </div>
                 {p.notes && <div className={s.planNote}>{p.notes}</div>}
+                <label className={s.remindRow}>
+                  <span>Remind me</span>
+                  <select value={p.remindMode} disabled={busy} onChange={(e) => void change(p.id, { remind: e.target.value as RemindMode })} aria-label={`Remind me about ${p.title}`}>
+                    {REMIND_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </label>
               </div>
               <div className={s.actions}>
                 <a className={s.btnPrimary} href={`/homeowner?home=${encodeURIComponent(homeKey)}&plan=${encodeURIComponent(p.id)}`}>Submit it now</a>
-                <button type="button" className={s.btnText} disabled={busy} onClick={() => void change(p.id, "DONE")}>Done</button>
-                <button type="button" className={s.btnText} disabled={busy} onClick={() => void change(p.id, "DROPPED")}>Remove</button>
+                <button type="button" className={s.btnText} disabled={busy} onClick={() => void change(p.id, { status: "DONE" })}>Done</button>
+                <button type="button" className={s.btnText} disabled={busy} onClick={() => void change(p.id, { status: "DROPPED" })}>Remove</button>
               </div>
             </li>
           ))}
@@ -107,23 +120,36 @@ export function Planner({ homeKey, plans }: { homeKey: string; plans: HomePlanVi
             void add();
           }}
         >
-          <label className={s.field}>
-            <span>What</span>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={IDEAS[plans.length % IDEAS.length]} maxLength={120} required list="plan-ideas" name="plan-title" autoComplete="off" />
-            <datalist id="plan-ideas">{IDEAS.map((x) => <option key={x} value={x} />)}</datalist>
+          <label className={`${s.field} ${s.fieldWide}`}>
+            <span>What — type anything, or tap an idea</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Garage epoxy floor, a new deck, repaint the bedrooms…" maxLength={120} required name="plan-title" autoComplete="off" />
           </label>
+          <div className={`${s.ideas} ${s.fieldWide}`} aria-label="Ideas">
+            {IDEAS.map((x) => (
+              <button key={x} type="button" className={s.idea} aria-pressed={title === x} onClick={() => setTitle(x)}>{x}</button>
+            ))}
+          </div>
           <label className={s.field}>
             <span>When</span>
             <select value={when} onChange={(e) => setWhen(e.target.value)} name="plan-when">
               {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </label>
+          <label className={s.field}>
+            <span>Remind me</span>
+            <select value={remind} onChange={(e) => setRemind(e.target.value as RemindMode)} name="plan-remind">
+              {REMIND_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+          </label>
           <label className={`${s.field} ${s.fieldWide}`}>
             <span>Notes (optional)</span>
             <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Budget in mind, colours, what you've seen…" maxLength={1000} name="plan-notes" autoComplete="off" />
           </label>
+          <p className={`${s.fine} ${s.fieldWide}`}>
+            {remind === "none" ? "No reminder — it stays on your dashboard until you submit it." : "We'll email you then with one tap to send it to a local pro; if nothing happens, one more nudge two weeks later, then we leave it to you."}
+          </p>
           <div className={s.actions}>
-            <button type="submit" className={s.btnPrimary} disabled={busy || title.trim().length < 2}>{busy ? "Saving…" : "Add to my plans"}</button>
+            <button type="submit" className={s.btnPrimary} disabled={busy || title.trim().length < 2}>{busy ? "Saving…" : remind === "none" ? "Add to my plans" : "Add & remind me"}</button>
             {planned.length > 0 && <button type="button" className={s.btnText} onClick={() => setOpen(false)}>Cancel</button>}
           </div>
         </form>

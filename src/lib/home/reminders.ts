@@ -1,36 +1,48 @@
-// PLAN REMINDERS (2026-10-03) — server only. The month (or day) a homeowner
-// planned a project for has come: one email, "ready? submit it", with the
-// intake prefilled from the plan. Once per plan (remindedAt), from the daily
-// cron (/api/cron/home-plans); a moved plan is reminded about again.
+// PLAN REMINDERS (2026-10-03) — server only. The time the homeowner chose
+// for a plan has come (lib/home/dates reminderFor): one email, "ready? submit
+// it", with the intake prefilled from the plan; if nothing happens, one
+// follow-up two weeks later, then quiet. `remindAt` is the next send,
+// `remindedAt` the last one — a row is due when remindAt has passed and is
+// later than remindedAt. From the daily cron (/api/cron/home-plans); a moved
+// plan starts over.
 import { db } from "@/lib/db";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail } from "@/lib/sdk/resend";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildHomePlanReminder } from "@/lib/email/build/platform";
 import { homeUrl } from "./portal";
-import { planWhen } from "./dates";
+import { FOLLOW_UP_MS, planWhen } from "./dates";
 
 export async function sendPlanReminders(now = new Date()): Promise<{ reminded: number; failed: number }> {
-  const due = await db.homePlan.findMany({
-    where: { status: "PLANNED", remindedAt: null, remindAt: { lte: now } },
+  const rows = await db.homePlan.findMany({
+    where: { status: "PLANNED", remindAt: { lte: now } },
     orderBy: { remindAt: "asc" },
-    take: 200,
+    take: 300,
     include: { home: { select: { name: true, email: true, accessToken: true } } },
   });
+  const due = rows.filter((p) => p.remindAt && (!p.remindedAt || p.remindedAt.getTime() < p.remindAt.getTime()));
   let reminded = 0;
   let failed = 0;
   const appUrl = await appBaseUrl();
   for (const plan of due) {
+    const followUp = Boolean(plan.remindedAt);
     // Claimed first: an overlapping run never sends the same reminder twice.
-    const claimed = await db.homePlan.updateMany({ where: { id: plan.id, remindedAt: null }, data: { remindedAt: now } });
+    // The first reminder books the follow-up; the follow-up ends the series.
+    const claimed = await db.homePlan.updateMany({
+      where: { id: plan.id, remindAt: plan.remindAt, ...(plan.remindedAt ? { remindedAt: plan.remindedAt } : { remindedAt: null }) },
+      data: { remindedAt: now, remindAt: followUp ? null : new Date(now.getTime() + FOLLOW_UP_MS) },
+    });
     if (claimed.count === 0) continue;
     try {
       const url = await homeUrl(plan.home.accessToken);
+      const daysAway = Math.round((plan.plannedFor.getTime() - now.getTime()) / (24 * 60 * 60_000));
       const { subject, html } = renderEmail(
         buildHomePlanReminder({
           name: plan.home.name,
           title: plan.title,
           when: planWhen(plan.plannedFor, plan.wholeMonth),
+          daysAway: daysAway > 0 ? daysAway : 0,
+          followUp,
           notes: plan.notes,
           submitUrl: `${appUrl}/homeowner?home=${encodeURIComponent(plan.home.accessToken)}&plan=${encodeURIComponent(plan.id)}`,
           homeUrl: url,

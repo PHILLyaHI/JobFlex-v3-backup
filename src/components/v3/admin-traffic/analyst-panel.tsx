@@ -66,6 +66,8 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
           {r.stats.dwellMedian !== null && <span>median time on the landing <b>{r.stats.dwellMedian < 60 ? `${Math.round(r.stats.dwellMedian)} s` : `${Math.round(r.stats.dwellMedian / 60)} min`}</b></span>}
           {r.stats.scrollMedian !== null && <span>median scroll <b>{pct(r.stats.scrollMedian)}</b></span>}
           {r.stats.inApp !== null && r.sample.basis === "ads" && <span>in Facebook&apos;s browser <b>{pct(r.stats.inApp)}</b></span>}
+          {r.stats.heroMedianPhone !== null && <span>headline on phones after <b>{(r.stats.heroMedianPhone / 1000).toFixed(1)} s</b></span>}
+          {r.stats.formReadyMedian !== null && <span>sign-up form usable after <b>{(r.stats.formReadyMedian / 1000).toFixed(1)} s</b></span>}
         </div>
 
         <ol className={s.analystFindings} aria-label="Findings">
@@ -76,6 +78,7 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
                 <b>{f.title}</b>
                 <span className={s.analystEvidence}>{f.evidence}</span>
                 <span className={s.analystAction}><Lightbulb size={13} aria-hidden="true"/>{f.action}</span>
+                {f.steps && f.steps.length > 0 && <ol className={s.analystSteps} aria-label="The fix, step by step">{f.steps.map((t, i) => <li key={i}>{t}</li>)}</ol>}
                 <small>{f.about ? `${f.about} · ` : ""}{f.n} {f.n === 1 ? "visit" : "visits"} · {f.confidence} confidence</small>
               </div>
             </li>
@@ -104,7 +107,7 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
           </table>
         </div>}
 
-        <p className={s.footnote}>One row per browser session on www.jobflex.app, bots and previews out. &ldquo;Left at once&rdquo; is one page, no button, no form. Time and scroll come from the browser as it leaves the landing (posthog-js $pageleave); sections from the landing&apos;s own tracker, so visits before it shipped have no section reading. A finding needs its minimum sample — {r.sample.needed} ad visits for the page, 8 for an ad or a trade — and says how sure it is. Ads are named by the names given below the live list.</p>
+        <p className={s.footnote}>One row per browser session on www.jobflex.app, bots and previews out. &ldquo;Left at once&rdquo; is one page, no button, no form. Time and scroll come from the browser as it leaves the landing (posthog-js $pageleave); sections from the landing&apos;s own tracker, so visits before it shipped have no section reading. The first screen&apos;s timing (when the headline really showed on the visitor&apos;s phone, how much was downloaded) and the sign-up form&apos;s readiness come from two beacons added 2026-10-04 — earlier visits carry neither. A finding needs its minimum sample — {r.sample.needed} ad visits for the page, 8 for an ad or a trade — and says how sure it is. Ads are named by the names given below the live list.</p>
       </>}
     </section>
   );
