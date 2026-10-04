@@ -10,6 +10,22 @@ import { CtaNote } from "./cta-note";
 import { TrialLine } from "./trial-line";
 import { HeroEntrance } from "./hero-entrance";
 import { HeroExperiment } from "./hero-experiment";
+import type { InAppBrowser } from "@/lib/inAppBrowser";
+
+/* THE ENTRANCE IS ARMED BY THE PAGE, NOT ASSUMED BY THE STYLESHEET
+   (2026-10-04). The copy used to be server-rendered invisible and shown by
+   hero-entrance once the JavaScript and gsap were in: on a phone on Google's
+   mobile profile that was a black first screen for 7–8 s, and three ad
+   clicks in four left without a second page. Now the headline, the line and
+   the buttons are on screen from the first paint. Only a desk about to play
+   the entrance holds them back: this runs as the HTML streams in, ahead of
+   the copy, and sets html[data-lp-entrance] when the window is a desk's
+   (1024px, a hovering fine pointer) with no reduced-motion preference —
+   the one state landing-e.css hides `.lp-enter` under. hero-entrance lifts
+   it as its motion starts; if that has not happened 1.8 s on, the timer
+   here lifts it and the copy simply appears. No JavaScript, a phone, a
+   touch screen: never armed, never hidden. */
+const ENTRANCE_PRELUDE = `(function(){try{var d=document.documentElement,w=window;if(!w.matchMedia||!w.matchMedia("(min-width: 1024px) and (hover: hover) and (pointer: fine)").matches||w.matchMedia("(prefers-reduced-motion: reduce)").matches)return;d.setAttribute("data-lp-entrance","pending");w.__jfEntranceTimer=setTimeout(function(){if(d.getAttribute("data-lp-entrance")==="pending"){d.removeAttribute("data-lp-entrance");if(w.__jfHeroShownAt===undefined)w.__jfHeroShownAt=Math.round(performance.now());}},1800);}catch(e){}})();`;
 
 /* The first screen, and the one screen a trade variant may replace. The
    headline, the line under it, the solid button's words and the product shot
@@ -24,7 +40,11 @@ export function Hero({
   cta,
   fbclid,
   requiresCard = true,
+  inAppBrowser = null,
 }: {
+  /** The in-app browser the server read from the request (lib/inAppBrowser):
+   *  no Google button there, from the first paint. */
+  inAppBrowser?: InAppBrowser | null;
   /** TRIAL_REQUIRES_CARD (lib/trialPolicy): false puts the card-less trial's
    *  line under the heading instead of the small note under the buttons. */
   requiresCard?: boolean;
@@ -48,7 +68,8 @@ export function Hero({
     <section id="hero" className="lp-hero">
       <div className="lp-bg lp-bg--ridge" aria-hidden />
       <div className="relative z-[1] mx-auto flex max-w-[86rem] flex-col items-center gap-3 px-5 pt-[12vmin] text-center sm:pt-[14vmin]">
-        <Reveal>
+        {/* On the first screen nothing waits for a script to be seen (2026-10-04): `shown`. */}
+        <Reveal shown>
           {/* The gold pill is the same on every variant — one launch line, one
               link — and is deliberately NOT part of LandingVariant (owner,
               2026-09-07). */}
@@ -64,10 +85,10 @@ export function Hero({
           </a>
         </Reveal>
         {/* The entrance (pass C): H1 lines out of a mask, sub +150 ms, buttons
-            +250 ms — hero-entrance.tsx. `.lp-enter` hides the three blocks
-            until the masks exist; the stylesheet lifts it under reduced
-            motion, and <noscript> lifts it with no JavaScript at all. */}
-        <noscript><style>{`.jf-lp .lp-enter{visibility:visible}`}</style></noscript>
+            +250 ms — hero-entrance.tsx, on a desk the prelude has armed.
+            `.lp-enter` marks the three blocks; they are hidden only under
+            html[data-lp-entrance] (ENTRANCE_PRELUDE above). */}
+        <script dangerouslySetInnerHTML={{ __html: ENTRANCE_PRELUDE }} />
         <HeroEntrance>
         {/* A/B landing_hero_v1 (scaffold, not running): the headline block
             is the experiment's slot, on the default hero only — a trade
@@ -122,7 +143,7 @@ export function Hero({
             >
               {variant.heroCta ?? cta ?? variant.primaryCta}
             </a>
-            <GoogleSignupButton className="lp-cta lp-cta--ghost" industry={variantKey} utm={utm} fbclid={fbclid}>
+            <GoogleSignupButton className="lp-cta lp-cta--ghost" industry={variantKey} utm={utm} fbclid={fbclid} inApp={inAppBrowser}>
               <svg viewBox="0 0 48 48" className="h-[18px] w-[18px]" aria-hidden>
                 <path
                   fill="#FFC107"
@@ -158,11 +179,11 @@ export function Hero({
             lp-wrap, whose gutter would double the section's own px-5.
             An estimator shot is one build for both: its takeoff rail stacks
             under the stage below 640px by its own media query. */}
-        <Reveal delay={150} className="sm:hidden">
+        <Reveal shown className="sm:hidden">
           {shot ? <HeroVisual variant={variant} /> : <PhoneOverview />}
         </Reveal>
         <div className="mx-auto hidden lp-wrap sm:block">
-          <Reveal delay={150}>
+          <Reveal shown>
             <div data-parallax="18">{shot ? <HeroVisual variant={variant} /> : <DashboardMock />}</div>
           </Reveal>
         </div>

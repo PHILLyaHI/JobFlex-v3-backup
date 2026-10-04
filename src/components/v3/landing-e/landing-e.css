@@ -1468,9 +1468,13 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
 }
 
 /* ── Hero entrance (landing-e pass C, 2026-09-11) ─────────────────
-   The three copy blocks are hidden until the masks exist; reduced motion
-   and no-JS (a <noscript> rule in hero.tsx) lift the class. */
-.jf-lp .lp-enter { visibility: hidden; }
+   The three copy blocks are on screen from the first paint (2026-10-04:
+   hidden-until-JavaScript was 5–8 s of black hero on a phone). They are held
+   back only while a desk's entrance is pending — html[data-lp-entrance], set
+   by the hero's inline prelude (hero.tsx) and lifted by hero-entrance as the
+   motion starts, or by the prelude's own timer 1.8 s on. No JavaScript, a
+   phone, a touch screen, reduced motion: never set. */
+html[data-lp-entrance] .jf-lp .lp-enter { visibility: hidden; }
 .jf-lp .lp-h1-line { will-change: transform; }
 /* ROOM FOR THE DESCENDERS (owner's report, 2026-09-14: the "j" of "From just
    the address." was cut along the bottom). SplitText's `mask: "lines"` wraps
@@ -1488,10 +1492,6 @@ html:has(.jf-lp)::-webkit-scrollbar { width: 0; height: 0; }
   padding-bottom: 0.2em;
   margin-bottom: -0.2em;
 }
-@media (prefers-reduced-motion: reduce) {
-  .jf-lp .lp-enter { visibility: visible; }
-}
-
 /* ── Mock callouts (landing-e pass C) ───────────────────────────────
    Hidden until their timeline has set its own start state; from then on
    gsap owns visibility and opacity inline. */

@@ -16,8 +16,10 @@
 // trade on /auth/register. An unknown value is the default page too.
 
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { detectInAppBrowser } from "@/lib/inAppBrowser";
 import { LandingE } from "@/components/v3/landing-e/landing-e-page";
 import { readLandingVariant } from "@/components/v3/landing-e/landing-variant-server";
 
@@ -70,5 +72,11 @@ export default async function HomePage({
   const session = await auth();
   if (session?.user?.id) redirect("/dashboard");
   const landing = readLandingVariant(await searchParams);
-  return <LandingE {...landing} />;
+  /* Instagram / Facebook / LINE / TikTok webview, read from the request (the
+     page is dynamic already): the hero's buttons are on screen from the first
+     paint now (2026-10-04), so the Google button — which Google refuses in a
+     webview — has to be left out by the server, not taken away by the script
+     seconds later (lib/inAppBrowser, as /auth/register does). */
+  const inAppBrowser = detectInAppBrowser((await headers()).get("user-agent"));
+  return <LandingE {...landing} inAppBrowser={inAppBrowser} />;
 }

@@ -68,6 +68,7 @@ import { Nav } from "./nav";
 import { PRICING, REGISTER } from "./routes";
 import { SmoothWheel } from "./smooth-wheel";
 import { trialRequiresCard } from "@/lib/trialPolicy";
+import type { InAppBrowser } from "@/lib/inAppBrowser";
 import "./landing-e.css";
 
 export interface LandingEProps {
@@ -79,9 +80,12 @@ export interface LandingEProps {
   utm?: UtmParams;
   /** Meta's click id from an ad link — carried into the register links. */
   fbclid?: string;
+  /** The in-app browser the request's user agent names (lib/inAppBrowser), so
+   *  the hero's first paint already has no Google button there. */
+  inAppBrowser?: InAppBrowser | null;
 }
 
-export async function LandingE({ variant, explicitVariant = false, utm = {}, fbclid }: LandingEProps) {
+export async function LandingE({ variant, explicitVariant = false, utm = {}, fbclid, inAppBrowser = null }: LandingEProps) {
   const v = variantContent(variant);
   // TRIAL_REQUIRES_CARD (lib/trialPolicy): the card-less trial's line under
   // the hero heading, the plan cards' words and the FAQ's card answer.
@@ -118,7 +122,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
     <div className="jf-lp min-h-full bg-white">
       <Nav registerHref={register} pricingHref={pricing} cta={top} />
       <main>
-        <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} requiresCard={requiresCard} />
+        <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} requiresCard={requiresCard} inAppBrowser={inAppBrowser} />
         <Intro />
         <div className="lp-cv lp-cv--showcase"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>
         {variant === "hvac" && <div className="lp-cv lp-cv--hvac"><HvacServiceSection registerHref={register} cta={top} /></div>}
