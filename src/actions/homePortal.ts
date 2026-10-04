@@ -48,6 +48,47 @@ export async function emailHomeLink(raw: unknown): Promise<HomeActionResult> {
   return { ok: true, note: `If we have a home dashboard for ${email}, its link is on the way.` };
 }
 
+/** "Email me this link" on the dashboard itself — the key is already in hand. */
+export async function emailMyHomeLink(raw: unknown): Promise<HomeActionResult> {
+  const k = key.parse(raw);
+  const home = await db.home.findUnique({ where: { accessToken: k }, select: { name: true, email: true, accessToken: true, _count: { select: { leads: true } } } });
+  if (!home) return { ok: false, error: "This link is not valid." };
+  const braked = await brake(`home-link:${home.email}`, 3, "link emails");
+  if (braked) return { ok: false, error: braked };
+  try {
+    const { subject, html } = renderEmail(buildHomeLink({ name: home.name, homeUrl: await homeUrl(home.accessToken), projects: home._count.leads }));
+    await sendEmail({ to: home.email, subject, html });
+  } catch (err) {
+    console.error("[home] link email failed:", err instanceof Error ? err.message : err);
+    return { ok: false, error: "Couldn't send the email right now — try again in a minute." };
+  }
+  return { ok: true, note: `Sent to ${home.email}.` };
+}
+
+const detailsInput = z.object({
+  key,
+  name: z.string().trim().min(2).max(80),
+  phone: z.string().trim().max(40).optional(),
+  address: z.string().trim().max(160).optional(),
+  city: z.string().trim().max(80).optional(),
+  state: z.string().trim().max(40).optional(),
+  zip: z.string().trim().max(16).optional(),
+});
+
+/** The homeowner's own details, as the next request will be prefilled. The email stays — it is the identity. */
+export async function updateHomeDetails(raw: unknown): Promise<HomeActionResult> {
+  const data = detailsInput.parse(raw);
+  const home = await findHomeByKey(data.key);
+  if (!home) return { ok: false, error: "This link is not valid." };
+  const braked = await brake(`home-details:${home.id}`, 20, "changes");
+  if (braked) return { ok: false, error: braked };
+  await db.home.update({
+    where: { id: home.id },
+    data: { name: data.name, phone: data.phone || null, address: data.address || null, city: data.city || null, state: data.state || null, zip: data.zip || null },
+  });
+  return { ok: true, note: "Saved. Your next project starts with these." };
+}
+
 const planInput = z.object({
   key,
   title: z.string().trim().min(2).max(120),

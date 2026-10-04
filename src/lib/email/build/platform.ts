@@ -355,6 +355,58 @@ export function buildHomePlanReminder(i: HomePlanReminderInput): EmailDoc {
   };
 }
 
+export interface HomeFilesRequestInput {
+  name: string;
+  orgName: string;
+  project: string;
+  note: string | null;
+  /** The dashboard, at that project's folder. */
+  href: string;
+}
+
+/** To the homeowner: the shop asks for pictures (lib/home/files). */
+export function buildHomeFilesRequest(i: HomeFilesRequestInput): EmailDoc {
+  return {
+    subject: `${truncate(i.orgName, 40)} asks for photos of your ${truncate(i.project, 40)}`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Photos wanted" },
+    headline: `${truncate(i.orgName, 40)} could use some pictures`,
+    prose: [
+      `Hi ${i.name.split(" ")[0]} — ${i.orgName} would like to see a bit more before they price your ${i.project}.`,
+      ...(i.note ? [`They wrote: “${truncate(i.note, 400)}”`] : []),
+      "Add them from your home dashboard — a few photos from your phone, or a short video walking through it. They go straight to the contractor's folder for this job.",
+    ],
+    cta: { label: "Add photos", href: i.href },
+    footer: PLATFORM_FOOTER,
+  };
+}
+
+export interface HomeFilesAddedInput {
+  homeownerName: string;
+  /** "3 photos", "a video". */
+  what: string;
+  project: string;
+  note: string | null;
+  leadUrl: string;
+}
+
+/** To the shop: the homeowner added files to the job folder. Reply-to is the homeowner. */
+export function buildHomeFilesAdded(i: HomeFilesAddedInput): EmailDoc {
+  return {
+    subject: `${truncate(i.homeownerName, 40)} added ${i.what} — ${truncate(i.project, 50)}`,
+    lockup: PLATFORM_LOCKUP,
+    kicker: { text: "Job folder" },
+    headline: `${truncate(i.homeownerName, 40)} added ${i.what}`,
+    prose: [
+      `About: ${truncate(i.project, 120)}. The files are in the job folder on the lead — open it to look, download, or put a picture on the proposal.`,
+      ...(i.note ? [`Their note: “${truncate(i.note, 400)}”`] : []),
+    ],
+    cta: { label: "Open the job folder", href: i.leadUrl },
+    after: ["Reply to this email to answer — it goes straight to them."],
+    footer: PLATFORM_FOOTER,
+  };
+}
+
 export interface HomeownerMessageInput {
   homeownerName: string;
   orgName: string;

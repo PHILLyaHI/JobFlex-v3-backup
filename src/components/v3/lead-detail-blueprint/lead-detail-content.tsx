@@ -10,6 +10,7 @@ import { AirVent, Fence, FilePen, type LucideIcon } from "lucide-react";
 import { startEstimateFromLead, writeLeadScope } from "@/actions/leadEstimate";
 import { ESTIMATOR_LABEL, estimatorFor, looksLikeStreetAddress, type EstimatorId } from "@/lib/leadRules";
 import { EstimateCardButton } from "./estimate-card-button";
+import { JobFolder, type JobFolderProps } from "./job-folder";
 import styles from "./lead-detail.module.css";
 import { metaLeadPresentation } from "@/lib/meta/leadPresentation";
 
@@ -94,9 +95,11 @@ export type LeadDetailProps = {
   contactsLocked?: boolean;
   /** A Lead Center lead the shop paid to open (lib/leadCenter/purchase). */
   paid?: { amount: string; when: string } | null;
+  /** The homeowner's job folder (lib/home/files); null for a lead with none. */
+  folder?: JobFolderProps | null;
 };
 
-export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLocked = false, paid = null }: LeadDetailProps) {
+export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLocked = false, paid = null, folder = null }: LeadDetailProps) {
   const primary = estimatorFor(lead.aiCategory, lead.description);
   const fullAddress = [lead.address, lead.city, [lead.state, lead.zip].filter(Boolean).join(" ")]
     .filter((s) => s && s.trim())
@@ -224,6 +227,10 @@ export function LeadDetailContent({ lead, canEstimate, scopeFailed, contactsLock
               </span>
             </form>
           )}
+
+          {/* THE JOB FOLDER (2026-10-03): the homeowner's pictures, videos and
+              PDFs, a way to ask for more, a picture onto a proposal. */}
+          {folder && <JobFolder {...folder} />}
 
           {/* ESTIMATE THIS JOB (owner, 2026-09-26: every way "shown the same
               as the Smart Proposal", each with its own coloured icon): one

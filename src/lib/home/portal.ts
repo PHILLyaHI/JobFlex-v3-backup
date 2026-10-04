@@ -20,6 +20,8 @@ import { buildRequestPortal, type PortalOrg, type RequestPortalView } from "@/li
 import { parseBookingSettings } from "@/lib/booking";
 import { parseTradeTypes } from "@/lib/tradeTypes";
 import { planWhen, validTimeZone } from "./dates";
+import { listFolder, type FolderFileView, type FolderRequestView } from "./files";
+import { storageMode, type StorageMode } from "@/lib/media/privateStore";
 import type { WizardPrefill } from "./prefill";
 
 export { mayShowHomeKey, planDate, planWhen, reminderFor, validTimeZone } from "./dates";
@@ -180,7 +182,7 @@ export interface HomeMembership {
 }
 
 export interface HomeNeed {
-  kind: "proposal" | "change" | "visit" | "review" | "plan";
+  kind: "proposal" | "change" | "visit" | "review" | "plan" | "files";
   text: string;
   href: string;
   at: string | null;
@@ -194,10 +196,36 @@ export interface HomeCalendarItem {
   href: string | null;
 }
 
+export interface HomeDocument {
+  label: string;
+  href: string;
+  kind: "proposal" | "pdf" | "change";
+  orgName: string;
+  at: string;
+}
+
+export interface HomeActivity {
+  at: string;
+  text: string;
+  /** "Roofing · Bothell, WA" — which project it belongs to. */
+  project: string;
+  href: string;
+}
+
 export interface HomeDashboard {
   key: string;
   name: string;
   firstName: string;
+  /** Seen the dashboard before this visit. */
+  returning: boolean;
+  /** What the homeowner told us, editable on the dashboard. */
+  details: { name: string; email: string; phone: string; address: string; city: string; state: string; zip: string };
+  documents: HomeDocument[];
+  activity: HomeActivity[];
+  /** Each project's job folder, by the request's token (lib/home/files). */
+  folders: Record<string, { files: FolderFileView[]; requests: FolderRequestView[] }>;
+  /** How files are stored on this server: "inline" = small pictures only. */
+  storage: StorageMode;
   email: string;
   phone: string | null;
   address: string | null;
@@ -224,6 +252,7 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
   const home = await findHomeByKey(key);
   if (!home) return null;
   await adoptLeads(home);
+  const returning = Boolean(home.lastSeenAt);
   db.home.update({ where: { id: home.id }, data: { lastSeenAt: now } }).catch(() => null);
   const tz = home.timezone && validTimeZone(home.timezone) ? home.timezone : HOME_TZ_DEFAULT;
 
@@ -238,6 +267,8 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     db.homeMessage.findMany({ where: { homeId: home.id }, orderBy: { createdAt: "desc" }, take: 60 }),
   ]);
   const projects = await Promise.all(leads.map((pl) => buildRequestPortal(pl)));
+  const folders: HomeDashboard["folders"] = {};
+  await Promise.all(leads.map(async (pl) => { folders[pl.accessToken ?? ""] = await listFolder(pl.id, key); }));
   const tokenById = new Map(leads.map((l) => [l.id, l.accessToken ?? ""]));
 
   // Contractors: every shop a project is or was with, newest first.
@@ -302,6 +333,11 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
   }
   for (const m of memberships) if (m.status === "SENT") needs.push({ kind: "plan", text: `${m.orgName} offered you a plan: ${m.name}`, href: m.href, at: null });
   for (const p of projects) {
+    for (const r of folders[p.token]?.requests ?? []) {
+      if (!r.fulfilledAt) needs.push({ kind: "files", text: `${r.orgName} asks for pictures${r.note ? `: “${r.note}”` : ""}`, href: `#folder-${encodeURIComponent(p.token)}`, at: r.at });
+    }
+  }
+  for (const p of projects) {
     for (const q of p.proposals) {
       if (q.current && q.nextDue && q.remaining > 0) needs.push({ kind: "proposal", text: `${q.orgName}: ${q.nextDue.label} due — ${usd0(q.nextDue.amount)}`, href: `/portal/q/${encodeURIComponent(q.publicId)}`, at: null });
     }
@@ -344,6 +380,22 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     (messages[token] ??= []).push({ id: m.id, body: m.body, at: m.createdAt.toISOString(), emailed: m.emailed });
   }
 
+  // The paperwork, newest first: every proposal (and its PDF) and every change order.
+  const documents: HomeDocument[] = [];
+  const activity: HomeActivity[] = [];
+  for (const p of projects) {
+    const project = `${p.trade ?? "Project"}${p.place ? ` · ${p.place}` : ""}`;
+    const href = `/request/${encodeURIComponent(p.token)}`;
+    for (const q of p.proposals) {
+      documents.push({ label: q.title, href: `/portal/q/${encodeURIComponent(q.publicId)}`, kind: "proposal", orgName: q.orgName, at: q.sentAt ?? p.submittedAt });
+      documents.push({ label: `${q.title} — PDF`, href: `/api/public-quote/${encodeURIComponent(q.publicId)}/pdf`, kind: "pdf", orgName: q.orgName, at: q.sentAt ?? p.submittedAt });
+    }
+    for (const c of p.changeOrders) documents.push({ label: c.number ? `Change order #${c.number} · ${c.title}` : c.title, href: `/co/${encodeURIComponent(c.token)}`, kind: "change", orgName: p.current?.org.name ?? "", at: p.submittedAt });
+    for (const e of p.events) activity.push({ at: e.at, text: e.note ? `${e.text} — ${e.note}` : e.text, project, href });
+  }
+  documents.sort((a, b) => b.at.localeCompare(a.at));
+  activity.sort((a, b) => b.at.localeCompare(a.at));
+
   const hired = projects.filter((p) => p.status2 === "HIRED" || p.status2 === "DONE");
   const spent = Math.round(hired.reduce((n, p) => n + p.proposals.filter((q) => q.current && (q.stage === "ACCEPTED" || q.stage === "PAID" || q.stage === "COMPLETED")).reduce((m, q) => m + q.total + q.approvedChanges, 0), 0) * 100) / 100;
   const place = [home.city, home.state].filter(Boolean).join(", ") || home.zip || projects[0]?.place || null;
@@ -351,6 +403,12 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     key,
     name: home.name,
     firstName: home.name.trim().split(/\s+/)[0] || "there",
+    returning,
+    details: { name: home.name, email: home.email, phone: home.phone ?? "", address: home.address ?? "", city: home.city ?? "", state: home.state ?? "", zip: home.zip ?? "" },
+    documents: documents.slice(0, 12),
+    activity: activity.slice(0, 10),
+    folders,
+    storage: storageMode(),
     email: home.email,
     phone: home.phone,
     address: home.address ?? projects.find((p) => p.place)?.place ?? null,

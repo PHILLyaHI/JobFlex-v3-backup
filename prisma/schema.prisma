@@ -617,9 +617,57 @@ model Home {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  leads    PlatformLead[]
-  plans    HomePlan[]
-  messages HomeMessage[]
+  leads        PlatformLead[]
+  plans        HomePlan[]
+  messages     HomeMessage[]
+  files        HomeFile[]
+  fileRequests HomeFileRequest[]
+}
+
+// THE JOB FOLDER (2026-10-03): the pictures, videos and documents of one
+// request, from the homeowner's dashboard (or asked for by the contractor),
+// kept in the private file store (lib/media/privateStore) and read by the
+// homeowner through the key and by the shop that has the lead. A file a
+// contractor puts on a proposal is copied there; the folder keeps the original.
+model HomeFile {
+  id             String    @id @default(cuid())
+  homeId         String
+  platformLeadId String
+  // The shop the request was with when the file arrived, told about it.
+  organizationId String?
+  // The stored URL (private blob, local: in development, data: before the
+  // store exists) — read through /api/home-file/[id], never handed out.
+  url            String
+  name           String
+  contentType    String
+  bytes          Int
+  media          String // photo | video | document
+  note           String?
+  uploadedBy     String    @default("HOMEOWNER") // HOMEOWNER | CONTRACTOR
+  createdAt      DateTime  @default(now())
+  deletedAt      DateTime?
+
+  home Home @relation(fields: [homeId], references: [id], onDelete: Cascade)
+
+  @@index([platformLeadId, createdAt])
+  @@index([homeId])
+}
+
+// "Could you send pictures of the attic?" — a shop's ask, answered by the next
+// upload on that request.
+model HomeFileRequest {
+  id             String    @id @default(cuid())
+  homeId         String
+  platformLeadId String
+  organizationId String
+  note           String?
+  requestedById  String?
+  createdAt      DateTime  @default(now())
+  fulfilledAt    DateTime?
+
+  home Home @relation(fields: [homeId], references: [id], onDelete: Cascade)
+
+  @@index([platformLeadId, fulfilledAt])
 }
 
 // A project the homeowner means to do: on the dashboard's calendar, with a reminder when its month comes, and one tap away from becoming a request.
