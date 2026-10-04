@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, Lightbulb, RefreshCw, Sparkles } from "lucide-react";
 import { getTrafficAnalyst, type AnalystResult } from "@/actions/trafficDashboard";
 import { AnalystExport } from "./analyst-export";
+import { AnalystMoney } from "./analyst-money";
 import { pct, type AnalystFinding } from "@/lib/traffic-analyst";
 import { staleLabel } from "@/lib/traffic-contract";
 import s from "./traffic.module.css";
@@ -49,7 +50,7 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
       <div className={s.cardHead}>
         <div>
           <h2><Sparkles size={18} aria-hidden="true"/> The analyst</h2>
-          <span className={s.micro}>What people do on the landing and where the sign-up loses them · the last {r?.days ?? 7} days · reads again every 10 minutes{result ? ` · read at ${clock(result.fetchedAt, timezone)}` : ""}</span>
+          <span className={s.micro}>What people do on the landing and where the sign-up loses them · {r?.period ?? "last 7 days"} · reads again every 10 minutes{result ? ` · read at ${clock(result.fetchedAt, timezone)}` : ""}</span>
         </div>
         <div className={s.headerActions}><AnalystExport result={result} timezone={timezone}/>
         <button type="button" className={s.iconButton} aria-label="Read again now" title="Read again now" onClick={() => void load(true)} disabled={pending}><RefreshCw size={16} className={pending ? s.spin : ""}/></button></div>
@@ -108,6 +109,7 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
             <tbody>{r.ads.slice(0, 12).map((a) => <tr key={a.key}><td>{a.name}</td><td>{a.platform ?? ""}</td><td>{a.n}</td><td>{pct(a.bounce)}</td><td>{pct(a.cta)}</td><td>{pct(a.form)}</td><td>{a.completed}</td></tr>)}</tbody>
           </table>
         </div>}
+        <AnalystMoney money={result?.money} timezone={timezone}/>
 
         <p className={s.footnote}>One row per browser session on www.jobflex.app, bots and previews out. &ldquo;Left at once&rdquo; is one page, no button, no form. Time and scroll come from the browser as it leaves the landing (posthog-js $pageleave); sections from the landing&apos;s own tracker, so visits before it shipped have no section reading. The first screen&apos;s timing (when the headline really showed on the visitor&apos;s phone, how much was downloaded) and the sign-up form&apos;s readiness come from two beacons added 2026-10-04 — earlier visits carry neither. A finding needs its minimum sample — {r.sample.needed} ad visits for the page, 8 for an ad or a trade — and says how sure it is. Ads are named by the names given below the live list.</p>
       </>}

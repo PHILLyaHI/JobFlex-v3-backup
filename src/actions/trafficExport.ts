@@ -9,6 +9,7 @@ import { requirePlatformAdmin } from "@/lib/orgContext";
 import { readAnalyst, type AnalystResult } from "@/lib/traffic-analyst-read";
 import type { LandingSession } from "@/lib/traffic-analyst";
 import { trafficToMarkdown } from "@/lib/traffic-export";
+import { readAdsClicks } from "@/lib/traffic-ads-clicks";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import { getLiveTraffic, getSignupAttribution, getSignupLedger, getTrafficDashboard } from "./trafficDashboard";
 
@@ -34,7 +35,8 @@ export async function getTrafficExportMarkdown(input: Record<string, unknown> = 
     getSignupLedger({ days: ledgerDays, fullHistory }),
     getSignupAttribution({ ...filters }).catch(() => null),
   ]);
+  const adsClicks = await readAdsClicks(report.points.map((p) => p.date)).catch(() => ({}));
   const generatedAt = new Date().toISOString();
-  const markdown = trafficToMarkdown({ generatedAt, timezone: filters.timezone, filters: report.filters, analyst, live, report, ledger, attribution });
+  const markdown = trafficToMarkdown({ generatedAt, timezone: filters.timezone, filters: report.filters, analyst, live, report, ledger, attribution, adsClicks });
   return { markdown, name: `jobflex-traffic-${report.filters.from}_${report.filters.to}-exported-${generatedAt.slice(0, 10)}.md` };
 }

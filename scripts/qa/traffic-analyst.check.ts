@@ -2,8 +2,9 @@
 // → findings with evidence and one thing to try. Every rule proved on
 // made-up sessions. Static imports only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-analyst.check.ts
-import { ANALYST_MIN_AD_VISITS, adNameOf, analyse, analystSessionFromRow, analystWindowFrom, buildAnalystQuery, type LandingSession } from "../../src/lib/traffic-analyst";
-import { SESSION_COLUMNS, SESSION_EXTRA_COLUMNS, TONE_WORD, analystToMarkdown, sessionsToCsv } from "../../src/lib/traffic-export";
+import { ANALYST_MIN_AD_VISITS, adNameOf, analyse, analystSessionFromRow, analystWindowFrom, buildAnalystQuery, periodWords, type LandingSession } from "../../src/lib/traffic-analyst";
+import { SESSION_COLUMNS, SESSION_EXTRA_COLUMNS, TONE_WORD, analystToMarkdown, clicksDifference, sessionsToCsv } from "../../src/lib/traffic-export";
+import { adMoney } from "../../src/lib/traffic-money";
 import { TRAFFIC_SINCE_MS } from "../../src/lib/traffic-visitor";
 
 let bad = 0;
@@ -19,7 +20,9 @@ const sess = (p: Partial<LandingSession> = {}): LandingSession => {
     industry: "roofing", utmSource: ad ? "fb" : "", utmMedium: ad ? "paid" : "", utmCampaign: ad ? "C1" : "", utmContent: ad ? "A1" : "", referrer: ad ? "l.facebook.com" : "google.com", fbclid: ad,
     device: "Mobile", browser: "Mobile Safari", os: "iOS", inApp: false, views: 1, landingViews: 1, dwell: 40, scroll: 0.6, sections: ["hero", "compare", "showcase"],
     cta: 0, placements: [], registerViews: 0, step: 0, flow: "", attempts: 0, cardless: 0, opened: 0, errors: [], completed: false, outcome: "", plan: "",
-    heroMs: null, paintMs: null, readyMs: null, trackedMs: null, kb: null, connection: "", leftUnshown: 0, formReadyMs: null, typedEarly: 0, submittedEarly: 0, step1Errors: [], step1Passed: 0, ...p,
+    heroMs: null, paintMs: null, readyMs: null, trackedMs: null, kb: null, connection: "", leftUnshown: 0, formReadyMs: null, typedEarly: 0, submittedEarly: 0, step1Errors: [], step1Passed: 0,
+    lcpMs: null, leftMs: null, downlink: null, rttMs: null, typedMs: null, submitMs: null, sectionAfter: [], ctaLabels: [], ctaHrefs: [], ctaSpots: [],
+    hvacSteps: 0, hvacStepKeys: [], hvacTaps: 0, hvacTierPicks: 0, hvacTiers: [], country: "", region: "", city: "", ...p,
   };
 };
 const many = (n: number, p: Partial<LandingSession> | ((i: number) => Partial<LandingSession>) = {}) => Array.from({ length: n }, (_, i) => sess(typeof p === "function" ? p(i) : p));
@@ -46,7 +49,7 @@ const bouncy = analyse([...many(30, (i) => ({ views: 1, dwell: 2 + (i % 3), scro
 const b = find(bouncy, "bounce")!;
 check("75% bouncing is a bad finding, with the in-app split, and the quick-leave reading when most were gone in 5 s", !!b && b.tone === "bad" && /75% of ad clicks leave/.test(b.title) && /in-app browser bounces/.test(b.evidence) && /landing-page views/.test(b.action), b?.evidence);
 check("no signups from 40 ad visits is its own bad finding, pointing at the biggest leak", !!find(bouncy, "no-signups") && /Fix the biggest leak first/.test(find(bouncy, "no-signups")!.action));
-check("the headline says what is going on and what to fix", /In the last 7 days 40 people landed from ads: 75% left without pressing anything, 25% pressed a button, 25% opened the form, 0 signed up\. The thing to fix: no signups/.test(bouncy.headline), bouncy.headline);
+check("the headline says what is going on and what to fix", /Since Sep 30 \(2\.\d days\), 40 people landed from ads: 75% left without pressing anything, 25% pressed a button, 25% opened the form, 0 signed up\. The thing to fix: no signups/.test(bouncy.headline), bouncy.headline);
 check("bad findings come first", bouncy.findings[0].tone === "bad" && bouncy.findings.findIndex((f) => f.tone === "info") > bouncy.findings.findIndex((f) => f.tone === "bad"));
 check("the funnel counts people and shares", bouncy.funnel[0].n === 40 && bouncy.funnel[1].n === 10 && bouncy.funnel[1].pct === 0.25 && bouncy.funnel[6].n === 0);
 
@@ -146,6 +149,28 @@ const csv = sessionsToCsv(many(3, { sections: ["hero", "compare"], step1Errors: 
 const lines = csv.split("\r\n");
 const head = lines[0].split(",").map((c) => c.replace(/^"|"$/g, ""));
 check("the sessions CSV has every session field, then the readable times and the ad's name", head.join() === [...SESSION_COLUMNS, ...SESSION_EXTRA_COLUMNS].join() && Object.keys(sess()).every((k) => head.includes(k)) && lines.length === 4 && lines[1].includes('"hero;compare"') && lines[1].includes('"Roof · 40 s v1"'), head.join());
+// ── stage 2: the window in words, the beacons' other fields, ad → money (2026-10-04)
+const oct4 = Date.parse("2026-10-04T14:00:00-07:00"), oct20 = Date.parse("2026-10-20T14:00:00-07:00");
+check("the period is the window as read: since Sep 30 while the launch is under 7 days back, then the last 7 days", periodWords(analystWindowFrom(oct4), oct4).label === "since Sep 30 (4.6 days)" && periodWords(analystWindowFrom(oct20), oct20).label === "last 7 days" && periodWords(analystWindowFrom(oct20), oct20).inWords === "in the last 7 days" && periodWords(TRAFFIC_SINCE_MS, TRAFFIC_SINCE_MS + 5 * 3_600_000).label === "since Sep 30 (5 h)");
+const late = analyse([...many(30, { views: 1, dwell: 3, scroll: 0.02 }), ...many(10, { views: 2, cta: 1, registerViews: 1, step: 1, completed: true })], { now: oct20 });
+check("no text says «last 7 days» while the window is shorter; the funnel and the headline name the real window", !JSON.stringify(bouncy).includes("last 7 days") && find(bouncy, "funnel")!.title === `The funnel, ${bouncy.period}` && /^Since Sep 30 \(2\.\d days\), /.test(bouncy.headline) && /^In the last 7 days, /.test(late.headline) && find(late, "funnel")!.title === "The funnel, last 7 days" && /in the last 7 days/.test(find(late, "good")!.evidence), bouncy.period);
+check("the sample note and an empty week use the window's words", /landing visits since Sep 30 \(2\.\d days\)/.test(few.findings[0].evidence) && /^Nobody has landed since Sep 30/.test(analyse([], { now: NOW }).headline));
+check("the query reads the beacons' other fields, the HVAC demo and the place", ["lcp_ms", "left_ms", "downlink", "rtt", "typed_ms", "submit_ms", "properties.after", "properties.label", "properties.href", "properties.spot", "hvac_demo_step", "hvac_demo_tier", "properties.how", "properties.tier", "$geoip_country_name", "$geoip_subdivision_1_name", "$geoip_city_name"].every((k) => sql2.includes(k)) && sql2.includes("' ¦ '"));
+const row63 = [...row45, 3100, -1, 1.45, 0, 2100, -1, "compare:12,hero:0,showcase:31", "Start free, no card ¦ See a sample", "/auth/register ¦ /sample.pdf", "hero", 4, "address,house", 2, 1, "better", "United States", "Texas", "Austin"];
+const p63 = analystSessionFromRow(row63)!;
+check("a 63-column row carries the new fields: commas inside button words survive, sections in the order reached", p63.lcpMs === 3100 && p63.leftMs === null && p63.downlink === 1.45 && p63.rttMs === 0 && p63.typedMs === 2100 && p63.submitMs === null && p63.sectionAfter.join() === "hero:0,compare:12,showcase:31" && p63.ctaLabels.join("|") === "Start free, no card|See a sample" && p63.ctaHrefs[1] === "/sample.pdf" && p63.ctaSpots[0] === "hero" && p63.hvacSteps === 4 && p63.hvacStepKeys.join() === "address,house" && p63.hvacTaps === 2 && p63.hvacTierPicks === 1 && p63.hvacTiers[0] === "better" && p63.country === "United States" && p63.region === "Texas" && p63.city === "Austin", JSON.stringify(p63).slice(-400));
+check("a 45-column row from before stage 2 still parses, the new fields empty", p45.lcpMs === null && p45.sectionAfter.length === 0 && p45.ctaLabels.length === 0 && p45.hvacSteps === 0 && p45.country === "");
+const csv63 = sessionsToCsv([p63]);
+check("the sessions CSV carries the new columns", ["lcpMs", "downlink", "rttMs", "typedMs", "sectionAfter", "ctaLabels", "ctaHrefs", "ctaSpots", "hvacSteps", "hvacTiers", "country", "region", "city"].every((k) => csv63.split("\r\n")[0].includes(`"${k}"`)) && csv63.includes('"Start free, no card;See a sample"') && csv63.includes('"Austin"'));
+const money = adMoney([
+  { campaign: "C1", content: "A1", state: "paying" }, { campaign: "C1", content: "A1", state: "trial" }, { campaign: "C1", content: "A2", state: "trial" },
+  { campaign: "C1", content: "A2", state: "lapsed" }, { campaign: "C2", content: "", state: "trial" }, { campaign: "", content: "", state: "free" }, { campaign: "", content: "A9", state: "unknown" },
+], { since: new Date(TRAFFIC_SINCE_MS).toISOString(), adNames: names, visits: { A1: 30, A2: 30 }, campaignVisits: { C1: 60 } });
+check("ad → money counts each ad's and campaign's accounts by state, paying first, named like the ads table", money.total.signups === 7 && money.untagged.signups === 1 && money.ads[0].key === "A1" && money.ads[0].name === "Roof · 40 s v1" && money.ads[0].paying === 1 && money.ads[0].trial === 1 && money.ads[0].visits === 30 && money.ads.find((a) => a.key === "A2")!.lapsed === 1 && money.ads.find((a) => a.key === "C2")!.name === "campaign C2" && money.ads.find((a) => a.key === "A9")!.other === 1 && money.campaigns.find((c) => c.key === "C1")!.signups === 4 && money.campaigns.find((c) => c.key === "C1")!.name === "Roofing campaign" && money.campaigns.find((c) => c.key === "C1")!.visits === 60, JSON.stringify(money.ads.map((a) => [a.key, a.signups])));
+const mdMoney = analystToMarkdown({ ...result, report: mixed, money }, { timezone: "America/Los_Angeles" });
+check("the Markdown carries ad → money, ads and campaigns", /## Ads → money · accounts since Sep 30, 2026/.test(mdMoney) && mdMoney.includes("| Roof · 40 s v1 | A1 | C1 | 30 | 2 | 1 | 1 | 0 | 0 |") && mdMoney.includes("| Roofing campaign | C1 | 60 | 4 | 2 | 1 | 1 | 0 |") && /7 accounts: 3 on a trial, 1 paying, 1 lapsed, 2 other; 1 carry no ad tag/.test(mdMoney), mdMoney.split("## Ads → money")[1]?.slice(0, 500));
+check("ours against Ads Manager is worded as on the page", clicksDifference(88, 100) === "-12%" && clicksDifference(110, 100) === "+10%" && clicksDifference(5, undefined) === "--" && clicksDifference(5, 0) === "--");
+
 check("a CSV cell that a spreadsheet would run is neutralised", sessionsToCsv([sess({ utmContent: "=HYPERLINK(1)" })]).includes(`"'=HYPERLINK(1)"`));
 
 console.log(bad ? `\n${bad} FAILED` : "\nall green");

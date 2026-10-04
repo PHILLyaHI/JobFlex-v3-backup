@@ -719,6 +719,9 @@
 :global(.jf-blueprint) .analystFunnel em { font-style:normal; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
 :global(.jf-blueprint) .analystTable td:first-child, :global(.jf-blueprint) .analystTable th:first-child { text-align:left; }
 :global(.jf-blueprint) .analyst .tableScroll { padding:10px 24px 0; }
+/* Ad → money's tables name themselves (2026-10-04). */
+:global(.jf-blueprint) .analystCaption { caption-side:top; text-align:left; padding:6px 0 8px; font:800 10.5px var(--font-mono); text-transform:uppercase; letter-spacing:.1em; color:var(--muted); }
+:global(.jf-blueprint) .analystTable td small { font:500 11px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .analyst .footnote { padding:12px 24px 16px; }
 @media (max-width: 720px) {
   :global(.jf-blueprint) .analystGrid { grid-template-columns:1fr; }

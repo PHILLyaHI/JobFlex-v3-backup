@@ -26,6 +26,22 @@ export const ANALYST_MIN_AD_VISITS = 20;
 /** A segment (an ad, a trade, a device…) is compared once it has this many visits. */
 const SEGMENT_MIN = 8;
 
+/** The window in words (2026-10-04): "last 7 days" once the ad launch is
+ *  that far back, else "since Sep 30 (4.6 days)" — the reading never claims
+ *  days it did not read. `inWords` fits a sentence: "in the last 7 days". */
+export function periodWords(from: number, now: number, days = ANALYST_DAYS, timezone = "America/Los_Angeles"): { label: string; inWords: string } {
+  if (from <= now - days * 86_400_000 + 60_000) return { label: `last ${days} days`, inWords: `in the last ${days} days` };
+  let since: string;
+  try { since = new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "short", day: "numeric" }).format(new Date(from)); } catch { since = new Date(from).toISOString().slice(0, 10); }
+  const d = Math.max(0, (now - from) / 86_400_000);
+  const span = d < 1 ? `${Math.max(1, Math.round(d * 24))} h` : `${d.toFixed(1).replace(/\.0$/, "")} ${d.toFixed(1) === "1.0" ? "day" : "days"}`;
+  const label = `since ${since} (${span})`;
+  return { label, inWords: label };
+}
+
+/** Between free-text values in one column (button words can hold commas). */
+const LIST_SEP = " ¦ ";
+
 /** Where the analyst's window starts: `days` back, never before the ad
  *  launch (TRAFFIC_SINCE) — the page's one counting start (2026-10-04). */
 export function analystWindowFrom(now: number, days = ANALYST_DAYS): number {
@@ -87,6 +103,32 @@ export interface LandingSession {
   submittedEarly: number;
   step1Errors: string[];
   step1Passed: number;
+  // What the beacons already send and the reading did not take (2026-10-04, stage 2).
+  /** landing_timing: the largest paint; when they left before the headline; the link as Chrome measures it. */
+  lcpMs: number | null;
+  leftMs: number | null;
+  /** Mbps, and the round trip in ms ("" / null where the browser does not say). */
+  downlink: number | null;
+  rttMs: number | null;
+  /** signup_step1 "ready": ms from the tap to the first key typed and the early Continue. */
+  typedMs: number | null;
+  submitMs: number | null;
+  /** landing_section: "key:seconds" — when each section was reached, in page order. */
+  sectionAfter: string[];
+  /** cta_click: the words on the buttons pressed, where they lead, their spot. */
+  ctaLabels: string[];
+  ctaHrefs: string[];
+  ctaSpots: string[];
+  /** The HVAC hero's demo: steps reached (by tap or by the clock), taps, tiers picked. */
+  hvacSteps: number;
+  hvacStepKeys: string[];
+  hvacTaps: number;
+  hvacTierPicks: number;
+  hvacTiers: string[];
+  /** Where PostHog's GeoIP puts the visit. */
+  country: string;
+  region: string;
+  city: string;
 }
 
 export interface AnalystFinding {
@@ -109,6 +151,11 @@ export interface AnalystSegment { key: string; name: string; n: number; bounce: 
 
 export interface AnalystReport {
   days: number;
+  /** The window as read, in words: "last 7 days", or "since Sep 30 (4.6 days)"
+   *  while the ad launch is less than `days` back (2026-10-04). */
+  period: string;
+  /** Where the window starts, Unix ms. */
+  windowFrom: number;
   sample: { sessions: number; landed: number; fromAds: number; last24h: number; measured: number; enough: boolean; needed: number; basis: "ads" | "all" };
   headline: string;
   findings: AnalystFinding[];
@@ -135,10 +182,11 @@ export function buildAnalystQuery(days = ANALYST_DAYS): string {
   const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
   const num = (name: string) => `toFloat64OrNull(toString(properties.${name}))`;
   const path = `ifNull(nullIf(${prop("$pathname")}, ''), path(${prop("$current_url")}))`;
-  const events = ["'$pageview'", "'$pageleave'", ...[E.landingView, E.landingSection, E.ctaClick, E.step, E.attempt, E.opened, E.error, E.completed, E.landingTiming, E.signupStep1].map((e) => `'${e}'`)].join(", ");
+  const events = ["'$pageview'", "'$pageleave'", ...[E.landingView, E.landingSection, E.ctaClick, E.step, E.attempt, E.opened, E.error, E.completed, E.landingTiming, E.signupStep1, E.hvacDemoStep, E.hvacDemoTier].map((e) => `'${e}'`)].join(", ");
   // The landing's own numbers ride on the event that leaves it: $pageleave, or the next $pageview on an in-app navigation.
   const left = `((event = '$pageleave' OR event = '$pageview') AND ${prop("$prev_pageview_pathname")} = '/')`;
-  const joined = (value: string, when: string) => `arrayStringConcat(groupUniqArrayIf(${value}, ${when} AND ${value} != ''), ',')`;
+  const joined = (value: string, when: string, sep = ",") => `arrayStringConcat(groupUniqArrayIf(${value}, ${when} AND ${value} != ''), '${sep}')`;
+  const ready = `event = '${E.signupStep1}' AND ${prop("outcome")} = 'ready'`;
   const d = Math.max(1, Math.min(30, Math.round(days)));
   return `SELECT ${prop("$session_id")} AS sid, any(toString(person_id)),
     toUnixTimestamp(min(timestamp)) * 1000 AS started, toUnixTimestamp(max(timestamp)) * 1000,
@@ -164,7 +212,15 @@ export function buildAnalystQuery(days = ANALYST_DAYS): string {
     anyIf(${prop("connection")}, event = '${E.landingTiming}' AND ${prop("connection")} != ''), countIf(event = '${E.landingTiming}' AND ${prop("shown")} = 'false'),
     maxIf(${num("ready_ms")}, event = '${E.signupStep1}' AND ${prop("outcome")} = 'ready'),
     countIf(event = '${E.signupStep1}' AND ${prop("typed_before_ready")} = 'true'), countIf(event = '${E.signupStep1}' AND ${prop("early_submit")} = 'true'),
-    ${joined(prop("reason"), `event = '${E.signupStep1}' AND ${prop("outcome")} = 'error'`)}, countIf(event = '${E.signupStep1}' AND ${prop("outcome")} = 'continue')
+    ${joined(prop("reason"), `event = '${E.signupStep1}' AND ${prop("outcome")} = 'error'`)}, countIf(event = '${E.signupStep1}' AND ${prop("outcome")} = 'continue'),
+    maxIf(${num("lcp_ms")}, event = '${E.landingTiming}'), maxIf(${num("left_ms")}, event = '${E.landingTiming}' AND ${prop("shown")} = 'false'),
+    maxIf(${num("downlink")}, event = '${E.landingTiming}'), maxIf(${num("rtt")}, event = '${E.landingTiming}'),
+    maxIf(${num("typed_ms")}, ${ready}), maxIf(${num("submit_ms")}, ${ready}),
+    ${joined(`concat(${prop("section")}, ':', ${prop("after")})`, `event = '${E.landingSection}' AND ${prop("section")} != ''`)},
+    ${joined(prop("label"), `event = '${E.ctaClick}'`, LIST_SEP)}, ${joined(prop("href"), `event = '${E.ctaClick}'`, LIST_SEP)}, ${joined(prop("spot"), `event = '${E.ctaClick}'`, LIST_SEP)},
+    countIf(event = '${E.hvacDemoStep}'), ${joined(prop("step"), `event = '${E.hvacDemoStep}'`)}, countIf(event = '${E.hvacDemoStep}' AND ${prop("how")} = 'tap'),
+    countIf(event = '${E.hvacDemoTier}'), ${joined(prop("tier"), `event = '${E.hvacDemoTier}'`)},
+    anyIf(${prop("$geoip_country_name")}, ${prop("$geoip_country_name")} != ''), anyIf(${prop("$geoip_subdivision_1_name")}, ${prop("$geoip_subdivision_1_name")} != ''), anyIf(${prop("$geoip_city_name")}, ${prop("$geoip_city_name")} != '')
     FROM events
     WHERE timestamp > now() - INTERVAL ${d} DAY AND ${sinceSql(false)} AND timestamp <= now() AND event IN (${events})
       AND ${prop("$session_id")} != '' AND ${path} != '/admin' AND NOT startsWith(${path}, '/admin/')
@@ -175,9 +231,13 @@ export function buildAnalystQuery(days = ANALYST_DAYS): string {
 const text = (v: unknown) => (v == null ? "" : String(v));
 const count = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const maybe = (v: unknown) => { if (v == null || v === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
-const list = (v: unknown) => text(v).split(",").map((s) => s.trim()).filter(Boolean);
+const list = (v: unknown, sep = ",") => text(v).split(sep).map((s) => s.trim()).filter(Boolean);
 /** A measured moment in ms: positive, else null (the beacons send -1 for "not known"). */
 const ms = (v: unknown) => { const n = maybe(v); return n !== null && n > 0 ? n : null; };
+/** Zero is a reading (a round trip Chrome rounds to 0); -1 is not. */
+const nonNegative = (v: unknown) => { const n = maybe(v); return n !== null && n >= 0 ? n : null; };
+/** "hero:0,compare:12" in the order they were reached. */
+const bySeconds = (xs: string[]) => [...xs].sort((a, b) => Number(a.split(":")[1] ?? 0) - Number(b.split(":")[1] ?? 0));
 
 /** The landing's trade from its URL when landing_view did not arrive (beacon fallback). */
 function industryOfUrl(url: string): string {
@@ -201,6 +261,10 @@ export function analystSessionFromRow(row: unknown[]): LandingSession | null {
     completed: count(row[30]) > 0, outcome: text(row[31]), plan: text(row[32]),
     heroMs: ms(row[33]), paintMs: ms(row[34]), readyMs: ms(row[35]), trackedMs: ms(row[36]), kb: ms(row[37]), connection: text(row[38]), leftUnshown: count(row[39]),
     formReadyMs: ms(row[40]), typedEarly: count(row[41]), submittedEarly: count(row[42]), step1Errors: list(row[43]), step1Passed: count(row[44]),
+    lcpMs: ms(row[45]), leftMs: ms(row[46]), downlink: ms(row[47]), rttMs: nonNegative(row[48]), typedMs: ms(row[49]), submitMs: ms(row[50]),
+    sectionAfter: bySeconds(list(row[51])), ctaLabels: list(row[52], LIST_SEP), ctaHrefs: list(row[53], LIST_SEP), ctaSpots: list(row[54], LIST_SEP),
+    hvacSteps: count(row[55]), hvacStepKeys: list(row[56]), hvacTaps: count(row[57]), hvacTierPicks: count(row[58]), hvacTiers: list(row[59]),
+    country: text(row[60]), region: text(row[61]), city: text(row[62]),
   };
 }
 
@@ -270,11 +334,14 @@ const TRADE_NAME = (key: string) => (key === "default" ? "the general landing" :
 
 // ── The analysis ───────────────────────────────────────────────────────────
 
-export function analyse(sessions: LandingSession[], opts: { now?: number; timezone?: string; adNames?: Record<string, string>; days?: number } = {}): AnalystReport {
+export function analyse(sessions: LandingSession[], opts: { now?: number; timezone?: string; adNames?: Record<string, string>; days?: number; windowFrom?: number } = {}): AnalystReport {
   const now = opts.now ?? Date.now();
   const timezone = opts.timezone || "America/Los_Angeles";
   const adNames = opts.adNames ?? {};
   const days = opts.days ?? ANALYST_DAYS;
+  // The window as it was read: never before the ad launch (the query's own rule).
+  const windowFrom = opts.windowFrom ?? analystWindowFrom(now, days);
+  const period = periodWords(windowFrom, now, days, timezone);
   const all = sessions.map((s) => read(s, timezone));
   const landed = all.filter((r) => r.landed);
   const fromAds = landed.filter((r) => r.fromAd);
@@ -320,7 +387,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
 
   if (!enough) {
     add({ id: "sample", tone: "info", title: `Not enough yet — ${fromAds.length} of the ${ANALYST_MIN_AD_VISITS} ad visits the analyst waits for`,
-      evidence: `${landed.length} landing ${landed.length === 1 ? "visit" : "visits"} in the last ${days} days, ${fromAds.length} from ads, ${last24h} in the last 24 h.`,
+      evidence: `${landed.length} landing ${landed.length === 1 ? "visit" : "visits"} ${period.inWords}, ${fromAds.length} from ads, ${last24h} in the last 24 h.`,
       action: "Let the ads run; the reading starts on its own once there is something to read.", n: fromAds.length });
   }
 
@@ -336,7 +403,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
   const leak = steps.filter((t) => t.a >= 5).sort((x, y) => (x.b / x.a) - (y.b / y.a))[0] ?? null;
 
   if (enough) {
-    add({ id: "funnel", tone: "info", title: `The funnel, last ${days} days`,
+    add({ id: "funnel", tone: "info", title: `The funnel, ${period.label}`,
       evidence: `${n} landed from ads → ${pct(funnel[1].pct)} pressed a button → ${pct(funnel[2].pct)} opened the form → ${s2.length} reached the company step → ${s3.length} the plan → ${attempted.length} started → ${done.length} signed up.`,
       action: leak ? `The biggest leak is ${leak.from} → ${leak.to}: ${leak.a} reached it, ${leak.b} went on (${pct(leak.b / leak.a)}).` : "Too few reach the form to say where the sign-up leaks.", n });
   }
@@ -610,7 +677,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
   if (enough && done.length >= 3 && done.length / n >= 0.03) {
     const bestAd = ads.filter((a) => a.n >= SEGMENT_MIN).sort((x, y) => y.completed - x.completed)[0];
     add({ id: "good", tone: "good", title: `${done.length} signed up — ${pct(done.length / n, 1)} of ad visits`,
-      evidence: `${people(done.length)} completed a verified sign-up in the last ${days} days${bestAd && bestAd.completed > 0 ? `; «${bestAd.name}» brought ${bestAd.completed} of them` : ""}.`,
+      evidence: `${people(done.length)} completed a verified sign-up ${period.inWords}${bestAd && bestAd.completed > 0 ? `; «${bestAd.name}» brought ${bestAd.completed} of them` : ""}.`,
       action: bestAd && bestAd.completed > 0 ? `Scale «${bestAd.name}» before anything else.` : "Keep the ads running; the landing is converting.", n });
   }
 
@@ -619,15 +686,16 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
 
   // One line of what is going on.
   let headline: string;
-  if (!landed.length) headline = `Nobody has landed in the last ${days} days.`;
-  else if (!enough) headline = `${landed.length} landing ${landed.length === 1 ? "visit" : "visits"} in the last ${days} days, ${fromAds.length} from ads — the analyst starts reading at ${ANALYST_MIN_AD_VISITS} ad visits.`;
+  const lead = period.inWords[0].toUpperCase() + period.inWords.slice(1);
+  if (!landed.length) headline = `Nobody has landed ${period.inWords}.`;
+  else if (!enough) headline = `${landed.length} landing ${landed.length === 1 ? "visit" : "visits"} ${period.inWords}, ${fromAds.length} from ads — the analyst starts reading at ${ANALYST_MIN_AD_VISITS} ad visits.`;
   else {
     const top = findings.find((f) => f.tone === "bad" || f.tone === "warn");
-    headline = `In the last ${days} days ${n} people landed from ads: ${pct(stats.bounce)} left without pressing anything, ${pct(funnel[1].pct)} pressed a button, ${pct(funnel[2].pct)} opened the form, ${done.length} signed up.${top ? ` The thing to fix: ${top.title.replace(/^./, (c) => c.toLowerCase())}.` : done.length ? " Nothing is broken; scale what works." : ""}`;
+    headline = `${lead}, ${n} people landed from ads: ${pct(stats.bounce)} left without pressing anything, ${pct(funnel[1].pct)} pressed a button, ${pct(funnel[2].pct)} opened the form, ${done.length} signed up.${top ? ` The thing to fix: ${top.title.replace(/^./, (c) => c.toLowerCase())}.` : done.length ? " Nothing is broken; scale what works." : ""}`;
   }
 
   return {
-    days,
+    days, period: period.label, windowFrom,
     sample: { sessions: all.length, landed: landed.length, fromAds: fromAds.length, last24h, measured: measured.length, enough, needed: ANALYST_MIN_AD_VISITS, basis },
     // Every ad, trade and placement (2026-10-04): the panel shows the first
     // dozen ads; the exports carry them all.

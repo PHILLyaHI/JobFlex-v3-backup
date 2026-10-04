@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { ArrowDownToLine, ArrowUpRight, ChevronRight, FileText, RefreshCw, SlidersHorizontal, FlaskConical, Info, Users } from "lucide-react";
 import { getSignupAttribution, getTrafficDashboard, getTrafficExperimentsAction, getTrafficStageVisitors } from "@/actions/trafficDashboard";
 import { getTrafficExportMarkdown } from "@/actions/trafficExport";
+import { getAdsManagerClicks } from "@/actions/trafficClicks";
 import { downloadText, reportToCsv } from "@/lib/traffic-export";
 import { toast } from "@/components/ui/toast-store";
 import { conversionInterval, pageLabel, percent, staleLabel, type ExperimentResult, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
@@ -41,9 +42,10 @@ function tally(rows: StageVisitor[], pick: (v: StageVisitor) => string, limit = 
   for (const row of rows) { const key = pick(row) || "Unknown"; counts.set(key, (counts.get(key) || 0) + 1); }
   return Array.from(counts, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, limit);
 }
-/** The header's CSV: every column the report holds, and the signups list (lib/traffic-export). */
-function exportReport(report: TrafficReport, ledger: SignupLedger | null) {
-  downloadText(`jobflex-traffic-${report.filters.from}-${report.filters.to}.csv`, reportToCsv(report, ledger), "text/csv;charset=utf-8;");
+/** The header's CSV: every column the report holds, Ads Manager's clicks and the signups list (lib/traffic-export). */
+async function exportReport(report: TrafficReport, ledger: SignupLedger | null) {
+  const clicks = await getAdsManagerClicks({ days: report.points.map((p) => p.date) }).catch(() => ({}));
+  downloadText(`jobflex-traffic-${report.filters.from}-${report.filters.to}.csv`, reportToCsv(report, ledger, clicks), "text/csv;charset=utf-8;");
 }
 
 /** How often the report is asked again while it shows an old answer. */
@@ -177,7 +179,7 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
       <div><div className={s.eyebrow}>Platform intelligence / 01</div><h1>Traffic<span>.</span></h1></div>
       <div className={s.headerActions}><span className={s.status} data-state={report.status === "ok" && !report.errors.length && !stale ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : stale ? "PostHog unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
         <button className={s.button} onClick={() => void exportEverything()} disabled={exporting} aria-busy={exporting}><FileText size={15} aria-hidden="true"/>{exporting ? "Preparing…" : "Export everything"}</button>
-        <button className={s.button} onClick={() => exportReport(report, ledger)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button>
+        <button className={s.button} onClick={() => void exportReport(report, ledger)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button>
         <button className={s.iconButton} aria-label="Refresh traffic" onClick={() => load(filters)} disabled={pending}><RefreshCw size={17} className={pending ? s.spin : ""}/></button>
       </div>
     </header>

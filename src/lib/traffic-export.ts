@@ -9,6 +9,7 @@ import { pct, type AnalystFinding, type AnalystSegment, type LandingSession } fr
 import type { AnalystResult } from "./traffic-analyst-read";
 import { pageLabel, percent, type SignupAttribution, type TrafficFilters, type TrafficReport } from "./traffic-contract";
 import type { LiveReport, SignupLedger } from "./traffic-live";
+import type { MoneyRow } from "./traffic-money";
 import { dateInZone } from "./traffic-query";
 import { TRAFFIC_SINCE_LABEL } from "./traffic-visitor";
 
@@ -74,7 +75,7 @@ export function analystToMarkdown(result: AnalystResult, opts: { timezone: strin
   out.push(`${h(0)} The analyst — JobFlex landing`);
   const from = result.window?.from, to = result.window?.to ?? result.fetchedAt;
   out.push([
-    `- **Period:** ${from ? `${when(from, tz)} → ${when(to, tz)}` : `the last ${r.days} days`} (${tz}) — the last ${r.days} days, never before ${TRAFFIC_SINCE_LABEL}`,
+    `- **Period:** ${from ? `${when(from, tz)} → ${when(to, tz)}` : r.period} (${tz}) — ${r.period}; the window is the last ${r.days} days, never before ${TRAFFIC_SINCE_LABEL}`,
     `- **PostHog read at:** ${when(result.fetchedAt, tz)}`,
     `- **Basis:** ${r.sample.basis === "ads" ? "visits from ads" : "all landing visits"} (the analyst reads ads once ${r.sample.needed} ad visits have landed)`,
     ...(result.status !== "ok" ? [`- **Status:** ${result.status} — ${result.message ?? ""}`] : []),
@@ -111,6 +112,16 @@ export function analystToMarkdown(result: AnalystResult, opts: { timezone: strin
   out.push(mdTable(["Section", "Reached", "On"], r.sections.map((s) => [s.label, pct(s.reach), s.shown === "all" ? "every landing" : "where shown"])));
   out.push(`${h(1)} Ads (${r.ads.length})`);
   out.push(mdTable(["Ad", "Id", "Platform", "Visits", "Bounced", "Pressed", "Opened the form", "Signed up"], segmentRows(r.ads, true)));
+  const money = result.money;
+  if (money) {
+    const t = money.total, u = money.untagged;
+    out.push(`${h(1)} Ads → money · accounts since ${when(money.since, tz)}, what they are now`);
+    out.push(`${t.signups} ${t.signups === 1 ? "account" : "accounts"}: ${t.trial} on a trial, ${t.paying} paying, ${t.lapsed} lapsed, ${t.other} other${u.signups ? `; ${u.signups} carry no ad tag` : ""}. From the database (the landing's tags on each organization, its subscription now); visits are the analyst's window.`);
+    const counts = (m: MoneyRow) => [m.visits ?? "—", m.signups, m.trial, m.paying, m.lapsed, m.other];
+    const tail = ["Visits (window)", "Signups", "Trial", "Paying", "Lapsed", "Other"];
+    out.push(mdTable(["Ad", "Id", "Campaign", ...tail], money.ads.map((m) => [m.name, m.key, m.campaign, ...counts(m)])));
+    out.push(mdTable(["Campaign", "Id", ...tail], money.campaigns.map((m) => [m.name, m.key, ...counts(m)])));
+  }
   out.push(`${h(1)} Trade landings (${r.trades.length})`);
   out.push(mdTable(["Landing", "Key", "Visits", "Bounced", "Pressed", "Opened the form", "Signed up"], segmentRows(r.trades, false)));
   out.push(`${h(1)} Buttons pressed, by place on the page`);
@@ -131,6 +142,8 @@ export const SESSION_COLUMNS = [
   "registerViews", "step", "flow", "attempts", "cardless", "opened", "errors", "completed", "outcome", "plan",
   "heroMs", "paintMs", "readyMs", "trackedMs", "kb", "connection", "leftUnshown",
   "formReadyMs", "typedEarly", "submittedEarly", "step1Errors", "step1Passed",
+  "lcpMs", "leftMs", "downlink", "rttMs", "typedMs", "submitMs", "sectionAfter", "ctaLabels", "ctaHrefs", "ctaSpots",
+  "hvacSteps", "hvacStepKeys", "hvacTaps", "hvacTierPicks", "hvacTiers", "country", "region", "city",
 ] as const;
 type MissingColumn = Exclude<keyof LandingSession, (typeof SESSION_COLUMNS)[number]>;
 const everyColumn: [MissingColumn] extends [never] ? true : MissingColumn = true;
@@ -160,7 +173,7 @@ const coverageIncomplete = (report: TrafficReport) => !report.firstStepAt || rep
 /** The header's Export CSV (2026-10-04): every column the report holds —
  *  the daily people, in-app and ad tags, the hostnames, the d / e variants —
  *  and the signups list beside it. */
-export function reportToCsv(report: TrafficReport, ledger: SignupLedger | null): string {
+export function reportToCsv(report: TrafficReport, ledger: SignupLedger | null, adsClicks: Record<string, number> = {}): string {
   const partial = coverageIncomplete(report);
   const rows: unknown[][] = [
     ["JobFlex traffic", report.filters.from, report.filters.to, report.filters.timezone],
@@ -168,8 +181,8 @@ export function reportToCsv(report: TrafficReport, ledger: SignupLedger | null):
     ["All-time visitors", report.lifetime, "Today", report.today],
     ["People (est.)", report.people?.people ?? null, "In-app visitors", report.people?.inAppVisitors ?? null, "In-app people", report.people?.inAppPeople ?? null],
     [],
-    ["Daily", "Visitors", "New", "Returning", "Repeat visitors", "Sessions", "Views", "People (est.)", "In-app visitors", "In-app people", "Ads fb", "Ads ig", "Ads an", "fbclid", "Any ad tag"],
-    ...report.points.map((p) => [p.date, p.visitors, p.newVisitors, p.returningVisitors, p.repeatVisitors, p.sessions, p.pageviews, p.people, p.inAppVisitors, p.inAppPeople, p.adsFb, p.adsIg, p.adsAn, p.adsFbclid, p.adsAny]),
+    ["Daily", "Visitors", "New", "Returning", "Repeat visitors", "Sessions", "Views", "People (est.)", "In-app visitors", "In-app people", "Ads fb", "Ads ig", "Ads an", "fbclid", "Any ad tag", "Ads Manager clicks"],
+    ...report.points.map((p) => [p.date, p.visitors, p.newVisitors, p.returningVisitors, p.repeatVisitors, p.sessions, p.pageviews, p.people, p.inAppVisitors, p.inAppPeople, p.adsFb, p.adsIg, p.adsAn, p.adsFbclid, p.adsAny, adsClicks[p.date] ?? null]),
     [], ["Page / step", "Visitors", "New", "Returning", "Repeat visitors", "Sessions", "Views"],
     ...report.pages.map((p) => [p.page, p.visitors, p.newVisitors, p.returningVisitors, p.repeatVisitors, p.sessions, p.pageviews]),
     [], ["Funnel", "Visitors", "Previous step %", "Landing %"],
@@ -202,6 +215,15 @@ export interface TrafficExport {
   report: TrafficReport;
   ledger: SignupLedger;
   attribution: SignupAttribution | null;
+  /** Ads Manager's link clicks per day, as the admins typed them (SyncState). */
+  adsClicks: Record<string, number>;
+}
+
+/** Ours against Ads Manager, as the reconciliation table words it: "+12%", "-30%", "--". */
+export function clicksDifference(ours: number, theirs: number | undefined): string {
+  if (!theirs) return "--";
+  const d = Math.round(((ours - theirs) / theirs) * 100);
+  return `${d > 0 ? "+" : ""}${d}%`;
 }
 
 function delta(current: number | undefined, previous: number | undefined) {
@@ -279,6 +301,9 @@ export function trafficToMarkdown(x: TrafficExport): string {
   out.push("### By day");
   out.push(mdTable(["Day", "Visitors", "People (est.)", "New", "Returning", "Sessions", "Views", "In-app visitors", "In-app people", "fb", "ig", "an", "fbclid", "Any ad tag"],
     report.points.map((p) => [p.date, p.visitors, p.people, p.newVisitors, p.returningVisitors, p.sessions, p.pageviews, p.inAppVisitors, p.inAppPeople, p.adsFb, p.adsIg, p.adsAn, p.adsFbclid, p.adsAny])));
+  out.push("### Our ad visitors against Ads Manager");
+  out.push(mdTable(["Day", "utm fb", "utm ig", "utm an", "fbclid", "Ours (any tag)", "Ads Manager clicks", "Difference"],
+    report.points.map((p) => [p.date, n(p.adsFb), n(p.adsIg), n(p.adsAn), n(p.adsFbclid), n(p.adsAny), x.adsClicks[p.date] === undefined ? "—" : n(x.adsClicks[p.date]), clicksDifference(p.adsAny, x.adsClicks[p.date])])));
 
   // 02 / Conversion
   const partial = coverageIncomplete(report);
