@@ -17,6 +17,15 @@ frontend build/deploy. Query results are cached for 60 seconds, up to 24 filter
 combinations. Upstream errors remain visible; missing reports do not become
 invented zero-valued results.
 
+When PostHog does not answer: each query waits 8 seconds and is asked once
+more after a pause on a timeout, a failed connection or HTTP 502/503/504 (400,
+401/403 and 429 are not retried). If it still fails, the page shows the last
+answer that query gave, labelled "PostHog unavailable, showing data from
+<time>", and keeps asking; an error banner appears only where there is no
+earlier answer. Every failed attempt is logged as
+`[traffic] PostHog <query>: HTTP <status> after <ms> ms (attempt n): <body>` —
+search the Vercel logs for `[traffic]`. Check: `scripts/qa/traffic-stale.check.ts`.
+
 ## Definitions
 
 - Visitors: distinct PostHog `person_id` values, not guaranteed unique humans.

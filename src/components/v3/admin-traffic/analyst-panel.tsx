@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, Lightbulb, RefreshCw, Sparkles } from "lucide-react";
 import { getTrafficAnalyst, type AnalystResult } from "@/actions/trafficDashboard";
 import { pct, type AnalystFinding } from "@/lib/traffic-analyst";
+import { staleLabel } from "@/lib/traffic-contract";
 import s from "./traffic.module.css";
 
 const READ_EVERY_MS = 10 * 60_000;
@@ -24,7 +25,12 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
   const [error, setError] = useState("");
   const load = useCallback(async (force = false) => {
     setPending(true);
-    try { setResult(await getTrafficAnalyst({ timezone, force })); setError(""); }
+    try {
+      const next = await getTrafficAnalyst({ timezone, force });
+      // PostHog down and a reading on screen: it stays, dated, and the next read tries again.
+      setResult((prev) => (next.status === "error" && prev?.status === "ok" ? { ...prev, stale: { since: prev.fetchedAt, reason: next.message ?? "" } } : next));
+      setError("");
+    }
     catch (err) { setError(err instanceof Error ? err.message : "The analyst could not read."); }
     finally { setPending(false); }
   }, [timezone]);
@@ -48,6 +54,7 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
       </div>
 
       {!result && <div className={s.analystEmpty}>Reading the last week…</div>}
+      {result?.stale && <div className={s.notice} role="status" data-stale><Info size={16}/><div><strong>{staleLabel(result.stale, timezone)}</strong><p>{result.stale.reason} Reading again every 10 minutes.</p></div></div>}
       {(error || (result && result.status !== "ok")) && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error || result?.message}</strong></div></div>}
 
       {ok && <>

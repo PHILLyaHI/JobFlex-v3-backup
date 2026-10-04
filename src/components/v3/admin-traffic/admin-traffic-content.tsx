@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ArrowDownToLine, ArrowUpRight, ChevronRight, RefreshCw, SlidersHorizontal, FlaskConical, Info, Users } from "lucide-react";
 import { getSignupAttribution, getTrafficDashboard, getTrafficExperimentsAction, getTrafficStageVisitors } from "@/actions/trafficDashboard";
-import { conversionInterval, pageLabel, percent, type ExperimentResult, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
+import { conversionInterval, pageLabel, percent, staleLabel, type ExperimentResult, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
 import { AdsReconciliation, DailyPeople } from "./daily-tables";
 import { dateInZone, shiftDate } from "@/lib/traffic-query";
 import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
@@ -67,6 +67,8 @@ function exportReport(report: TrafficReport) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** How often the report is asked again while it shows an old answer. */
+const STALE_RETRY_MS = 30_000;
 const signupDimensions = { landingIndustry: "Landing trade", signupVariant: "Landing variant", utmSource: "utm_source", utmMedium: "utm_medium", utmCampaign: "utm_campaign", utmContent: "utm_content" } as const;
 type SignupDimension = keyof typeof signupDimensions;
 
@@ -85,16 +87,27 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   const [pageIndex, setPageIndex] = useState(0);
   const [experiment, setExperiment] = useState("");
   const [control, setControl] = useState("");
+  const shown = useRef(report);
+  useEffect(() => { shown.current = report; }, [report]);
   const filters = report.filters;
   const t = report.totals;
   const update = (changes: Partial<TrafficFilters>) => setDraft(d => ({ ...d, ...changes }));
+  // What was last asked for — the retry below asks for it again.
+  const wanted = useRef(data.filters);
   function load(next: TrafficFilters) {
     const id = ++request.current;
+    wanted.current = next;
     setError("");
     startTransition(async () => {
       try {
         const [result, attributed] = await Promise.all([getTrafficDashboard({ ...next }), getSignupAttribution({ ...next }).catch(() => null)]);
-        if (id === request.current) { setReport(result); setDraft(result.filters); setSignups(attributed); }
+        if (id !== request.current) return;
+        // PostHog down (2026-10-03) and figures on screen: they stay, dated,
+        // and the page asks again — the banner alone is for a page with
+        // nothing to show. The server does the same per query from its own
+        // memory; this covers the instance that has none.
+        if (result.status === "error" && shown.current.totals) { setReport(prev => ({ ...prev, stale: { since: prev.stale?.since ?? prev.fetchedAt, reason: result.message ?? "" } })); return; }
+        setReport(result); setDraft(result.filters); setSignups(attributed);
       } catch (err) { if (id === request.current) setError(err instanceof Error ? err.message : "Could not refresh traffic."); }
     });
   }
@@ -107,6 +120,15 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
     load(data.filters);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on mount
   }, []);
+  // While the figures are old the page keeps asking, as the live view does.
+  const stale = report.stale;
+  const isStale = !!stale;
+  useEffect(() => {
+    if (!isStale) return;
+    const retry = window.setInterval(() => { if (document.visibilityState === "visible") load(wanted.current); }, STALE_RETRY_MS);
+    return () => window.clearInterval(retry);
+    // Armed by the note alone: load is a new function every render.
+  }, [isStale]);
   function apply(changes: Partial<TrafficFilters>) {
     const next = { ...filters, ...changes };
     setDraft(next); load(next);
@@ -162,7 +184,7 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   return <div className={s.root} aria-busy={pending}>
     <header className={s.header}>
       <div><div className={s.eyebrow}>Platform intelligence / 01</div><h1>Traffic<span>.</span></h1></div>
-      <div className={s.headerActions}><span className={s.status} data-state={report.status === "ok" && !report.errors.length ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
+      <div className={s.headerActions}><span className={s.status} data-state={report.status === "ok" && !report.errors.length && !stale ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : stale ? "PostHog unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
         <button className={s.button} onClick={() => exportReport(report)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button>
         <button className={s.iconButton} aria-label="Refresh traffic" onClick={() => load(filters)} disabled={pending}><RefreshCw size={17} className={pending ? s.spin : ""}/></button>
       </div>
@@ -194,7 +216,8 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
       <div className={s.filterFooter}><span className={s.activeTimezone}>{filters.timezone}</span><span className={s.unsaved}>{changed ? "Filters changed. Apply to update." : `${filters.from} to ${filters.to} / inclusive`}</span><button className={s.textButton} onClick={() => { const next = { ...data.filters, from: shiftDate(today, -29), to: today }; setDraft(next); load(next); }} disabled={pending}>Reset</button><button className={s.primary} onClick={() => load(draft)} disabled={pending}>{pending ? "Updating..." : "Apply filters"}<ArrowUpRight size={16}/></button></div>
     </section>
 
-    {(error || report.message || report.errors.length > 0) && <div className={s.notice} role="alert"><Info size={18}/><div><strong>{error || report.message || "Some reports are unavailable."}</strong>{report.errors.length > 0 && <details><summary>Query details</summary>{report.errors.map(e => <p key={e}>{e}</p>)}</details>}</div></div>}
+    {stale && <div className={s.notice} role="status" data-stale><Info size={18}/><div><strong>{staleLabel(stale, filters.timezone)}</strong><p>{stale.reason} Asking again every {STALE_RETRY_MS / 1000} s.</p></div></div>}
+    {(error || (report.message && !stale) || report.errors.length > 0) && <div className={s.notice} role="alert"><Info size={18}/><div><strong>{error || report.message || "Some reports are unavailable."}</strong>{report.errors.length > 0 && <details><summary>Query details</summary>{report.errors.map(e => <p key={e}>{e}</p>)}</details>}</div></div>}
 
     <div className={s.sectionLabel}><span>01 / Audience</span><span>{filters.page ? pageLabel(filters.page) : "All pages"}{filters.audience !== "all" ? ` / ${filters.audience}` : ""}</span></div>
     <section className={s.metrics} aria-label="Audience summary">

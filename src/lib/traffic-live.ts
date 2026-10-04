@@ -24,7 +24,7 @@
 //     utm_*), so the line names the company and the owner.
 //   · "On the site now" = an event in the last ACTIVE_MINUTES; up to
 //     WINDOW_MINUTES they are "just left", shown dimmer, then gone.
-import { TRAFFIC_EVENTS as E, pageLabel } from "./traffic-contract";
+import { TRAFFIC_EVENTS as E, pageLabel, type StaleNote } from "./traffic-contract";
 // Who counts and what is "from an ad": one rule for the whole page (2026-10-01).
 import { BROWSER_TYPE_SQL, HOST_SQL, UA_SQL, carriesAdTag, isCountedEvent, sinceSql, visitorRuleSql } from "./traffic-visitor";
 import { resolveLandingVariant, VARIANT_TRADE } from "@/components/v3/landing-e/landing-variants";
@@ -295,6 +295,9 @@ export interface LiveReport {
    *  {{ad.id}} as numbers), keyed by the id as it arrives. Filled in by the
    *  admin's server action. */
   adNames?: Record<string, string>;
+  /** PostHog did not answer: this is the last report it did answer for
+   *  (lib/traffic-server) — or, with a scope, a fresh one but for that part. */
+  stale?: StaleNote;
 }
 
 /** The SyncState key a name for an ad or campaign id is kept under. */
@@ -1027,6 +1030,8 @@ export interface MapHistory {
   truncated: boolean;
   adNames: Record<string, string>;
   fetchedAt: string;
+  /** PostHog did not answer: the span as it last read. */
+  stale?: StaleNote;
 }
 
 /** One HogQL query, one row per person over the span. Only functions the

@@ -10,6 +10,7 @@ import { Building2, Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } fr
 import { getLiveTraffic, getMapHistory, nameAdTag } from "@/actions/trafficDashboard";
 import { MAP_HISTORY_LIMIT, MAP_SPANS, isAdId, mapSpanLabel, prospectsOf, type LiveReport, type LiveStage, type LiveVisitor, type MapHistory, type MapSpan } from "@/lib/traffic-live";
 import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
+import { staleLabel } from "@/lib/traffic-contract";
 import { LivePlatforms } from "./live-platforms";
 import { Ago, setClockPeriod } from "./ticker";
 import { sameReport } from "./live-diff";
@@ -101,7 +102,11 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
       // Only what changed is handed down: an answer with the same visitors
       // keeps the same objects, so the map, the cards and the rows skip their
       // render (2026-10-01).
-      if (id === request.current) { setReport((prev) => sameReport(prev, next)); setError(""); }
+      // PostHog down (2026-10-03): the report on screen stays, dated, and the
+      // poll goes on; an empty panel with a banner is for a page that has
+      // nothing to show. The server does the same from its own memory — this
+      // covers the instance that has none.
+      if (id === request.current) { setReport((prev) => (next.status === "error" && prev.status === "ok" ? { ...prev, stale: { since: prev.fetchedAt, reason: next.message ?? "" } } : sameReport(prev, next))); setError(""); }
     } catch (err) {
       if (id === request.current) setError(err instanceof Error ? err.message : "Could not refresh the live view.");
     } finally {
@@ -149,7 +154,7 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
     const id = ++historyRequest.current;
     try {
       const next = await getMapHistory({ minutes, includeDevelopment: dev, fullHistory });
-      if (id === historyRequest.current) setHistory(next);
+      if (id === historyRequest.current) setHistory((prev) => (next.status === "error" && prev?.status === "ok" && prev.minutes === minutes ? { ...prev, stale: { since: prev.fetchedAt, reason: next.message ?? "" } } : next));
     } catch (err) {
       if (id === historyRequest.current) setHistory({ status: "error", message: err instanceof Error ? err.message : "Could not load the map.", minutes, visitors: [], truncated: false, adNames: {}, fetchedAt: new Date().toISOString() });
     }
@@ -243,7 +248,8 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
         return <span key={stage} className={s.liveFunnelStep} data-stage={stage} data-zero={n === 0}><i aria-hidden="true"/>{label}<b>{fmt(n)}</b></span>;
       })}
     </div>}
-    {(error || report.message) && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error || report.message}</strong></div></div>}
+    {report.stale && <div className={s.notice} role="status" data-stale><Info size={16}/><div><strong>{staleLabel(report.stale, timezone)}</strong><p>{report.stale.reason} Still asking every {(liveMode ? LIVE_POLL_MS : POLL_MS) / 1000} s.</p></div></div>}
+    {(error || (report.message && !report.stale)) && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error || report.message}</strong></div></div>}
     {live && <>
       {/* The platforms: a card each, the ad platforms always; pressed, a filter. */}
       <LivePlatforms platforms={report.platforms} selected={platform} onSelect={setPlatform} adNames={adNames}/>
@@ -261,6 +267,7 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
           : `${onMap.length} ${onMap.length === 1 ? "visitor" : "visitors"} on the map${longSpan ? ` · last ${spanWords(span)}` : ""}`}{platform ? ` · ${report.platforms.find((p) => p.platform === platform)?.name ?? platform} only` : ""}</span>
         {longSpan && (!historyReady ? <span data-map-span-state="loading">Loading the last {spanWords(span)}…</span>
           : history && history.status !== "ok" ? <span data-map-span-state="error">{history.message}</span>
+          : history?.stale ? <span data-map-span-state="stale">{staleLabel(history.stale, timezone)}</span>
           : history?.truncated ? <span data-map-span-state="truncated">The newest {MAP_HISTORY_LIMIT.toLocaleString("en-US")} people</span> : null)}
         {spanFromLaunch && <span data-map-span-state="since">Counted from {TRAFFIC_SINCE_LABEL}, the ad launch · Show full history reaches further</span>}
         {platform && <button type="button" className={s.textButton} onClick={() => setPlatform(null)}>Show everyone</button>}

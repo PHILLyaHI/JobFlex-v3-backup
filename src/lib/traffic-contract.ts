@@ -66,11 +66,28 @@ export interface StageVisitorsReport {
   visitors: StageVisitor[];
   fetchedAt: string;
 }
+/** PostHog did not answer (2026-10-03): what is on screen is the last answer
+ *  it did give, read at `since`. `scope` names the part that is old when the
+ *  rest is fresh ("the totals", "pages, funnel"); none = all of it. */
+export interface StaleNote { since: string; reason: string; scope?: string }
+/** "PostHog unavailable, showing data from 9:41 PM" — the one wording, everywhere. */
+export function staleLabel(stale: StaleNote, timezone: string): string {
+  let at = stale.since;
+  try {
+    const d = new Date(stale.since);
+    const day = (x: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: timezone }).format(x);
+    // An answer from another day says which day.
+    at = new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit", ...(day(d) === day(new Date()) ? {} : { month: "short", day: "numeric" }) }).format(d);
+  } catch { /* an unreadable time or zone: the stamp as it came */ }
+  return `PostHog unavailable${stale.scope ? ` for ${stale.scope}` : ""}, showing data from ${at}`;
+}
 export interface TrafficReport {
   filters: TrafficFilters;
   fetchedAt: string;
   status: "ok" | "disabled" | "error";
   message?: string;
+  /** Set when some or all of the figures are the last good answer, not a fresh one. */
+  stale?: StaleNote;
   errors: string[];
   totals: TrafficTotals | null;
   previous: TrafficTotals | null;

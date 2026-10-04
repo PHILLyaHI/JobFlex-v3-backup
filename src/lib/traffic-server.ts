@@ -1,4 +1,4 @@
-import type { ExperimentResult, StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficDaily, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
+import type { ExperimentResult, StaleNote, StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficDaily, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
 import { buildExperimentsQuery, buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
 import { CONVERTED_HOURS, MAP_HISTORY_LIMIT, buildConvertedQuery, buildLiveQuery, buildLiveTotalsQuery, buildMapHistoryQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, mapHistoryEventsFromRow, minutesIntoDay, shapeLive, shortId, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair, type MapHistory, type MapSpan } from "./traffic-live";
 import { analystSessionFromRow, buildAnalystQuery, type LandingSession } from "./traffic-analyst";
@@ -69,6 +69,10 @@ export async function fetchLiveTotals(timezone: string, fullHistory = false): Pr
   return promise;
 }
 
+/** The totals, or the last ones read when PostHog does not answer for them. */
+const liveTotalsOrLast = (timezone: string, fullHistory: boolean) =>
+  orLastGood(`totals|${timezone || "UTC"}|${fullHistory ? 1 : 0}`, fetchLiveTotals(timezone, fullHistory), "the totals");
+
 /** The map over a longer span (2026-10-03, lib/traffic-live buildMapHistoryQuery):
  *  one row per person, cached per span — a month's query reads every event,
  *  so it is asked at most every few minutes whoever is watching. The rows are
@@ -102,13 +106,14 @@ export async function getMapHistory(minutes: MapSpan, signups: FreshSignup[], op
     mapHistoryCache.set(key, hit);
   }
   try {
-    const { events, views, rows } = await hit.promise;
+    // PostHog down: the span as it last read, and from when.
+    const { value: { events, views, rows }, stale } = await orLastGood(`map|${key}`, hit.promise);
     // PostHog already held the rows to the span; the slack keeps a first
     // touch at its edge (and its ad tag) while the rows sit in the cache.
     const shaped = shapeLive(events, signups, Date.now(), { ...opts, windowMinutes: minutes + 10 });
     // The row's own pageview count; the events stand in for the visit, not for every page.
     const visitors = shaped.visitors.map((v) => ({ ...v, views: views.get(v.id) ?? v.views }));
-    return { ...empty, status: "ok", visitors, truncated: rows >= MAP_HISTORY_LIMIT };
+    return { ...empty, status: "ok", visitors, truncated: rows >= MAP_HISTORY_LIMIT, ...(stale ? { stale, fetchedAt: stale.since } : {}) };
   } catch (err) {
     const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try a shorter span." : err instanceof Error ? err.message : "The map is unavailable.";
     return { ...empty, status: "error", message: msg };
@@ -121,15 +126,20 @@ export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDeve
   try {
     if (!posthogApiConfig()) return { ...shapeLive([], signups, Date.now(), opts), status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID.", fetchedAt };
   } catch (err) { return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: (err as Error).message, fetchedAt }; }
+  // One kept report per reading of the window (localhost, the day's zone, the history switch).
+  const keptKey = `live|${opts.includeDevelopment ? 1 : 0}|${opts.timezone || "UTC"}|${opts.fullHistory ? 1 : 0}`;
   try {
     // The totals must never take the live view down with them: a failure
-    // there leaves the window intact and the panel simply prints no totals.
-    const [events, pair, dayEvents] = await Promise.all([
+    // there leaves the window intact with the totals it last read, or — with
+    // none to fall back on — the panel simply prints no totals.
+    const [events, totalsRead, dayRead] = await Promise.all([
       fetchLiveEvents(opts.fast ? LIVE_FAST_CACHE_MS : LIVE_CACHE_MS),
-      fetchLiveTotals(opts.timezone || "UTC", !!opts.fullHistory).catch(() => null),
+      liveTotalsOrLast(opts.timezone || "UTC", !!opts.fullHistory).catch(() => null),
       // Nor the converts: without them the prospects map simply shows the window.
-      fetchConvertedEvents().catch(() => [] as LiveEvent[]),
+      orLastGood("converted", fetchConvertedEvents()).catch(() => null),
     ]);
+    const pair = totalsRead?.value ?? null;
+    const dayEvents = dayRead?.value ?? [];
     const totals = pair ? (opts.includeDevelopment ? pair.all : pair.production) : null;
     const shaped = shapeLive(events, signups, Date.now(), opts);
     // The day's converts, shaped the same way over a day-long window and kept
@@ -151,9 +161,13 @@ export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDeve
       dayAgeMinutes,
       topPlatform: top && top.visitors > 0 ? { name: top.name, visitors: top.visitors } : null,
     });
-    return { ...shaped, converted, totals, dayAgeMinutes, headline, status: "ok", fetchedAt };
+    const report: LiveReport = keepGood(keptKey, { ...shaped, converted, totals, dayAgeMinutes, headline, status: "ok", fetchedAt });
+    return totalsRead?.stale ? { ...report, stale: totalsRead.stale } : report;
   } catch (err) {
     const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try again shortly." : err instanceof Error ? err.message : "Live view unavailable.";
+    // PostHog down: the window as it last read (its own fetchedAt), not an empty panel.
+    const kept = lastGood.get(keptKey)?.value as LiveReport | undefined;
+    if (kept) return { ...kept, stale: { since: kept.fetchedAt, reason: msg } };
     return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: msg, fetchedAt };
   }
 }
@@ -176,15 +190,36 @@ export function posthogApiConfig() {
   return { host, key, id };
 }
 
-export async function runTrafficQuery(sql: string, name: string): Promise<Rows> {
-  const config = posthogApiConfig();
-  if (!config) throw new Error("Set POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID.");
-  const response = await fetch(`${config.host}/api/projects/${config.id}/query/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.key}` },
-    body: JSON.stringify({ name: `JobFlex traffic / ${name}`, query: { kind: "HogQLQuery", query: sql }, refresh: "blocking" }),
-    cache: "no-store", signal: AbortSignal.timeout(30_000),
-  });
+/** ONE QUERY'S BUDGET (2026-10-03, after production showed "HTTP 503"): a
+ *  query waits eight seconds, and one that timed out, could not connect or
+ *  came back 502 / 503 / 504 — PostHog's side, not our SQL — is asked once
+ *  more after a pause. Every failed attempt goes to the server log with its
+ *  name, status, time and the body's first line: the 503 left no trace at
+ *  all, so nobody could say which query it was. */
+const QUERY_TIMEOUT_MS = 8_000;
+const RETRY_PAUSE_MS = 700;
+const RETRY_STATUS = new Set([502, 503, 504]);
+class PosthogQueryError extends Error {
+  constructor(message: string, readonly retry: boolean) { super(message); }
+}
+
+async function askPosthog(config: { host: string; key: string; id: string }, sql: string, name: string, attempt: number): Promise<Rows> {
+  const started = Date.now();
+  let response: Response;
+  try {
+    response = await fetch(`${config.host}/api/projects/${config.id}/query/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.key}` },
+      body: JSON.stringify({ name: `JobFlex traffic / ${name}`, query: { kind: "HogQLQuery", query: sql }, refresh: "blocking" }),
+      cache: "no-store", signal: AbortSignal.timeout(QUERY_TIMEOUT_MS),
+    });
+  } catch (err) {
+    const timedOut = err instanceof Error && err.name === "TimeoutError";
+    console.warn(`[traffic] PostHog ${name}: ${timedOut ? "no answer" : "no connection"} after ${Date.now() - started} ms (attempt ${attempt})`);
+    // The callers word a timeout themselves, by the error's name.
+    if (timedOut) throw err;
+    throw new PosthogQueryError("PostHog could not be reached. Try again shortly.", true);
+  }
   if (!response.ok) {
     // Upstream bodies may contain SQL, identifiers or credentials. Keep them
     // server-side — except the one line that says WHY a query was refused
@@ -192,17 +227,55 @@ export async function runTrafficQuery(sql: string, name: string): Promise<Rows> 
     // in full and to the admin, trimmed, so a broken query names itself
     // (2026-10-02: the analyst's first query failed as a bare "HTTP 400").
     let why = "";
-    if (response.status === 400) {
-      try { const b = await response.json(); why = String(b?.detail ?? b?.error ?? b?.message ?? "").replace(/\s+/g, " ").trim(); } catch { /* no body */ }
-      console.warn(`[traffic] PostHog refused the ${name} query: ${why || "no detail"}`);
-    }
-    throw new Error(response.status === 401 || response.status === 403 ? "PostHog denied access. Check the project ID and query:read permission."
+    let raw = "";
+    try { raw = (await response.text()).replace(/\s+/g, " ").trim(); } catch { /* no body */ }
+    try { const b = JSON.parse(raw); why = String(b?.detail ?? b?.error ?? b?.message ?? "").replace(/\s+/g, " ").trim(); } catch { /* not JSON: a gateway's page */ }
+    if (response.status === 400) console.warn(`[traffic] PostHog refused the ${name} query: ${why || "no detail"}`);
+    else console.warn(`[traffic] PostHog ${name}: HTTP ${response.status} after ${Date.now() - started} ms (attempt ${attempt}): ${(why || raw).slice(0, 300) || "no body"}`);
+    throw new PosthogQueryError(response.status === 401 || response.status === 403 ? "PostHog denied access. Check the project ID and query:read permission."
       : response.status === 429 ? "PostHog query limit reached. Try again shortly."
-      : `PostHog query failed (HTTP ${response.status})${why ? `: ${why.slice(0, 220)}` : "."}`);
+      : `PostHog query failed (HTTP ${response.status})${response.status === 400 && why ? `: ${why.slice(0, 220)}` : "."}`, RETRY_STATUS.has(response.status));
   }
   const body = await response.json();
   if (!Array.isArray(body.results)) throw new Error("PostHog has not returned a completed result yet.");
   return body.results;
+}
+
+export async function runTrafficQuery(sql: string, name: string): Promise<Rows> {
+  const config = posthogApiConfig();
+  if (!config) throw new Error("Set POSTHOG_PERSONAL_API_KEY and POSTHOG_PROJECT_ID.");
+  try { return await askPosthog(config, sql, name, 1); }
+  catch (err) {
+    const again = err instanceof PosthogQueryError ? err.retry : err instanceof Error && err.name === "TimeoutError";
+    if (!again) throw err;
+  }
+  await new Promise((r) => setTimeout(r, RETRY_PAUSE_MS));
+  return askPosthog(config, sql, name, 2);
+}
+
+/** THE LAST GOOD ANSWER (2026-10-03). When PostHog does not answer, the page
+ *  shows what it last did answer, and says from when — an error banner is for
+ *  the case where there is nothing to show. Kept per query in this server
+ *  instance's memory (the browser keeps its own copy of what it has on
+ *  screen, for the instance that has none). */
+const LAST_GOOD_MAX = 64;
+const lastGood = new Map<string, { at: number; value: unknown }>();
+function keepGood<T>(key: string, value: T): T {
+  lastGood.delete(key);
+  if (lastGood.size >= LAST_GOOD_MAX) lastGood.delete(lastGood.keys().next().value!);
+  lastGood.set(key, { at: Date.now(), value });
+  return value;
+}
+const failureWords = (err: unknown) => err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long." : err instanceof Error ? err.message : "PostHog did not answer.";
+/** `fresh`, remembered — or, when it fails, the last answer under `key` with
+ *  a note of its age. Throws only when there is no earlier answer. */
+export async function orLastGood<T>(key: string, fresh: Promise<T>, scope?: string): Promise<{ value: T; stale: StaleNote | null }> {
+  try { return { value: keepGood(key, await fresh), stale: null }; }
+  catch (err) {
+    const good = lastGood.get(key);
+    if (!good) throw err;
+    return { value: good.value as T, stale: { since: new Date(good.at).toISOString(), reason: failureWords(err), ...(scope ? { scope } : {}) } };
+  }
 }
 
 export function emptyTrafficReport(filters: TrafficFilters): TrafficReport {
@@ -211,13 +284,17 @@ export function emptyTrafficReport(filters: TrafficFilters): TrafficReport {
     referrers: [], campaigns: [], devices: [], browsers: [], countries: [], terms: [], hosts: [], funnel: [], funnelOutcomes: null, experiments: [], variants: [] };
 }
 
-async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
+async function loadReport(filters: TrafficFilters, cacheKey: string): Promise<TrafficReport> {
   const report = emptyTrafficReport(filters);
   try {
     if (!posthogApiConfig()) return { ...report, status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID." };
   } catch (err) { return { ...report, status: "error", message: (err as Error).message }; }
   const queries = Object.entries(buildTrafficQueries(filters));
   const results: Record<string, Rows> = {};
+  // A query PostHog did not answer keeps the rows it last answered with
+  // (same filters); only one that never answered is an error.
+  const old: StaleNote[] = [];
+  const oldNames: string[] = [];
   // Bound concurrency to avoid saturating the upstream project's query slots.
   // Two at a time: the live panel's two queries run beside these on a page
   // load, and at three PostHog queued one of them for nine seconds
@@ -225,8 +302,11 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
   // overview, the A/B bench on its tab) — three rounds, not five.
   for (let i = 0; i < queries.length; i += QUERY_CONCURRENCY) {
     await Promise.all(queries.slice(i, i + QUERY_CONCURRENCY).map(async ([name, sql]) => {
-      try { results[name] = await runTrafficQuery(sql, name); }
-      catch (err) {
+      try {
+        const read = await orLastGood(`report|${cacheKey}|${name}`, runTrafficQuery(sql, name));
+        results[name] = read.value;
+        if (read.stale) { old.push(read.stale); oldNames.push(name); }
+      } catch (err) {
         const msg = err instanceof Error && err.name === "TimeoutError" ? "Query timed out. Narrow the date range." : err instanceof Error ? err.message : "Query unavailable.";
         report.errors.push(`${name}: ${msg}`);
       }
@@ -252,9 +332,10 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
   // its own count; the pair has no column for it.
   if (filters.environment !== "development") {
     try {
-      const pair = await fetchLiveTotals(filters.timezone, filters.fullHistory);
-      const t = filters.environment === "all" ? pair.all : pair.production;
+      const read = await liveTotalsOrLast(filters.timezone, filters.fullHistory);
+      const t = filters.environment === "all" ? read.value.all : read.value.production;
       report.lifetime = t.allTime; report.today = t.today;
+      if (read.stale) { old.push(read.stale); oldNames.push("all-time"); }
     } catch { /* the report's own count stands */ }
   }
   if (results.trend) {
@@ -277,6 +358,12 @@ async function loadReport(filters: TrafficFilters): Promise<TrafficReport> {
   report.variants = (results.variants || []).map(r => ({ variant: String(r[0]) === "e" ? "e" as const : "d" as const, started: numeric(r[1]), completed: numeric(r[2]) }));
   report.experiments = (results.experiments || []).map(r => ({ experiment: String(r[0]), variant: String(r[1]), visitors: numeric(r[2]), attempts: numeric(r[3]), completed: numeric(r[4]), mixedVisitors: numeric(r[5]) }));
   if (!report.totals) { report.status = "error"; report.message = report.errors[0] || "Traffic is unavailable."; }
+  // The oldest answer on the page dates the note; a scope only when some of it is fresh.
+  else if (old.length) {
+    const oldest = old.reduce((a, b) => (a.since <= b.since ? a : b));
+    const whole = queries.every(([name]) => oldNames.includes(name));
+    report.stale = { since: oldest.since, reason: oldest.reason, ...(whole ? {} : { scope: oldNames.join(", ") }) };
+  }
   return report;
 }
 
@@ -299,13 +386,13 @@ export async function getTrafficReport(filters: TrafficFilters): Promise<Traffic
     if (served.status === "ok" && !served.errors.length) {
       if (!refreshing.has(cacheKey)) {
         refreshing.add(cacheKey);
-        void loadReport(filters).then((fresh) => { if (fresh.status === "ok") cache.set(cacheKey, { at: Date.now(), promise: Promise.resolve(fresh) }); }).finally(() => refreshing.delete(cacheKey));
+        void loadReport(filters, cacheKey).then((fresh) => { if (fresh.status === "ok") cache.set(cacheKey, { at: Date.now(), promise: Promise.resolve(fresh) }); }).finally(() => refreshing.delete(cacheKey));
       }
       return served;
     }
   }
   if (cache.size >= 24) cache.delete(cache.keys().next().value!);
-  const promise = loadReport(filters);
+  const promise = loadReport(filters, cacheKey);
   cache.set(cacheKey, { at: Date.now(), promise });
   return promise;
 }
