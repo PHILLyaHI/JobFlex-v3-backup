@@ -107,11 +107,15 @@ export function Planner({ homeKey, plans }: { homeKey: string; plans: HomePlanVi
             void add();
           }}
         >
-          <label className={s.field}>
-            <span>What</span>
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={IDEAS[plans.length % IDEAS.length]} maxLength={120} required list="plan-ideas" name="plan-title" autoComplete="off" />
-            <datalist id="plan-ideas">{IDEAS.map((x) => <option key={x} value={x} />)}</datalist>
+          <label className={`${s.field} ${s.fieldWide}`}>
+            <span>What — type anything, or tap an idea</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Garage epoxy floor, a new deck, repaint the bedrooms…" maxLength={120} required name="plan-title" autoComplete="off" />
           </label>
+          <div className={`${s.ideas} ${s.fieldWide}`} aria-label="Ideas">
+            {IDEAS.map((x) => (
+              <button key={x} type="button" className={s.idea} aria-pressed={title === x} onClick={() => setTitle(x)}>{x}</button>
+            ))}
+          </div>
           <label className={s.field}>
             <span>When</span>
             <select value={when} onChange={(e) => setWhen(e.target.value)} name="plan-when">

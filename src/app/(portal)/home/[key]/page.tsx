@@ -64,8 +64,10 @@ export default async function HomePage({ params }: { params: Promise<{ key: stri
   const active = h.projects.filter((p) => p.status2 !== "DONE" && p.status2 !== "HIRED");
   const record = h.projects.filter((p) => p.status2 === "DONE" || p.status2 === "HIRED");
   const newProjectHref = `/homeowner?home=${encodeURIComponent(h.key)}`;
-  const house = h.details.address
-    ? `${h.details.address}${h.place ? `, ${h.place}` : ""}${h.details.zip && !(h.place ?? "").includes(h.details.zip) ? ` ${h.details.zip}` : ""}`
+  // The street line often carries the city and the ZIP already — say each once.
+  const addr = h.details.address;
+  const house = addr
+    ? `${addr}${h.place && !addr.toLowerCase().includes(h.place.toLowerCase()) ? `, ${h.place}` : ""}${h.details.zip && !addr.includes(h.details.zip) && !(h.place ?? "").includes(h.details.zip) ? ` ${h.details.zip}` : ""}`
     : h.address ?? h.place ?? "Your home";
 
   return (

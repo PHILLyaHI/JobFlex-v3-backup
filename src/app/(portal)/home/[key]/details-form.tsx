@@ -48,7 +48,17 @@ export function DetailsForm({ homeKey, details }: { homeKey: string; details: Ho
     }
   }
 
-  const where = [details.address, [details.city, details.state].filter(Boolean).join(", "), details.zip].filter(Boolean).join(" · ");
+  // The street line often carries the city and the ZIP already — say each once.
+  const cityState = [details.city, details.state].filter(Boolean).join(", ");
+  const where = [
+    details.address,
+    cityState && !details.address.toLowerCase().includes(cityState.toLowerCase()) ? cityState : "",
+    details.zip && !details.address.includes(details.zip) ? details.zip : "",
+  ].filter(Boolean).join(" · ");
+  const phoneShown = (() => {
+    const d = details.phone.replace(/\D/g, "");
+    return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : d.length === 11 && d.startsWith("1") ? `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}` : details.phone;
+  })();
   return (
     <div className={s.details}>
       {!open ? (
@@ -56,7 +66,7 @@ export function DetailsForm({ homeKey, details }: { homeKey: string; details: Ho
           <dl className={s.kv}>
             <div><dt>Name</dt><dd>{details.name}</dd></div>
             <div><dt>Email</dt><dd>{details.email}</dd></div>
-            <div><dt>Phone</dt><dd>{details.phone || "—"}</dd></div>
+            <div><dt>Phone</dt><dd>{phoneShown || "—"}</dd></div>
             <div><dt>Home</dt><dd>{where || "—"}</dd></div>
           </dl>
           <div className={s.actions}>

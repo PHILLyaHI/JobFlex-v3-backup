@@ -179,6 +179,11 @@
 .planNote { font-size: 13px; line-height: 1.45; color: var(--h-soft); overflow-wrap: anywhere; }
 .planForm { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; padding: 14px; border: 1px dashed var(--h-line-strong); border-radius: 8px; }
 .fieldWide { grid-column: 1 / -1; }
+.ideas { display: flex; flex-wrap: wrap; gap: 6px; }
+.idea { min-height: 32px; padding: 0 11px; border: 1px solid var(--h-line-strong); border-radius: 999px; background: var(--h-panel); color: var(--h-soft); font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.idea:hover { border-color: var(--h-ink); color: var(--h-ink); }
+.idea[aria-pressed="true"] { background: var(--h-green-soft); border-color: transparent; color: var(--h-green); }
+.idea:focus-visible { outline: 3px solid var(--h-blue); outline-offset: 2px; }
 .planForm .actions { grid-column: 1 / -1; }
 @media (max-width: 479px) { .planForm { grid-template-columns: 1fr; } }
 
