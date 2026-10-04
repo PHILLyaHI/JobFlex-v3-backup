@@ -743,8 +743,11 @@
   :global(.jf-blueprint .content) .hv-l2 > .sum { top: auto; }
   :global(.jf-blueprint .content) .sum-k { display: none; }
   :global(.jf-blueprint .content) .sum-l { display: flex; flex-wrap: wrap; gap: 2px 14px; min-width: 0; }
-  :global(.jf-blueprint .content) .sum-r { display: inline-flex; gap: 6px; padding: 0; border: 0; align-items: baseline; }
-  :global(.jf-blueprint .content) .sum-r dd { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 44vw; }
+  /* Each fact stays inside its column: the row shrinks to the room the
+     Convert button leaves and its value takes the ellipsis. At 44vw the
+     address ran under the button on a 390px phone. */
+  :global(.jf-blueprint .content) .sum-r { display: inline-flex; gap: 6px; padding: 0; border: 0; align-items: baseline; max-width: 100%; min-width: 0; }
+  :global(.jf-blueprint .content) .sum-r dd { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   :global(.jf-blueprint .content) .sum-p dd { font-size: 16px; }
   :global(.jf-blueprint .content) .sum-a { margin: 0; display: flex; gap: 8px; }
   :global(.jf-blueprint .content) .sum-a .btn { width: auto; height: 40px; min-height: 40px; padding: 0 12px; }
@@ -1220,10 +1223,15 @@
 
 @media (max-width: 1100px) {
   /* The summary bar is fixed to the bottom; the room for it belongs under the
-     LAST block (Recent), not under the steps — it sat under the steps, so the
-     bar lay over the end of the Recent card. */
+     LAST block of the page, whichever that is — the steps, the waiting leads
+     or Recent. It was on Recent alone, which renders only once an estimate
+     has been saved: a fresh company's phone had nothing under the steps, and
+     the bar lay over Continue at the end of the scroll (owner's iPhone,
+     2026-10-03). */
   :global(.jf-blueprint .content) .hv { padding-bottom: 0; }
-  :global(.jf-blueprint .content) .recent-card { margin-bottom: calc(24px + 104px + env(safe-area-inset-bottom, 0px)); }
+  :global(.jf-blueprint .content) .hv:last-child,
+  :global(.jf-blueprint .content) .lead-card:last-child,
+  :global(.jf-blueprint .content) .recent-card:last-child { margin-bottom: calc(24px + 104px + env(safe-area-inset-bottom, 0px)); }
 }
 
 @media (max-width: 860px) {
