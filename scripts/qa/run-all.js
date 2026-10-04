@@ -1,6 +1,8 @@
 // The whole QA set, one verdict line each:   node scripts/qa/run-all.js [--checks | --pages]
 //  · checks — every *.check.ts (plus the three older data-level harnesses): no browser, no
 //    network; the few that write to the dev database do it in throwaway organisations.
+//    The one exception is mobile-sweep.check.ts: a phone (WebKit) over its own production
+//    build on localhost — see its header.
 //  · pages  — the Playwright passes. They sign in as qa@acme.test, work ONLY in QA Co, make
 //    the records they need there (./_world, seed-phone) and remove them. Needs the dev server
 //    on localhost:$QA_PORT (default 3000; or QA_BASE_URL in full) and `playwright` resolvable
@@ -20,7 +22,9 @@ const PAGES = [
   ["ref-test.js"], ["reports-test.js"], ["trade-test.js"], ["trade-tail.js"], ["fixpass-smoke.js"], ["fence-tiers-test.js"],
   ["ann-test.js"], ["sub-test.js"], ["fence-test.js"], ["roof-test.js", "seed-roof.js"],
 ];
-const run = (cmd, args, cwd) => spawnSync(cmd, args, { cwd, encoding: "utf8", shell: process.platform === "win32", timeout: 300000 });
+const run = (cmd, args, cwd, timeout = 300000) => spawnSync(cmd, args, { cwd, encoding: "utf8", shell: process.platform === "win32", timeout, maxBuffer: 64 << 20 });
+// The phone sweep drives a browser over a production build (and rebuilds it when src/ moved on): its own clock.
+const SLOW = { "mobile-sweep.check.ts": 30 * 60_000 };
 const rows = [];
 
 // Before anything runs — a check, a seed, a browser: a local dev database, and qa@acme.test in
@@ -35,7 +39,7 @@ const rows = [];
 
 if (only !== "pages") {
   for (const f of CHECKS) {
-    const r = run("npx", ["--no-install", "tsx", "--tsconfig", "tsconfig.json", "scripts/qa/" + f], ROOT);
+    const r = run("npx", ["--no-install", "tsx", "--tsconfig", "tsconfig.json", "scripts/qa/" + f], ROOT, SLOW[f]);
     rows.push({ kind: "check", name: f, verdict: r.status === 0 ? "PASS" : "FAIL", detail: (r.stdout || "").trim().split("\n").pop().slice(0, 70) });
     console.log(`${rows.at(-1).verdict}  ${f}  · ${rows.at(-1).detail}`);
   }

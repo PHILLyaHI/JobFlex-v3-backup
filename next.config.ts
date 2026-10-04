@@ -32,6 +32,10 @@ const CSP_REPORT_ONLY = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // A production build of its own for the mobile sweep (scripts/qa/mobile-sweep.check.ts):
+  // several sessions build this checkout, and a `next build` into .next swaps the files
+  // under a running `next start` — the sweep then measures half of someone else's build.
+  ...(process.env.JOBFLEX_DIST_DIR ? { distDir: process.env.JOBFLEX_DIST_DIR } : {}),
   reactStrictMode: true,
   typedRoutes: true,
   // Readable stacks on Vercel PREVIEW builds only: a minified "reading '0' at
