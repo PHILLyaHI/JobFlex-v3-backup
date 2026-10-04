@@ -30,7 +30,28 @@
  *  platform cards and the map. Earlier events are the old campaign's clicks
  *  and the previews; "Show full history" (admins) brings them back. */
 export const TRAFFIC_SINCE = "2026-09-30";
-export const TRAFFIC_SINCE_TZ = "America/Los_Angeles";
+/** THE PAGE'S DAY (2026-10-04). "Today", "yesterday to this hour" and the ad
+ *  launch are all read in this one zone. The live view's signups used to be
+ *  the last 24 hours while its visitors were this zone's day, so at midnight
+ *  one card went to zero and the other did not. */
+export const TRAFFIC_TZ = "America/Los_Angeles";
+export const TRAFFIC_SINCE_TZ = TRAFFIC_TZ;
+/** Local midnight of the day `now` falls in, in TRAFFIC_TZ, as a UTC instant in ms. */
+export function trafficDayStartMs(now: number = Date.now()): number {
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: TRAFFIC_TZ, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const local = (ms: number) => {
+    const p = fmt.formatToParts(new Date(ms));
+    const n = (t: string) => Number(p.find((x) => x.type === t)?.value ?? 0);
+    return { y: n("year"), mo: n("month"), d: n("day"), asUtc: Date.UTC(n("year"), n("month") - 1, n("day"), n("hour"), n("minute"), n("second")) };
+  };
+  const today = local(now);
+  // Midnight of that date as if the zone were UTC, then moved by the zone's
+  // offset at that hour — read there, not now, so a day the clocks change
+  // (2 am) still starts at its own midnight.
+  const guess = Date.UTC(today.y, today.mo - 1, today.d);
+  const first = guess - (local(guess).asUtc - guess);
+  return first - (local(first).asUtc - guess);
+}
 /** The same instant in ms: 2026-09-30 00:00 PDT (UTC−7). */
 export const TRAFFIC_SINCE_MS = Date.parse("2026-09-30T00:00:00-07:00");
 export const TRAFFIC_SINCE_LABEL = "Sep 30, 2026";

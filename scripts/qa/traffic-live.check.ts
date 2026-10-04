@@ -5,6 +5,7 @@
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-live.check.ts
 import { MAP_HISTORY_LIMIT, MAP_SPANS, buildMapHistoryQuery, isMapSpan, mapHistoryEventsFromRow, mapSpanLabel } from "../../src/lib/traffic-live";
 import { PRESIDENTIAL_2024, partyOf } from "../../src/lib/usPolitics";
+import { TRAFFIC_SINCE_TZ, TRAFFIC_TZ, trafficDayStartMs } from "../../src/lib/traffic-visitor";
 import { AD_PLATFORM_KEYS, adTagsOf, buildConvertedQuery, buildLiveQuery, prospectsOf, isAdId, landingTradeOf, buildLiveTotalsQuery, classifySource, liveEventFromRow, liveTotalsFromRow, eventStage, liveHeadline, minutesIntoDay, signupLedgerSummary, signupPlanLabel, signupState, platformCards, screenLabel, shapeLive, shortId, visitSummary, type FreshSignup, type LiveEvent } from "../../src/lib/traffic-live";
 
 let bad = 0;
@@ -422,5 +423,49 @@ check("a row without a person or a time is skipped", mapHistoryEventsFromRow(hro
 // ── the states in red and blue: the 2024 presidential vote
 check("every state and DC is painted, 20 blue and 31 red", Object.keys(PRESIDENTIAL_2024).length === 51 && Object.values(PRESIDENTIAL_2024).filter((p) => p === "D").length === 20);
 check("the swing states as they went in 2024, a territory unpainted", ["PA", "MI", "WI", "GA", "AZ", "NV", "NC"].every((c) => partyOf(c) === "R") && partyOf("mn") === "D" && partyOf("NH") === "D" && partyOf("VA") === "D" && partyOf("PR") === null && partyOf(null) === null);
+
+// ── one day for the whole live view (2026-10-04): local midnight in America/Los_Angeles.
+// "Signed up today" was the last 24 hours of rows while "Visitors today" was
+// the LA day, so at midnight one card emptied and the other did not. The
+// instants below are chosen so the UTC day and the LA day disagree.
+const LA = (clock: string) => Date.parse(`2026-10-${clock}-07:00`); // PDT
+const org = (id: string, at: number, utmSource = ""): FreshSignup => ({ orgId: id, orgName: id, ownerEmail: `${id}@example.com`, ownerName: "", createdAt: new Date(at).toISOString(), utmSource, utmMedium: utmSource ? "paid" : "", utmCampaign: "", landingIndustry: "" });
+check("the page's zone is one constant, and the ad launch is read in it", TRAFFIC_TZ === "America/Los_Angeles" && TRAFFIC_SINCE_TZ === TRAFFIC_TZ);
+check("the day starts at local midnight in Los Angeles, not at UTC midnight",
+  trafficDayStartMs(LA("02T00:10:00")) === LA("02T00:00:00") && trafficDayStartMs(LA("01T23:50:00")) === LA("01T00:00:00")
+  && new Date(trafficDayStartMs(LA("02T00:10:00"))).toISOString() === "2026-10-02T07:00:00.000Z");
+check("…also on the days the clocks change: Nov 1 starts at midnight PDT and is 25 hours long, Mar 14 2027 at midnight PST",
+  trafficDayStartMs(Date.parse("2026-11-01T22:00:00-08:00")) === Date.parse("2026-11-01T00:00:00-07:00")
+  && trafficDayStartMs(Date.parse("2027-03-14T22:00:00-07:00")) === Date.parse("2027-03-14T00:00:00-08:00"));
+// 23:50 LA on Oct 1 and 00:10 LA on Oct 2 are both Oct 2 in UTC (06:50Z, 07:10Z): a UTC day would count it.
+const late = org("late", LA("01T23:50:00"), "facebook");
+const atTen = shapeLive([], [late], LA("02T00:10:00"));
+check("a signup at 23:50 LA is not counted at 00:10 LA — though both are the same UTC day and 20 minutes apart",
+  late.createdAt.slice(0, 10) === new Date(LA("02T00:10:00")).toISOString().slice(0, 10)
+  && atTen.today.signups === 0 && atTen.today.fromAds === 0 && atTen.otherSignups.length === 0 && atTen.platforms.every((p) => p.signedUpToday === 0),
+  JSON.stringify(atTen.today));
+const early = org("early", LA("02T00:05:00"), "facebook");
+const both = shapeLive([], [late, early], LA("02T00:10:00"));
+check("a signup at 00:05 LA is counted at 00:10 LA: the card, its \"from ads\", the platform card and the list under them",
+  both.today.signups === 1 && both.today.fromAds === 1 && both.otherSignups.length === 1 && both.otherSignups[0].orgName === "early"
+  && both.platforms.find((p) => p.platform === "facebook")?.signedUpToday === 1, JSON.stringify(both.today));
+// 16:30 LA and 17:30 LA on Oct 1 straddle UTC midnight (23:30Z, 00:30Z): a UTC day would drop it.
+check("a signup at 16:30 LA is still today at 17:30 LA, though UTC has turned the day in between",
+  shapeLive([], [org("afternoon", LA("01T16:30:00"))], LA("01T17:30:00")).today.signups === 1
+  && new Date(LA("01T16:30:00")).toISOString().slice(0, 10) !== new Date(LA("01T17:30:00")).toISOString().slice(0, 10));
+check("the last minute of the day still counts everything since its midnight, 23 hours back",
+  shapeLive([], [org("dawn", LA("01T00:00:30")), org("eve", LA("01T23:58:00"))], LA("01T23:59:00")).today.signups === 2);
+// Yesterday's row is still used to NAME a visit that is on the list across midnight — only the count leaves it out.
+const across = shapeLive([
+  ev({ person: "p-mid", at: LA("01T23:45:00"), pathname: "/auth/register" }),
+  ev({ person: "p-mid", at: LA("01T23:50:00"), event: "jf_signup_completed", pathname: "/auth/register", outcome: "trial_started", plan: "pro", verified: "true" }),
+], [late], LA("02T00:10:00"));
+check("a visit that signed up at 23:50 is still named after its account at 00:10; today's count stays at zero",
+  across.visitors[0]?.signup?.orgName === "late" && across.today.signups === 0, JSON.stringify(across.today));
+check("the sentence under the cards says today's count, and says nothing of signups on a day minutes old with none",
+  /1 signed up today/.test(liveHeadline({ ...base, todayVisitors: 3, todaySignups: both.today.signups, dayAgeMinutes: 10 }))
+  && !/signed up today/.test(liveHeadline({ ...base, todayVisitors: 0, todaySignups: atTen.today.signups, dayAgeMinutes: 10, yesterdayTotal: 62 })));
+check("visitors today and yesterday-to-this-hour are cut by the same local day in the query",
+  /toDate\(toTimeZone\(now\(\), 'America\/Los_Angeles'\)\) AS today_local/.test(buildLiveTotalsQuery(TRAFFIC_TZ)) && /toTimeZone\(timestamp, 'America\/Los_Angeles'\) AS lts/.test(buildLiveTotalsQuery(TRAFFIC_TZ)));
 
 process.exit(bad ? 1 : 0);

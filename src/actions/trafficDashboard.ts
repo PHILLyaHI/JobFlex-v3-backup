@@ -43,16 +43,13 @@ async function freshSignups(hours = 24, take = 60): Promise<FreshSignup[]> {
  *  among them named (2026-09-28). `includeDevelopment` shows localhost too. */
 export async function getLiveTraffic(input: Record<string, unknown> = {}): Promise<LiveReport> {
   await requirePlatformAdmin();
-  const signups = await freshSignups();
+  // 25 hours: the day the clocks go back is that long, and "today" must hold all of it.
+  const signups = await freshSignups(25);
   const report = await liveTraffic(signups, {
     includeDevelopment: input.includeDevelopment === true,
-    // "Today" is a LOCAL day, and it has to be the same local day on the
-    // server's first paint as in the client's polls. Reading it through
-    // parseTrafficFilters gives both the one default (America/Los_Angeles);
-    // defaulting to UTC here meant the page rendered one day's figure and
-    // then replaced it with another a few seconds later, and paid for two
-    // all-time queries to do it.
-    timezone: parseTrafficFilters({ timezone: input.timezone }).timezone,
+    // "Today" is the page's one day (TRAFFIC_TZ, lib/traffic-visitor) for
+    // the visitors and the signups alike — not the caller's zone, and not
+    // the last 24 hours the signup rows above reach back.
     // Live mode (15 s) asks for a shorter server cache so each tick moves.
     fast: input.fast === true,
     // Counted from TRAFFIC_SINCE unless the admin asks for the full history.

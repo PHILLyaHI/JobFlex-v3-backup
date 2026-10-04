@@ -1,7 +1,7 @@
 import type { TrafficFilters } from "./traffic-contract";
 import { TRAFFIC_EVENTS as E } from "./traffic-contract";
 // Who counts: one rule for every figure on the page (2026-10-01).
-import { BROWSER_TYPE_SQL, HOST_SQL, IN_APP_SQL, PERSON_KEY_SQL, TRAFFIC_SINCE, UA_SQL, sinceSql, visitorRuleSql, type VisitorScope } from "./traffic-visitor";
+import { BROWSER_TYPE_SQL, HOST_SQL, IN_APP_SQL, PERSON_KEY_SQL, TRAFFIC_SINCE, TRAFFIC_TZ, UA_SQL, sinceSql, visitorRuleSql, type VisitorScope } from "./traffic-visitor";
 
 const DAY = 86_400_000;
 export function dateInZone(date: Date, timezone: string): string {
@@ -11,7 +11,7 @@ export function shiftDate(date: string, days: number): string {
   return new Date(Date.parse(date + "T12:00:00Z") + days * DAY).toISOString().slice(0, 10);
 }
 export function parseTrafficFilters(input: Record<string, unknown> = {}, now = new Date()): TrafficFilters {
-  const timezone = typeof input.timezone === "string" ? input.timezone : "America/Los_Angeles";
+  const timezone = typeof input.timezone === "string" ? input.timezone : TRAFFIC_TZ;
   try { new Intl.DateTimeFormat("en", { timeZone: timezone }).format(now); } catch { throw new Error("Choose a valid timezone."); }
   const today = dateInZone(now, timezone);
   const fullHistory = input.fullHistory === true || input.fullHistory === "true";

@@ -26,7 +26,7 @@
 //     WINDOW_MINUTES they are "just left", shown dimmer, then gone.
 import { TRAFFIC_EVENTS as E, pageLabel, type StaleNote } from "./traffic-contract";
 // Who counts and what is "from an ad": one rule for the whole page (2026-10-01).
-import { BROWSER_TYPE_SQL, HOST_SQL, UA_SQL, carriesAdTag, isCountedEvent, sinceSql, visitorRuleSql } from "./traffic-visitor";
+import { BROWSER_TYPE_SQL, HOST_SQL, UA_SQL, carriesAdTag, isCountedEvent, sinceSql, trafficDayStartMs, visitorRuleSql } from "./traffic-visitor";
 import { resolveLandingVariant, VARIANT_TRADE } from "@/components/v3/landing-e/landing-variants";
 
 export const LIVE_WINDOW_MINUTES = 30;
@@ -83,7 +83,10 @@ export interface LiveEvent {
   browserType: string;
 }
 
-/** An organization created today, from the database. */
+/** An organization created in the last day (or the map's span), from the
+ *  database. The rows reach back 24 hours so a visit can be tied to its
+ *  account across midnight; "today" counts only those made since local
+ *  midnight in TRAFFIC_TZ (shapeLive). */
 export interface FreshSignup {
   orgId: string;
   orgName: string;
@@ -876,7 +879,12 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     signedUp: visitors.filter((v) => v.stage === "signed-up").length,
     members: visitors.filter((v) => v.active && v.stage === "member").length,
   };
-  const otherSignups = signups
+  // TODAY is the day in TRAFFIC_TZ, the same day "Visitors today" counts —
+  // not the last 24 hours the rows cover (2026-10-04: at 00:10 the card still
+  // showed yesterday's signups beside a visitors card that had gone to zero).
+  const dayStart = trafficDayStartMs(now);
+  const todays = signups.filter((s) => Date.parse(s.createdAt) >= dayStart);
+  const otherSignups = todays
     .filter((s) => !claimed.has(s.orgId))
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     .slice(0, 12)
@@ -889,8 +897,8 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     totals: null,
     dayAgeMinutes: 0,
     headline: "",
-    platforms: platformCards(visitors, signups),
-    today: { signups: signups.length, fromAds: signups.filter((s) => signupSource(s).fromAd).length },
+    platforms: platformCards(visitors, todays),
+    today: { signups: todays.length, fromAds: todays.filter((s) => signupSource(s).fromAd).length },
     otherSignups,
     converted: [],
   };

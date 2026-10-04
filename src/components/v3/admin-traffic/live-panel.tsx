@@ -98,7 +98,7 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
     const id = ++request.current;
     setPending(true);
     try {
-      const next = await getLiveTraffic({ includeDevelopment: dev, timezone, fast, fullHistory });
+      const next = await getLiveTraffic({ includeDevelopment: dev, fast, fullHistory });
       // Only what changed is handed down: an answer with the same visitors
       // keeps the same objects, so the map, the cards and the rows skip their
       // render (2026-10-01).
@@ -112,7 +112,7 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
     } finally {
       if (id === request.current) setPending(false);
     }
-  }, [timezone, fullHistory]);
+  }, [fullHistory]);
   // "Show full history" turned on or off above: the totals are counted again at once.
   const firstWindow = useRef(true);
   useEffect(() => {

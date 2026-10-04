@@ -85,18 +85,18 @@ async function main() {
 
   // ── the live view
   later(10);
-  const first = await getLiveTraffic([], { timezone: "America/Los_Angeles" });
+  const first = await getLiveTraffic([]);
   check("PostHog up: the live view reads, with its totals, nothing stale",
     first.status === "ok" && first.visitors.length === 1 && first.totals?.allTime === 700 && !first.stale, `${first.status} · ${first.visitors.length} · ${first.message ?? ""}`);
 
   later(10); plan.down = (name) => name === "live totals";
-  const noTotals = await getLiveTraffic([], { timezone: "America/Los_Angeles" });
+  const noTotals = await getLiveTraffic([]);
   check("the totals query down: the window is fresh, the totals are the last ones read, and the note says which part is old",
     noTotals.status === "ok" && noTotals.visitors.length === 1 && noTotals.totals?.allTime === 700 && noTotals.stale?.scope === "the totals" && noTotals.fetchedAt !== first.fetchedAt,
     JSON.stringify(noTotals.stale ?? null));
 
   later(10); plan.down = () => true;
-  const down = await getLiveTraffic([], { timezone: "America/Los_Angeles" });
+  const down = await getLiveTraffic([]);
   check("PostHog down: the last report is shown, whole, dated to when it was read",
     down.status === "ok" && down.visitors.length === 1 && down.totals?.allTime === 700 && down.stale?.since === noTotals.fetchedAt && down.fetchedAt === noTotals.fetchedAt && !down.stale?.scope && /503/.test(down.stale?.reason ?? ""),
     JSON.stringify(down.stale ?? null));
@@ -104,12 +104,12 @@ async function main() {
     && /^PostHog unavailable for the totals, showing data from /.test(staleLabel({ since: new Date().toISOString(), reason: "", scope: "the totals" }, "UTC"))
     && /showing data from [A-Z][a-z]{2} \d{1,2}, \d{1,2}:\d\d [AP]M$/.test(staleLabel({ since: "2026-09-30T19:00:00Z", reason: "" }, "UTC")), staleLabel({ since: "2026-09-30T19:00:00Z", reason: "" }, "UTC"));
 
-  const cold = await getLiveTraffic([], { timezone: "America/Los_Angeles", includeDevelopment: true });
+  const cold = await getLiveTraffic([], { includeDevelopment: true });
   check("a reading that was never answered is the error, in words — the banner is for an empty cache only",
     cold.status === "error" && /503/.test(cold.message ?? "") && !cold.stale && cold.visitors.length === 0, `${cold.status} · ${cold.message}`);
 
   later(10); plan.down = () => false;
-  const back = await getLiveTraffic([], { timezone: "America/Los_Angeles" });
+  const back = await getLiveTraffic([]);
   check("PostHog back: a fresh report, the note gone", back.status === "ok" && !back.stale && back.fetchedAt !== down.fetchedAt);
 
   // ── the map's longer span

@@ -2,6 +2,7 @@ import type { ExperimentResult, StaleNote, StageVisitor, StageVisitorsReport, Tr
 import { buildExperimentsQuery, buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
 import { CONVERTED_HOURS, MAP_HISTORY_LIMIT, buildConvertedQuery, buildLiveQuery, buildLiveTotalsQuery, buildMapHistoryQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, mapHistoryEventsFromRow, minutesIntoDay, shapeLive, shortId, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair, type MapHistory, type MapSpan } from "./traffic-live";
 import { analystSessionFromRow, buildAnalystQuery, type LandingSession } from "./traffic-analyst";
+import { TRAFFIC_TZ } from "./traffic-visitor";
 
 /** The last half hour of events, one PostHog query, shared by every admin
  *  looking for LIVE_CACHE_MS — the query endpoint's budget is small, and the
@@ -69,9 +70,11 @@ export async function fetchLiveTotals(timezone: string, fullHistory = false): Pr
   return promise;
 }
 
-/** The totals, or the last ones read when PostHog does not answer for them. */
-const liveTotalsOrLast = (timezone: string, fullHistory: boolean) =>
-  orLastGood(`totals|${timezone || "UTC"}|${fullHistory ? 1 : 0}`, fetchLiveTotals(timezone, fullHistory), "the totals");
+/** The totals, or the last ones read when PostHog does not answer for them.
+ *  Their "today" and "yesterday to this hour" are the page's day, TRAFFIC_TZ —
+ *  the same day the signups beside them are counted in. */
+const liveTotalsOrLast = (fullHistory: boolean) =>
+  orLastGood(`totals|${fullHistory ? 1 : 0}`, fetchLiveTotals(TRAFFIC_TZ, fullHistory), "the totals");
 
 /** The map over a longer span (2026-10-03, lib/traffic-live buildMapHistoryQuery):
  *  one row per person, cached per span — a month's query reads every event,
@@ -121,20 +124,20 @@ export async function getMapHistory(minutes: MapSpan, signups: FreshSignup[], op
 }
 
 /** The live report: the window's visitors shaped with the day's signups. */
-export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDevelopment?: boolean; timezone?: string; fast?: boolean; fullHistory?: boolean } = {}): Promise<LiveReport> {
+export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDevelopment?: boolean; fast?: boolean; fullHistory?: boolean } = {}): Promise<LiveReport> {
   const fetchedAt = new Date().toISOString();
   try {
     if (!posthogApiConfig()) return { ...shapeLive([], signups, Date.now(), opts), status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID.", fetchedAt };
   } catch (err) { return { ...shapeLive([], signups, Date.now(), opts), status: "error", message: (err as Error).message, fetchedAt }; }
-  // One kept report per reading of the window (localhost, the day's zone, the history switch).
-  const keptKey = `live|${opts.includeDevelopment ? 1 : 0}|${opts.timezone || "UTC"}|${opts.fullHistory ? 1 : 0}`;
+  // One kept report per reading of the window (localhost, the history switch).
+  const keptKey = `live|${opts.includeDevelopment ? 1 : 0}|${opts.fullHistory ? 1 : 0}`;
   try {
     // The totals must never take the live view down with them: a failure
     // there leaves the window intact with the totals it last read, or — with
     // none to fall back on — the panel simply prints no totals.
     const [events, totalsRead, dayRead] = await Promise.all([
       fetchLiveEvents(opts.fast ? LIVE_FAST_CACHE_MS : LIVE_CACHE_MS),
-      liveTotalsOrLast(opts.timezone || "UTC", !!opts.fullHistory).catch(() => null),
+      liveTotalsOrLast(!!opts.fullHistory).catch(() => null),
       // Nor the converts: without them the prospects map simply shows the window.
       orLastGood("converted", fetchConvertedEvents()).catch(() => null),
     ]);
@@ -145,7 +148,7 @@ export async function getLiveTraffic(signups: FreshSignup[], opts: { includeDeve
     // The day's converts, shaped the same way over a day-long window and kept
     // only where the signup is on the record; the prospects map merges them.
     const converted = shapeLive(dayEvents, signups, Date.now(), { ...opts, windowMinutes: CONVERTED_HOURS * 60 }).visitors.filter((v) => v.stage === "signed-up");
-    const dayAgeMinutes = minutesIntoDay(opts.timezone || "UTC");
+    const dayAgeMinutes = minutesIntoDay(TRAFFIC_TZ);
     // The busiest platform of the window, for the sentence.
     const top = [...shaped.platforms].sort((a, b) => b.visitors - a.visitors)[0];
     const headline = liveHeadline({
@@ -332,7 +335,7 @@ async function loadReport(filters: TrafficFilters, cacheKey: string): Promise<Tr
   // its own count; the pair has no column for it.
   if (filters.environment !== "development") {
     try {
-      const read = await liveTotalsOrLast(filters.timezone, filters.fullHistory);
+      const read = await liveTotalsOrLast(filters.fullHistory);
       const t = filters.environment === "all" ? read.value.all : read.value.production;
       report.lifetime = t.allTime; report.today = t.today;
       if (read.stale) { old.push(read.stale); oldNames.push("all-time"); }
