@@ -605,17 +605,30 @@
 :global(.jf-blueprint) .mapOthers i { width:8px; height:8px; flex:0 0 auto; }
 :global(.jf-blueprint) .mapOthers span { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
 :global(.jf-blueprint) .mapOthers small { flex:0 0 auto; color:var(--muted); }
-:global(.jf-blueprint) .mapLegend { display:flex; flex-wrap:wrap; align-items:center; gap:6px 18px; margin-top:12px; font:600 11px var(--font-mono); color:var(--ink-soft); }
+/* Under the map (2026-10-04): one tight line — the pins on the map and the
+   places — with the guide's "?" pinned to its right end (a column kept free
+   for it, so it never wraps onto a line of its own, and it is the whole line
+   when the map is empty); the manual opens on demand (.mapHelp). */
+:global(.jf-blueprint) .mapLegend { position:relative; display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; min-height:22px; margin-top:8px; padding-right:32px; font:600 11px var(--font-mono); color:var(--ink-soft); }
 :global(.jf-blueprint) .mapLegend > span { display:inline-flex; align-items:center; gap:6px; }
 :global(.jf-blueprint) .mapLegend svg { width:12px; height:16px; }
 :global(.jf-blueprint) .mapLegend b { color:var(--ink); }
 :global(.jf-blueprint) .mapAdRing { width:12px; height:12px; border:2px solid var(--map-ad); border-radius:50%; }
 :global(.jf-blueprint) .mapLegendNote { color:var(--muted); }
-:global(.jf-blueprint) .mapChips { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
-:global(.jf-blueprint) .mapChips > span { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
-:global(.jf-blueprint) .mapChips button { min-height:36px; border:1.5px solid var(--traffic-line); border-radius:2px; padding:6px 12px; background:var(--traffic-plate); color:var(--ink); font:700 11px var(--font-mono); }
+:global(.jf-blueprint) .mapChips { flex-wrap:wrap; }
+:global(.jf-blueprint) .mapChips > em { font:700 11px var(--font-mono); text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+:global(.jf-blueprint) .mapChips button { min-height:24px; border:1.5px solid var(--traffic-line); border-radius:2px; padding:2px 8px; background:var(--traffic-plate); color:var(--ink); font:700 11px var(--font-mono); cursor:pointer; }
 :global(.jf-blueprint) .mapChips button:hover { border-color:var(--blueprint); }
-:global(.jf-blueprint) .mapNote { margin:10px 0 0; font:600 11px/1.6 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .mapHelpToggle { position:absolute; right:0; top:0; width:22px; height:22px; display:grid; place-items:center; padding:0; border:1.5px solid var(--traffic-line); border-radius:2px; background:transparent; color:var(--muted); font:700 11px var(--font-mono); cursor:pointer; }
+:global(.jf-blueprint) .mapHelpToggle:hover { border-color:var(--ink); color:var(--ink); }
+:global(.jf-blueprint) .mapHelpToggle[aria-expanded="true"] { border-color:var(--ink); background:var(--ink); color:var(--paper); }
+:global(.jf-blueprint) .mapHelpToggle:focus-visible { outline:2px solid var(--sky); outline-offset:2px; }
+:global(.jf-blueprint) .mapHelp { margin-top:8px; padding:10px 12px; border:1.5px solid var(--traffic-line); border-radius:2px; background:var(--traffic-plate); font:600 11px/1.6 var(--font-mono); color:var(--ink-soft); }
+:global(.jf-blueprint) .mapHelp ul { margin:0; padding-left:16px; list-style:square; }
+:global(.jf-blueprint) .mapHelpKey { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; margin:8px 0 0; }
+:global(.jf-blueprint) .mapHelpKey > span { display:inline-flex; align-items:center; gap:6px; }
+:global(.jf-blueprint) .mapHelpKey svg { width:12px; height:16px; }
+@media (max-width: 560px) { :global(.jf-blueprint) .mapLegend { min-height:32px; padding-right:42px; } :global(.jf-blueprint) .mapChips button { min-height:36px; padding:6px 12px; } :global(.jf-blueprint) .mapHelpToggle { width:32px; height:32px; } }
 :global(.jf-blueprint) .liveSpan { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:14px 24px 10px; }
 :global(.jf-blueprint) .liveSpan > span { font:600 11px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .liveRow[data-selected="true"] { outline:2px solid var(--blueprint); outline-offset:-2px; }
