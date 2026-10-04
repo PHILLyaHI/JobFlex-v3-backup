@@ -23,6 +23,7 @@ import {
   buildPartnerInvite,
   buildTestEmail,
 } from "./build/platform";
+import { trafficDigestFixture } from "./traffic-fixture";
 
 const ORG = { kind: "org" as const, name: "Cedar & Oak Builders", logoUrl: null };
 const FOOT = { name: "Cedar & Oak Builders", contact: "(503) 555-0142", ref: "Ref A-2481" };
@@ -627,5 +628,11 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
     label: "22 · buildTestEmail()",
     note: "Smallest build in the system — lockup, one prose line, footer. No box, no CTA. Uses the CONTRACTOR lockup (not platform) to prove the org's own mark renders.",
     doc: buildTestEmail({ org: BRAND }),
+  },
+  {
+    id: "b-traffic-digest",
+    label: "23 · buildTrafficDigest() — the analyst's daily email",
+    note: "Platform lockup, to SUPPORT_NOTIFY_EMAIL. Made-up sessions read by the real analyst; the reading's Markdown follows the CTA block by block.",
+    doc: trafficDigestFixture(),
   },
 ];

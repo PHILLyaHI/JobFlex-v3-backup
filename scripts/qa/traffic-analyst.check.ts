@@ -5,6 +5,9 @@
 import { ANALYST_MIN_AD_VISITS, adNameOf, analyse, analystSessionFromRow, analystWindowFrom, buildAnalystQuery, periodWords, type LandingSession } from "../../src/lib/traffic-analyst";
 import { SESSION_COLUMNS, SESSION_EXTRA_COLUMNS, TONE_WORD, analystToMarkdown, clicksDifference, sessionsToCsv } from "../../src/lib/traffic-export";
 import { adMoney } from "../../src/lib/traffic-money";
+import { parseSnapshot, snapshotKey, trendDays, trendOf, type AnalystSnapshot } from "../../src/lib/traffic-history";
+import { buildTrafficDigest } from "../../src/lib/email/build/traffic";
+import { renderEmail } from "../../src/lib/email/renderEmail";
 import { TRAFFIC_SINCE_MS } from "../../src/lib/traffic-visitor";
 
 let bad = 0;
@@ -170,6 +173,26 @@ check("ad → money counts each ad's and campaign's accounts by state, paying fi
 const mdMoney = analystToMarkdown({ ...result, report: mixed, money }, { timezone: "America/Los_Angeles" });
 check("the Markdown carries ad → money, ads and campaigns", /## Ads → money · accounts since Sep 30, 2026/.test(mdMoney) && mdMoney.includes("| Roof · 40 s v1 | A1 | C1 | 30 | 2 | 1 | 1 | 0 | 0 |") && mdMoney.includes("| Roofing campaign | C1 | 60 | 4 | 2 | 1 | 1 | 0 |") && /7 accounts: 3 on a trial, 1 paying, 1 lapsed, 2 other; 1 carry no ad tag/.test(mdMoney), mdMoney.split("## Ads → money")[1]?.slice(0, 500));
 check("ours against Ads Manager is worded as on the page", clicksDifference(88, 100) === "-12%" && clicksDifference(110, 100) === "+10%" && clicksDifference(5, undefined) === "--" && clicksDifference(5, 0) === "--");
+
+// ── stage 3: the history, the trend, the digest email (2026-10-04)
+const snap = (day: string, rep: ReturnType<typeof analyse>): AnalystSnapshot => ({ day, savedAt: `${day}T15:00:00.000Z`, fetchedAt: `${day}T15:00:00.000Z`, report: rep });
+const days14 = trendDays("2026-10-04");
+check("the trend covers fourteen Los Angeles days ending today, oldest first", days14.length === 14 && days14[0] === "2026-09-21" && days14[13] === "2026-10-04");
+check("a snapshot row round-trips, and a row that is not one is refused", parseSnapshot(JSON.stringify(snap("2026-10-04", bouncy)))?.report.headline === bouncy.headline && parseSnapshot("{}") === null && parseSnapshot("not json") === null && snapshotKey("2026-10-04") === "analyst:2026-10-04");
+const tr = trendOf([snap("2026-10-04", slowScreen), snap("2026-10-02", bouncy), snap("2026-09-01", mixed)], days14);
+const tIds = (r: ReturnType<typeof analyse>) => new Set(r.findings.map((f) => f.id));
+const appearedIds = slowScreen.findings.filter((f) => !tIds(bouncy).has(f.id)).map((f) => f.id).sort().join();
+const goneIds = bouncy.findings.filter((f) => !tIds(slowScreen).has(f.id)).map((f) => f.id).sort().join();
+check("the trend keeps the days in range, one row per finding id, tone and sample per day", tr.readings.map((r) => r.day).join() === "2026-10-02,2026-10-04" && tr.rows.length === new Set([...tIds(slowScreen), ...tIds(bouncy)]).size && tr.rows.every((r) => Object.keys(r.cells).length === 14) && tr.rows.find((r) => r.id === "bounce")!.cells["2026-10-02"]!.n === find(bouncy, "bounce")!.n && tr.rows.find((r) => r.id === "bounce")!.cells["2026-10-03"] === null);
+check("appeared / gone / changed compare the last reading with the one before it, by id", !!tr.changes && tr.changes.against === "2026-10-02" && tr.changes.appeared.map((c) => c.id).sort().join() === appearedIds && tr.changes.gone.map((c) => c.id).sort().join() === goneIds && tr.changes.toneChanged.every((c) => c.from !== c.tone), JSON.stringify(tr.changes && { a: tr.changes.appeared.map((c) => c.id), g: tr.changes.gone.map((c) => c.id), t: tr.changes.toneChanged.map((c) => c.id) }));
+check("rows still found in the latest reading come first, bad before warn", tr.rows.slice(0, slowScreen.findings.length).every((r) => r.cells["2026-10-04"] !== null) && tr.rows[0].tone === "bad");
+check("one reading: no comparison yet", trendOf([snap("2026-10-04", bouncy)], days14).changes === null && trendOf([], days14).readings.length === 0);
+const digestMd = analystToMarkdown({ ...result, report: slowScreen }, { timezone: "America/Los_Angeles" });
+const digest = buildTrafficDigest({ snapshot: snap("2026-10-04", slowScreen), changes: tr.changes, markdown: digestMd, href: "https://www.jobflex.app/admin/traffic", timezone: "America/Los_Angeles" });
+const fixN = slowScreen.findings.filter((f) => f.tone === "bad").length;
+const html = renderEmail(digest).html;
+check("the digest email: subject and kicker count FIX and WATCH, the funnel in the box, since-yesterday in the cond row", new RegExp(`^Traffic 2026-10-04: ${fixN} to fix`).test(digest.subject) && digest.kicker!.tone === "bad" && digest.box!.some((b) => b.type === "field" && b.label === "Opened the form") && digest.box!.at(-1)!.type === "cond" && digest.cta!.href.endsWith("/admin/traffic"), digest.subject);
+check("the digest email carries the whole Markdown, every finding's title, evidence and action", digest.after!.join("\n\n") === digestMd.trim().split(/\n{2,}/).map((b) => b.trim()).join("\n\n") && slowScreen.findings.every((f) => html.includes(f.title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;")) || html.includes(f.id)));
 
 check("a CSV cell that a spreadsheet would run is neutralised", sessionsToCsv([sess({ utmContent: "=HYPERLINK(1)" })]).includes(`"'=HYPERLINK(1)"`));
 
