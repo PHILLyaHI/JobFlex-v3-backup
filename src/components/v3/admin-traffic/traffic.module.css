@@ -744,3 +744,8 @@
 @media (max-width: 560px) {
   :global(.jf-blueprint) .mapBox:not([data-wide="true"]) .mapZoom button:last-child { order:-1; border-bottom:1px solid var(--traffic-line); }
 }
+/* The analyst's steps (2026-10-04): a finding may carry its fix as a list. */
+:global(.jf-blueprint) .analystSteps { list-style:decimal; margin:6px 0 2px; padding-left:22px; font:500 12.5px/1.5 var(--font); color:var(--ink-soft); }
+/* A step is a plain numbered line: the finding row's own grid, frame and tint (.analystFindings li) stop here. */
+:global(.jf-blueprint) .analystFindings .analystSteps li { display:list-item; grid-template-columns:none; gap:0; padding:0 0 0 2px; margin:0 0 4px; border:0; background:none; }
+:global(.jf-blueprint) .analystFindings .analystSteps li::marker { font:700 11px var(--font-mono); color:var(--muted); }

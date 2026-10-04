@@ -44,6 +44,19 @@ import {
 
 // Title is the donor's <head> verbatim. The mockup ships no <meta
 // name="description">; the line below is this repo's own convention.
+/* STEP 1 BEFORE THE JAVASCRIPT (2026-10-04). On a phone the fields are drawn
+   about three seconds before the page's script takes them over, and until
+   then a Continue press was a plain browser submit — the page reloaded empty,
+   the ad's tags gone — and anything typed was wiped the moment React took
+   over. This runs as the HTML streams in, ahead of the form: it holds an
+   early Continue, keeps what was typed and notes both moments;
+   register-content restores the fields when it is live and reports them to
+   the analyst as `signup_step1`. Plain script on purpose: it has to run
+   before any bundle has arrived. */
+const STEP1_PRELUDE = `(function(){var s={typedAt:0,submitAt:0,values:{},ready:false};window.__jfStep1=s;
+document.addEventListener("input",function(e){var el=e.target;if(s.ready||!el||!el.form||el.form.id!=="step1Form"||!el.id)return;if(!s.typedAt)s.typedAt=Math.round(performance.now());s.values[el.id]=el.value;},true);
+document.addEventListener("submit",function(e){var f=e.target;if(s.ready||!f||f.id!=="step1Form")return;e.preventDefault();if(!s.submitAt)s.submitAt=Math.round(performance.now());},true);})();`;
+
 export const metadata: Metadata = {
   title: "JobFlex · Create account",
   description: "Set up your shop — your organization, your login, your first quote.",
@@ -139,14 +152,17 @@ export default async function RegisterPage({
      Google button from the first paint (lib/inAppBrowser). */
   const inAppBrowser = detectInAppBrowser((await headers()).get("user-agent"));
   return (
-    <RegisterResponsive
-      requiresCard={trialRequiresCard() || (await cardlessTrialsPaused())}
-      initialError={googleError}
-      setup={setup}
-      google={google}
-      industry={industry}
-      utm={hasUtm(utm) ? utm : null}
-      inAppBrowser={inAppBrowser}
-    />
+    <>
+      <script dangerouslySetInnerHTML={{ __html: STEP1_PRELUDE }} />
+      <RegisterResponsive
+        requiresCard={trialRequiresCard() || (await cardlessTrialsPaused())}
+        initialError={googleError}
+        setup={setup}
+        google={google}
+        industry={industry}
+        utm={hasUtm(utm) ? utm : null}
+        inAppBrowser={inAppBrowser}
+      />
+    </>
   );
 }

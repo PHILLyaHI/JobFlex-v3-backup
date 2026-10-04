@@ -408,6 +408,8 @@ export function RegisterContent({
   }, [step, industry, ret?.sessionId, requiresCard]);
   const leadSent = React.useRef(false);
   const registrationSent = React.useRef(false);
+  /** Step 1's outcome for the analyst: passed, or refused and why. */
+  const step1Outcome = (outcome: "continue" | "error", reason = "") => trackTraffic(TRAFFIC_EVENTS.signupStep1, { outcome, reason, variant: "e" });
   React.useEffect(() => {
     if (step === 4 && !registrationSent.current) {
       registrationSent.current = true;
@@ -512,6 +514,38 @@ export function RegisterContent({
   // Step 1 is now gated on a server answer (is this email free?), so it has a
   // pending state the Continue button reads.
   const [checking, setChecking] = React.useState(false);
+  /* THE FORM BEFORE THE JAVASCRIPT (2026-10-04; the inline prelude in
+     app/(auth)/auth/register/page.tsx). On a phone the fields are drawn ~3 s
+     before this script takes them over. Whatever was typed in that window is
+     put back (React's hydration had reset the fields), a Continue pressed
+     then is noted, and the analyst hears once per form load how long the
+     form took to be usable and whether the visitor was ahead of it. */
+  const step1Live = React.useRef(false);
+  React.useEffect(() => {
+    if (step1Live.current || setupMode || googlePrefill) return;
+    step1Live.current = true;
+    const w = window as Window & { __jfStep1?: { typedAt: number; submitAt: number; values: Record<string, string>; ready: boolean } };
+    const pre = w.__jfStep1;
+    if (pre) {
+      pre.ready = true;
+      const v = { ...pre.values };
+      pre.values = {};
+      // On the next tick, not in the effect itself: the fields are restored once the form is live.
+      window.setTimeout(() => {
+        if (v.name) setName(v.name);
+        if (v.email) setEmail(v.email);
+        if (v.password) setPassword(v.password);
+        if (v.password2) setPassword2(v.password2);
+      }, 0);
+    }
+    trackTraffic(TRAFFIC_EVENTS.signupStep1, {
+      outcome: "ready", ready_ms: Math.round(performance.now()),
+      typed_before_ready: !!pre?.typedAt, typed_ms: pre?.typedAt || -1,
+      early_submit: !!pre?.submitAt, submit_ms: pre?.submitAt || -1,
+      variant: "e",
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, as the form becomes live
+  }, []);
 
   const [addr, setAddr] = React.useState("");
   const [phone, setPhone] = React.useState(setup?.companyPhone || setup?.phone || "");
@@ -924,15 +958,18 @@ export function RegisterContent({
     const em = email.trim();
     if (!n || !em) {
       setErr1("Name and email are required.");
+      step1Outcome("error", "missing");
       return;
     }
     if (em.indexOf("@") === -1) {
       setErr1("Enter a valid email address.");
+      step1Outcome("error", "email_invalid");
       return;
     }
     if (!google) {
       if (password.length < 8) {
         setErr1("Password must be at least 8 characters.");
+        step1Outcome("error", "password_short");
         return;
       }
       /* The two must match before anything is asked of the server. The
@@ -942,6 +979,7 @@ export function RegisterContent({
         setPw2Checked(true);
         setErr1(null);
         pw2Ref.current?.focus();
+        step1Outcome("error", "password_mismatch");
         return;
       }
     }
@@ -958,14 +996,17 @@ export function RegisterContent({
             ? "That email signs in with Google. Open this page in your browser (below) to continue with Google."
             : msg,
         );
+        step1Outcome("error", /Google/.test(msg) ? "email_google" : /temporary|throwaway|disposable/i.test(msg) ? "email_disposable" : /Too many/.test(msg) ? "rate_limited" : /valid email/.test(msg) ? "email_invalid" : "email_taken");
         return;
       }
     } catch (err: unknown) {
       setErr1(err instanceof Error ? err.message : "Couldn't check that email. Try again.");
+      step1Outcome("error", "check_failed");
       return;
     } finally {
       setChecking(false);
     }
+    step1Outcome("continue");
     /* Meta Lead (2026-10-01): step 1 sent with a free address — browser and
        server, one event_id, marketing consent only (lib/metaEvents). Once per
        page: going back to step 1 and on again is the same lead. */

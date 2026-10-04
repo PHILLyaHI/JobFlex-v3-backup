@@ -125,6 +125,21 @@ export const TRAFFIC_EVENTS = {
   // Several per visit, so the report's `raw` CTE leaves it out — only the
   // analyst's own query reads it (lib/traffic-analyst).
   landingSection: "landing_section",
+  // The first screen as the visitor's own phone drew it (the analyst,
+  // 2026-10-04): ms from the tap to the first paint, to the headline being
+  // visible (hero-entrance), to the page's JavaScript being ready and to the
+  // tracking loading; KB downloaded; the connection where Chrome names it
+  // ("4g", "3g"; "" elsewhere). One per landing load, once the headline has
+  // shown — or, leaving before that, `shown` false with the moment they
+  // left. Fired by landing-e/landing-timing.tsx; the analyst alone reads it.
+  landingTiming: "landing_timing",
+  // Step 1 of the sign-up as it became usable (2026-10-04): `outcome`
+  // "ready" once per form load — ms until the form's JavaScript took over,
+  // whether the visitor had typed (`typed_before_ready`) or pressed Continue
+  // (`early_submit`) before that — then "continue" when step 1 passes and
+  // "error" with `reason` when it refuses. Fired by
+  // auth-register-blueprint/register-content.tsx; the analyst alone reads it.
+  signupStep1: "signup_step1",
 } as const;
 
 /** Signups read from the database by what the landing recorded on them. */

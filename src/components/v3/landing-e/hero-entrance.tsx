@@ -17,6 +17,14 @@ import { loadGsapNow, loadSplitText, reducedMotion } from "./gsap-lazy";
 
 const SAFETY_MS = 3000;
 
+/* The moment the headline became visible, ms from the tap — read by
+   landing-timing.tsx for the analyst (2026-10-04). On the animated path it is
+   the start of the rise, which the eye reads as the headline arriving. */
+function markShown() {
+  const w = window as Window & { __jfHeroShownAt?: number };
+  if (w.__jfHeroShownAt === undefined) w.__jfHeroShownAt = Math.round(performance.now());
+}
+
 export function HeroEntrance({ children }: { children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -24,7 +32,7 @@ export function HeroEntrance({ children }: { children: ReactNode }) {
     const root = ref.current;
     if (!root) return;
     const blocks = Array.from(root.querySelectorAll<HTMLElement>(".lp-enter"));
-    const show = () => blocks.forEach((b) => { b.style.visibility = "visible"; });
+    const show = () => { blocks.forEach((b) => { b.style.visibility = "visible"; }); markShown(); };
     if (reducedMotion()) { show(); return; }
 
     let alive = true;
@@ -53,6 +61,7 @@ export function HeroEntrance({ children }: { children: ReactNode }) {
           // 110% could show its top edge before it rose.
           gsap.set(self.lines, { yPercent: 130 });
           h1.style.visibility = "visible";
+          markShown();
           // At rest nothing may keep a transform or a will-change: either one
           // leaves the block on a layer of its own, and Chrome draws text on
           // such a layer with greyscale antialiasing instead of ClearType.

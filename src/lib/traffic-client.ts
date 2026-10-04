@@ -19,7 +19,10 @@ const queued: Queued[] = [];
 let available = false;
 let client: PostHog | null = null;
 const readyListeners = new Set<() => void>();
+let readyAt: number | null = null;
 export const isTrafficReady = () => available;
+/** Ms from navigation to the library's first availability on this page — null until then (landing-timing.tsx). */
+export const trafficReadyAt = () => readyAt;
 /** The loaded PostHog instance, or null before the provider has brought it in. */
 export const getPostHog = () => client;
 export function onTrafficReady(callback: () => void): () => void {
@@ -35,6 +38,7 @@ export function trafficReady(instance?: PostHog) {
   applyMember();
   const first = !available;
   available = true;
+  if (first && typeof performance !== "undefined") readyAt = Math.round(performance.now());
   for (const item of queued.splice(0)) deliver(item);
   if (first) for (const callback of readyListeners) callback();
 }
@@ -101,6 +105,8 @@ function flushByBeacon() {
     navigator.sendBeacon(`${HOST.replace(/\/$/, "")}/e/?ip=1&_=${Date.now()}`, new Blob([JSON.stringify({ api_key: KEY, batch })], { type: "text/plain" }));
   } catch { /* nothing to do */ }
 }
+/** Send whatever is queued now, by beacon — for an event queued inside a pagehide handler that ran after ours. */
+export function flushTrafficNow() { flushByBeacon(); }
 if (typeof window !== "undefined") {
   window.addEventListener("pagehide", flushByBeacon);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushByBeacon(); });
