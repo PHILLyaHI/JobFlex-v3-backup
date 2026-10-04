@@ -171,7 +171,7 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
     <div className={s.lifetime}><span>All-time visitors <strong>{n(report.lifetime ?? live?.totals?.allTime)}</strong></span><span>Today <strong>{n(report.today ?? live?.totals?.today)}</strong></span><span className={s.scope}>{filters.environment === "all" ? "www.jobflex.app + localhost" : filters.environment === "development" ? "Localhost only" : "www.jobflex.app"} / no bots, no previews / {filters.fullHistory ? "full history" : `since ${TRAFFIC_SINCE_LABEL}`}</span><label className={s.liveToggle}><input type="checkbox" checked={filters.fullHistory} disabled={pending} onChange={e => apply({ fullHistory: e.target.checked })}/>Show full history</label><span className={s.updated}>{pending ? "Querying PostHog..." : `Updated ${new Date(report.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: filters.timezone })}`}</span></div>
 
     {/* Who is on the site this minute, where from, how far they got (2026-09-28). */}
-    {live && <LivePanel initial={live} timezone={filters.timezone} fullHistory={filters.fullHistory}/>}
+    {live && <LivePanel initial={live} timezone={filters.timezone} fullHistory={filters.fullHistory} ledger={ledger}/>}
     {/* The analyst (2026-10-02): the week's landing visits read as findings, under the live map. */}
     <AnalystPanel timezone={filters.timezone}/>
     {/* Every signup, kept — the live view above only holds half an hour. */}

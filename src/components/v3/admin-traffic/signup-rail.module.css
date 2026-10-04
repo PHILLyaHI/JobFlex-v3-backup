@@ -1,0 +1,75 @@
+/* THE SIGNUP RAIL (2026-10-04) — the green cards beside the live map. Own
+   module: the map and the list keep traffic.module.css. Prefixed like that
+   file ((0,2,0)) so the shell's resets never win. The map keeps its own
+   gutters (.map in traffic.module.css: 0 24px 8px); the rail's column adds
+   the right one, so the two end flush. The row is as tall as the map: the
+   rail's scroller is absolute inside it, so a long list never stretches the
+   row. Below 1100px the rail sits under the map with a ceiling of its own. */
+
+:global(.jf-blueprint) .mapRow { display:grid; grid-template-columns:minmax(0,1fr) 344px; align-items:stretch; }
+:global(.jf-blueprint) .mapCol { min-width:0; }
+:global(.jf-blueprint) .railCol { display:flex; min-width:0; padding:0 24px 8px 0; }
+
+:global(.jf-blueprint) .rail { position:relative; flex:1 1 auto; min-width:0; min-height:300px; border:2px solid var(--ink); border-radius:2px; background:var(--paper-deep); }
+:global(.jf-blueprint) .in { position:absolute; inset:0; display:flex; flex-direction:column; }
+:global(.jf-blueprint) .head { padding:10px 12px 8px; border-bottom:1px solid var(--hair-soft); display:grid; gap:8px; }
+:global(.jf-blueprint) .titleRow { display:flex; align-items:center; gap:8px; min-height:26px; }
+:global(.jf-blueprint) .title { font:800 12px/1 var(--font); letter-spacing:.14em; text-transform:uppercase; color:var(--ink); }
+:global(.jf-blueprint) .count { font:700 11px/1 var(--font-mono); color:var(--success-dark); white-space:nowrap; }
+:global(.jf-blueprint) .refresh { margin-left:auto; width:26px; height:26px; display:grid; place-items:center; border:1.5px solid var(--hair); border-radius:2px; background:transparent; color:var(--muted); cursor:pointer; }
+:global(.jf-blueprint) .refresh:hover:not(:disabled) { border-color:var(--ink); color:var(--ink); }
+:global(.jf-blueprint) .refresh:disabled { opacity:.5; cursor:default; }
+:global(.jf-blueprint) .refresh:focus-visible { outline:2px solid var(--sky); outline-offset:2px; }
+:global(.jf-blueprint) .rail[data-pending="true"] .refresh svg { animation:railSpin 1s linear infinite; }
+:global(.jf-blueprint) .tabs { display:flex; border:1.5px solid var(--ink); border-radius:2px; overflow:hidden; }
+:global(.jf-blueprint) .tabs button { flex:1 1 0; min-width:0; min-height:30px; padding:0 4px; border:0; border-right:1px solid var(--hair-soft); background:transparent; color:var(--ink); font:700 10.5px var(--font-mono); letter-spacing:.04em; white-space:nowrap; cursor:pointer; }
+:global(.jf-blueprint) .tabs button:last-child { border-right:0; }
+:global(.jf-blueprint) .tabs button:hover { background:var(--paper); }
+:global(.jf-blueprint) .tabs button[aria-pressed="true"] { background:var(--ink); color:#fff; }
+:global(.jf-blueprint) .tabs button:focus-visible { outline:2px solid var(--sky); outline-offset:-2px; }
+
+:global(.jf-blueprint) .list { list-style:none; margin:0; padding:0; flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain; }
+:global(.jf-blueprint) .empty { padding:16px 12px; font:500 12px/1.5 var(--font); color:var(--muted); }
+:global(.jf-blueprint) .link { padding:0; border:0; background:none; color:var(--success-dark); font:700 12px/1.5 var(--font); text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
+:global(.jf-blueprint) .link:focus-visible { outline:2px solid var(--sky); outline-offset:2px; }
+:global(.jf-blueprint) .group { margin:0; padding:0; }
+:global(.jf-blueprint) .day { position:sticky; top:0; z-index:1; padding:5px 12px; background:var(--paper); border-bottom:1px solid var(--hair-soft); font:700 10.5px var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+:global(.jf-blueprint) .cards { list-style:none; margin:0; padding:0; }
+:global(.jf-blueprint) .card { position:relative; padding:9px 12px 9px 16px; border-bottom:1px solid var(--hair-soft); background:var(--live-ok-soft); }
+:global(.jf-blueprint) .card::before { content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:var(--live-ok); }
+:global(.jf-blueprint) .card[data-state="paying"]::before { background:var(--success-dark); }
+:global(.jf-blueprint) .card[data-state="lapsed"] { background:transparent; }
+:global(.jf-blueprint) .card[data-state="lapsed"]::before { background:var(--muted-faint); }
+:global(.jf-blueprint) .card[data-fresh="true"]::before { animation:railPulse 1.6s ease-in-out infinite; }
+:global(.jf-blueprint) .card[data-fresh="true"] .when { color:var(--success-dark); font-weight:800; }
+/* just landed: in from the map's side, the green settling as it comes */
+:global(.jf-blueprint) .card[data-new="true"] { animation:railIn .7s cubic-bezier(.2,.8,.2,1) both; }
+:global(.jf-blueprint) .cardTop { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+:global(.jf-blueprint) .org { font:800 13px/1.3 var(--font); color:var(--success-dark); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .when { flex-shrink:0; font:600 10.5px var(--font-mono); color:var(--muted); white-space:nowrap; }
+:global(.jf-blueprint) .who { margin-top:2px; font:600 11px/1.45 var(--font-mono); color:var(--ink-soft); overflow-wrap:anywhere; }
+:global(.jf-blueprint) .chips { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-top:6px; }
+:global(.jf-blueprint) .chips em { display:inline-flex; align-items:center; gap:4px; padding:2px 6px; font:700 9.5px/1.3 var(--font-mono); letter-spacing:.06em; text-transform:uppercase; font-style:normal; }
+:global(.jf-blueprint) .plan { border:1.5px solid var(--success-dark); color:var(--success-dark); }
+:global(.jf-blueprint) .ad { border:1.5px solid var(--live-ad); color:var(--live-ad); }
+:global(.jf-blueprint) .src { border:1.5px solid var(--hair); color:var(--muted); }
+:global(.jf-blueprint) .trade { background:var(--ink); color:#fff; }
+:global(.jf-blueprint) .place { margin-top:5px; font:600 10.5px/1.4 var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .card[data-live="true"] .place { color:var(--success-dark); }
+:global(.jf-blueprint) .foot { padding:7px 12px; border-top:1px solid var(--hair-soft); font:600 10px/1.45 var(--font-mono); color:var(--muted); }
+
+@keyframes railPulse { 0%, 100% { opacity:1; } 50% { opacity:.3; } }
+@keyframes railSpin { to { transform:rotate(360deg); } }
+@keyframes railIn { from { transform:translateX(-28px); opacity:0; background:var(--live-ok); } 40% { opacity:1; } to { transform:none; opacity:1; background:var(--live-ok-soft); } }
+
+@media (max-width: 1100px) {
+  :global(.jf-blueprint) .mapRow { grid-template-columns:minmax(0,1fr); }
+  :global(.jf-blueprint) .railCol { padding:0 24px 12px; }
+  :global(.jf-blueprint) .rail { min-height:0; height:380px; }
+}
+@media (max-width: 560px) {
+  :global(.jf-blueprint) .railCol { padding:0 16px 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint) .card[data-fresh="true"]::before, :global(.jf-blueprint) .card[data-new="true"], :global(.jf-blueprint) .rail[data-pending="true"] .refresh svg { animation:none; }
+}

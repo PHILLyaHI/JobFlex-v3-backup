@@ -8,7 +8,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExterna
 import dynamic from "next/dynamic";
 import { Building2, Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } from "lucide-react";
 import { getLiveTraffic, getMapHistory, nameAdTag } from "@/actions/trafficDashboard";
-import { MAP_HISTORY_LIMIT, MAP_SPANS, isAdId, mapSpanLabel, prospectsOf, type LiveReport, type LiveStage, type LiveVisitor, type MapHistory, type MapSpan } from "@/lib/traffic-live";
+import { MAP_HISTORY_LIMIT, MAP_SPANS, isAdId, mapSpanLabel, prospectsOf, type LiveReport, type LiveStage, type LiveVisitor, type MapHistory, type MapSpan, type SignupLedger } from "@/lib/traffic-live";
 import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
 import { LivePlatforms } from "./live-platforms";
 import { Ago, setClockPeriod } from "./ticker";
@@ -19,6 +19,8 @@ import { sameReport } from "./live-diff";
    its own chunk (2026-10-01). */
 const LiveMap = dynamic(() => import("./live-map").then((m) => m.LiveMap), { ssr: false, loading: () => <div className={s.mapLoading}>Loading the map…</div> });
 import { JourneyLine } from "./journey-line";
+import { SignupRail } from "./signup-rail";
+import rail from "./signup-rail.module.css";
 import s from "./traffic.module.css";
 
 /** Live mode (2026-09-30): the owner watches this while an ad runs, so the
@@ -57,7 +59,7 @@ function clock(iso: string, timezone: string): string {
   try { return new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return ""; }
 }
 
-export function LivePanel({ initial, timezone, fullHistory = false }: { initial: LiveReport; timezone: string; fullHistory?: boolean }) {
+export function LivePanel({ initial, timezone, fullHistory = false, ledger = null }: { initial: LiveReport; timezone: string; fullHistory?: boolean; ledger?: SignupLedger | null }) {
   const [report, setReport] = useState(initial);
   const [includeDev, setIncludeDev] = useState(false);
   const [adsOnly, setAdsOnly] = useState(false);
@@ -188,6 +190,19 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
     return prospectsOf(inWindow, report.converted.filter((v) => !platform || v.platform === platform));
   }, [longSpan, historyReady, history, adsOnly, rows, span, mapView, report.converted, platform]);
   const converts = useMemo(() => onMap.filter((v) => v.stage === "signed-up").length, [onMap]);
+  // The signups the live poll knows — the window's and the day's — for the
+  // rail beside the map (2026-10-04): a new one there makes the rail re-read.
+  const liveSignups = useMemo(() => {
+    const seen = new Set<string>();
+    const out: LiveVisitor[] = [];
+    for (const v of [...report.visitors.filter((x) => x.stage === "signed-up"), ...report.converted]) {
+      const k = v.signup?.ownerEmail?.toLowerCase() || v.id;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(v);
+    }
+    return out;
+  }, [report.visitors, report.converted]);
   const toggleRow = useCallback((id: string) => setSelected((cur) => (cur === id ? null : id)), []);
   const live = report.status === "ok";
   return <section className={s.live} aria-label="Live now" data-state={report.status} aria-busy={pending}>
@@ -265,7 +280,17 @@ export function LivePanel({ initial, timezone, fullHistory = false }: { initial:
         {spanFromLaunch && <span data-map-span-state="since">Counted from {TRAFFIC_SINCE_LABEL}, the ad launch · Show full history reaches further</span>}
         {platform && <button type="button" className={s.textButton} onClick={() => setPlatform(null)}>Show everyone</button>}
       </div>
-      <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals} adNames={adNames} view={mapView}/>
+      {/* The map, and beside it the signups of the day / two days / week /
+          month — the green cards, newest on top, the next one the moment it
+          lands (./signup-rail, 2026-10-04). */}
+      <div className={rail.mapRow}>
+        <div className={rail.mapCol}>
+          <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals} adNames={adNames} view={mapView}/>
+        </div>
+        <div className={rail.railCol}>
+          <SignupRail initial={ledger} timezone={timezone} fullHistory={fullHistory} liveSignups={liveSignups} adNames={adNames}/>
+        </div>
+      </div>
     </>}
     {live && !rows.length && <div className={s.liveEmpty}>{report.visitors.length ? (platform ? "Nobody from this platform in the last half hour — press the card again to see everyone." : "Nobody from an ad in the last half hour — turn off the ads filter to see everyone.") : `Nobody on the site in the last ${report.windowMinutes} minutes.`}</div>}
     {rows.length > 0 && <ol className={s.liveList} aria-label="Visitors on the site">
