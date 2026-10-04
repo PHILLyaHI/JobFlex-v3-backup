@@ -43,11 +43,17 @@ export async function fetchConvertedEvents(): Promise<LiveEvent[]> {
  *  one row each, read every ten minutes at most — the reading does not
  *  change by the minute, and the query walks a week of events. */
 const ANALYST_CACHE_MS = 10 * 60_000;
-let analystSessions: { at: number; promise: Promise<LandingSession[]> } | null = null;
-export async function fetchAnalystSessions(force = false): Promise<LandingSession[]> {
+/** The sessions and when PostHog answered for them (2026-10-04): a cached
+ *  week is up to ten minutes old, and "read at" must say so. */
+export interface AnalystRead { sessions: LandingSession[]; readAt: string }
+let analystSessions: { at: number; promise: Promise<AnalystRead> } | null = null;
+export async function fetchAnalystSessions(force = false): Promise<AnalystRead> {
   const now = Date.now();
   if (!force && analystSessions && now - analystSessions.at < ANALYST_CACHE_MS) return analystSessions.promise;
-  const promise = runTrafficQuery(buildAnalystQuery(), "analyst").then((rows) => rows.map(analystSessionFromRow).filter((s): s is LandingSession => !!s));
+  const promise = runTrafficQuery(buildAnalystQuery(), "analyst").then((rows) => ({
+    sessions: rows.map(analystSessionFromRow).filter((s): s is LandingSession => !!s),
+    readAt: new Date().toISOString(),
+  }));
   promise.catch(() => { if (analystSessions?.promise === promise) analystSessions = null; });
   analystSessions = { at: now, promise };
   return promise;

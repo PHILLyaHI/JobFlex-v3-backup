@@ -17,7 +17,7 @@
 import { LANDING_SECTIONS } from "./landing-sections";
 import { TRAFFIC_EVENTS as E } from "./traffic-contract";
 import { classifySource } from "./traffic-live";
-import { BROWSER_TYPE_SQL, HOST_SQL, IN_APP_SQL, UA_SQL, visitorRuleSql } from "./traffic-visitor";
+import { BROWSER_TYPE_SQL, HOST_SQL, IN_APP_SQL, TRAFFIC_SINCE_MS, UA_SQL, sinceSql, visitorRuleSql } from "./traffic-visitor";
 import { resolveLandingVariant } from "@/components/v3/landing-e/landing-variants";
 
 export const ANALYST_DAYS = 7;
@@ -25,6 +25,12 @@ export const ANALYST_DAYS = 7;
 export const ANALYST_MIN_AD_VISITS = 20;
 /** A segment (an ad, a trade, a device…) is compared once it has this many visits. */
 const SEGMENT_MIN = 8;
+
+/** Where the analyst's window starts: `days` back, never before the ad
+ *  launch (TRAFFIC_SINCE) — the page's one counting start (2026-10-04). */
+export function analystWindowFrom(now: number, days = ANALYST_DAYS): number {
+  return Math.max(now - days * 86_400_000, TRAFFIC_SINCE_MS);
+}
 
 /** One session, as the query returns it (analystSessionFromRow). */
 export interface LandingSession {
@@ -160,7 +166,7 @@ export function buildAnalystQuery(days = ANALYST_DAYS): string {
     countIf(event = '${E.signupStep1}' AND ${prop("typed_before_ready")} = 'true'), countIf(event = '${E.signupStep1}' AND ${prop("early_submit")} = 'true'),
     ${joined(prop("reason"), `event = '${E.signupStep1}' AND ${prop("outcome")} = 'error'`)}, countIf(event = '${E.signupStep1}' AND ${prop("outcome")} = 'continue')
     FROM events
-    WHERE timestamp > now() - INTERVAL ${d} DAY AND timestamp <= now() AND event IN (${events})
+    WHERE timestamp > now() - INTERVAL ${d} DAY AND ${sinceSql(false)} AND timestamp <= now() AND event IN (${events})
       AND ${prop("$session_id")} != '' AND ${path} != '/admin' AND NOT startsWith(${path}, '/admin/')
       AND ${visitorRuleSql({ host: HOST_SQL, ua: UA_SQL, browserType: BROWSER_TYPE_SQL, event: "event" }, "production")}
     GROUP BY sid ORDER BY started DESC LIMIT 6000`;
@@ -623,6 +629,8 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
   return {
     days,
     sample: { sessions: all.length, landed: landed.length, fromAds: fromAds.length, last24h, measured: measured.length, enough, needed: ANALYST_MIN_AD_VISITS, basis },
-    headline, findings, funnel, sections, ads: ads.slice(0, 12), trades: trades.slice(0, 8), placements: placements.slice(0, 8), stats,
+    // Every ad, trade and placement (2026-10-04): the panel shows the first
+    // dozen ads; the exports carry them all.
+    headline, findings, funnel, sections, ads, trades, placements, stats,
   };
 }

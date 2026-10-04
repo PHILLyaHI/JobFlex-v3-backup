@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ArrowDownToLine, ArrowUpRight, ChevronRight, RefreshCw, SlidersHorizontal, FlaskConical, Info, Users } from "lucide-react";
+import { ArrowDownToLine, ArrowUpRight, ChevronRight, FileText, RefreshCw, SlidersHorizontal, FlaskConical, Info, Users } from "lucide-react";
 import { getSignupAttribution, getTrafficDashboard, getTrafficExperimentsAction, getTrafficStageVisitors } from "@/actions/trafficDashboard";
+import { getTrafficExportMarkdown } from "@/actions/trafficExport";
+import { downloadText, reportToCsv } from "@/lib/traffic-export";
+import { toast } from "@/components/ui/toast-store";
 import { conversionInterval, pageLabel, percent, staleLabel, type ExperimentResult, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
 import { AdsReconciliation, DailyPeople } from "./daily-tables";
 import { dateInZone, shiftDate } from "@/lib/traffic-query";
@@ -38,33 +41,9 @@ function tally(rows: StageVisitor[], pick: (v: StageVisitor) => string, limit = 
   for (const row of rows) { const key = pick(row) || "Unknown"; counts.set(key, (counts.get(key) || 0) + 1); }
   return Array.from(counts, ([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, limit);
 }
-function csvCell(value: unknown) {
-  const text = String(value ?? "");
-  return '"' + (/^[=+\-@\t\r]/.test(text) ? "'" + text : text).replaceAll('"', '""') + '"';
-}
-function exportReport(report: TrafficReport) {
-  const coverageIncomplete = !report.firstStepAt || report.filters.from <= dateInZone(new Date(report.firstStepAt), report.filters.timezone);
-  const rows: unknown[][] = [
-    ["JobFlex traffic", report.filters.from, report.filters.to, report.filters.timezone],
-    ["Filters", JSON.stringify(report.filters)],
-    ["Daily", "Visitors", "New", "Returning", "Repeat visitors", "Sessions", "Views"],
-    ...report.points.map(p => [p.date, p.visitors, p.newVisitors, p.returningVisitors, p.repeatVisitors, p.sessions, p.pageviews]),
-    [], ["Page / step", "Visitors", "New", "Returning", "Repeat visitors", "Sessions", "Views"],
-    ...report.pages.map(p => [p.page, p.visitors, p.newVisitors, p.returningVisitors, p.repeatVisitors, p.sessions, p.pageviews]),
-    [], ["Funnel", "Visitors", "Previous step %", "Landing %"],
-    ...report.funnel.map((p, i) => [p.label, !report.firstStepAt && i >= 2 ? null : p.visitors,
-      !i || (!report.firstStepAt && i >= 2) || (coverageIncomplete && i === 2) ? null : percent(p.visitors, report.funnel[i - 1].visitors),
-      coverageIncomplete && i >= 2 ? null : percent(p.visitors, report.funnel[0].visitors)]),
-    [], ["Funnel outcomes", "Visitors"], ...Object.entries(report.funnelOutcomes || {}).map(([key, value]) => [key, report.firstStepAt ? value : null]),
-    [], ["Acquisition", "Name", "Visitors", "Sessions", "Verified signups"],
-    ...Object.keys(dimensions).flatMap(key => report[key as Dimension].map(p => [key, p.name, p.visitors, p.sessions, report.firstStepAt ? p.conversions : null])),
-    [], ["Experiment", "Variant", "Exposed", "Attempts", "Verified signups", "Mixed exposures excluded"],
-    ...report.experiments.map(e => [e.experiment, e.variant, e.visitors, e.attempts, e.completed, e.mixedVisitors]),
-  ];
-  const url = URL.createObjectURL(new Blob([rows.map(row => row.map(csvCell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8;" }));
-  const link = document.createElement("a");
-  link.href = url; link.download = `jobflex-traffic-${report.filters.from}-${report.filters.to}.csv`; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+/** The header's CSV: every column the report holds, and the signups list (lib/traffic-export). */
+function exportReport(report: TrafficReport, ledger: SignupLedger | null) {
+  downloadText(`jobflex-traffic-${report.filters.from}-${report.filters.to}.csv`, reportToCsv(report, ledger), "text/csv;charset=utf-8;");
 }
 
 /** How often the report is asked again while it shows an old answer. */
@@ -176,6 +155,18 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
       .catch(err => { if (id === drillRequest.current) setDrillError(err instanceof Error ? err.message : "Could not load visitors."); })
       .finally(() => { if (id === drillRequest.current) setDrillPending(false); });
   }
+  // EXPORT EVERYTHING (2026-10-04): the page as one Markdown file, built on
+  // the server from the same reads, under the filters on screen.
+  const [exporting, setExporting] = useState(false);
+  async function exportEverything() {
+    setExporting(true);
+    try {
+      const { markdown, name } = await getTrafficExportMarkdown({ ...filters });
+      downloadText(name, markdown, "text/markdown;charset=utf-8;");
+      toast.success("Markdown downloaded", "Every block of the page, under the filters on screen.");
+    } catch (err) { toast.error("Could not export", err instanceof Error ? err.message : undefined); }
+    finally { setExporting(false); }
+  }
   const when = (iso: string) => iso ? new Intl.DateTimeFormat("en-US", { timeZone: filters.timezone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso)) : "--";
   const stageLabel = (id: string) => report.funnel.find(stage => stage.id === id)?.label || id || "--";
   const visitors = drillReport?.visitors ?? [];
@@ -185,7 +176,8 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
     <header className={s.header}>
       <div><div className={s.eyebrow}>Platform intelligence / 01</div><h1>Traffic<span>.</span></h1></div>
       <div className={s.headerActions}><span className={s.status} data-state={report.status === "ok" && !report.errors.length && !stale ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : stale ? "PostHog unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
-        <button className={s.button} onClick={() => exportReport(report)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button>
+        <button className={s.button} onClick={() => void exportEverything()} disabled={exporting} aria-busy={exporting}><FileText size={15} aria-hidden="true"/>{exporting ? "Preparing…" : "Export everything"}</button>
+        <button className={s.button} onClick={() => exportReport(report, ledger)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button>
         <button className={s.iconButton} aria-label="Refresh traffic" onClick={() => load(filters)} disabled={pending}><RefreshCw size={17} className={pending ? s.spin : ""}/></button>
       </div>
     </header>

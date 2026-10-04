@@ -2,11 +2,11 @@
 
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
-import { fetchAnalystSessions, getLiveTraffic as liveTraffic, getMapHistory as mapHistory, getStageVisitors, getTrafficExperiments, getTrafficReport, orLastGood, posthogApiConfig } from "@/lib/traffic-server";
-import { analyse, type AnalystReport } from "@/lib/traffic-analyst";
+import { getLiveTraffic as liveTraffic, getMapHistory as mapHistory, getStageVisitors, getTrafficExperiments, getTrafficReport } from "@/lib/traffic-server";
+import { readAnalyst, type AnalystResult } from "@/lib/traffic-analyst-read";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import { TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
-import type { SignupAttribution, StaleNote } from "@/lib/traffic-contract";
+import type { SignupAttribution } from "@/lib/traffic-contract";
 import { adNameKey, adTagsOf, isMapSpan, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type LiveVisitor, type MapHistory, type MapSpan, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
 /** The organizations made in the last day (or the map's longer span), with
@@ -230,23 +230,11 @@ export async function getTrafficExperimentsAction(input: Record<string, unknown>
  *  names for the ads. `force` skips the ten-minute cache (the Refresh button). */
 export async function getTrafficAnalyst(input: Record<string, unknown> = {}): Promise<AnalystResult> {
   await requirePlatformAdmin();
-  const fetchedAt = new Date().toISOString();
-  const timezone = parseTrafficFilters({ timezone: input.timezone }).timezone;
-  try {
-    if (!posthogApiConfig()) return { status: "disabled", message: "Connect a PostHog personal key with query:read and a numeric project ID.", fetchedAt, report: analyse([], { timezone }) };
-    // PostHog down: the week as it last read, and from when.
-    const { value: sessions, stale } = await orLastGood("analyst", fetchAnalystSessions(input.force === true));
-    const tags = [...new Set(sessions.flatMap((s) => [s.utmCampaign, s.utmContent]).filter((t) => t && t.length <= 120))];
-    const names = tags.length ? await db.syncState.findMany({ where: { key: { in: tags.map(adNameKey) } }, select: { key: true, cursor: true } }).catch(() => []) : [];
-    const adNames: Record<string, string> = {};
-    for (const t of tags) { const row = names.find((r) => r.key === adNameKey(t)); if (row?.cursor) adNames[t] = row.cursor; }
-    return { status: "ok", fetchedAt: stale?.since ?? fetchedAt, report: analyse(sessions, { timezone, adNames }), ...(stale ? { stale } : {}) };
-  } catch (err) {
-    const msg = err instanceof Error && err.name === "TimeoutError" ? "PostHog took too long. Try again shortly." : err instanceof Error ? err.message : "The analyst could not read.";
-    return { status: "error", message: msg, fetchedAt, report: analyse([], { timezone }) };
-  }
+  // The reading itself — PostHog, the ad names, the analysis — is shared with
+  // the exports (lib/traffic-analyst-read); fetchedAt is PostHog's answer time.
+  return (await readAnalyst(input)).result;
 }
-export interface AnalystResult { status: "ok" | "disabled" | "error"; message?: string; fetchedAt: string; report: AnalystReport; stale?: StaleNote }
+export type { AnalystResult };
 
 /** Who reached a funnel stage: device, place, source and how far they got. */
 export async function getTrafficStageVisitors(input: Record<string, unknown> = {}, stageId: unknown) {

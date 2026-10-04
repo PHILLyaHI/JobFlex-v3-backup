@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Info, Lightbulb, RefreshCw, Sparkles } from "lucide-react";
 import { getTrafficAnalyst, type AnalystResult } from "@/actions/trafficDashboard";
+import { AnalystExport } from "./analyst-export";
 import { pct, type AnalystFinding } from "@/lib/traffic-analyst";
 import { staleLabel } from "@/lib/traffic-contract";
 import s from "./traffic.module.css";
@@ -50,7 +51,8 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
           <h2><Sparkles size={18} aria-hidden="true"/> The analyst</h2>
           <span className={s.micro}>What people do on the landing and where the sign-up loses them · the last {r?.days ?? 7} days · reads again every 10 minutes{result ? ` · read at ${clock(result.fetchedAt, timezone)}` : ""}</span>
         </div>
-        <button type="button" className={s.iconButton} aria-label="Read again now" title="Read again now" onClick={() => void load(true)} disabled={pending}><RefreshCw size={16} className={pending ? s.spin : ""}/></button>
+        <div className={s.headerActions}><AnalystExport result={result} timezone={timezone}/>
+        <button type="button" className={s.iconButton} aria-label="Read again now" title="Read again now" onClick={() => void load(true)} disabled={pending}><RefreshCw size={16} className={pending ? s.spin : ""}/></button></div>
       </div>
 
       {!result && <div className={s.analystEmpty}>Reading the last week…</div>}
@@ -103,7 +105,7 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
         {r.ads.length > 0 && <div className={s.tableScroll}>
           <table className={`${s.table} ${s.analystTable}`}>
             <thead><tr><th>Ad</th><th>Platform</th><th>Visits</th><th>Bounced</th><th>Pressed</th><th>Opened the form</th><th>Signed up</th></tr></thead>
-            <tbody>{r.ads.map((a) => <tr key={a.key}><td>{a.name}</td><td>{a.platform ?? ""}</td><td>{a.n}</td><td>{pct(a.bounce)}</td><td>{pct(a.cta)}</td><td>{pct(a.form)}</td><td>{a.completed}</td></tr>)}</tbody>
+            <tbody>{r.ads.slice(0, 12).map((a) => <tr key={a.key}><td>{a.name}</td><td>{a.platform ?? ""}</td><td>{a.n}</td><td>{pct(a.bounce)}</td><td>{pct(a.cta)}</td><td>{pct(a.form)}</td><td>{a.completed}</td></tr>)}</tbody>
           </table>
         </div>}
 

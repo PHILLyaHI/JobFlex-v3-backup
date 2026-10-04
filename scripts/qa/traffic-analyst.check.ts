@@ -2,7 +2,9 @@
 // → findings with evidence and one thing to try. Every rule proved on
 // made-up sessions. Static imports only (tsx has no top-level await).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/traffic-analyst.check.ts
-import { ANALYST_MIN_AD_VISITS, adNameOf, analyse, analystSessionFromRow, buildAnalystQuery, type LandingSession } from "../../src/lib/traffic-analyst";
+import { ANALYST_MIN_AD_VISITS, adNameOf, analyse, analystSessionFromRow, analystWindowFrom, buildAnalystQuery, type LandingSession } from "../../src/lib/traffic-analyst";
+import { SESSION_COLUMNS, SESSION_EXTRA_COLUMNS, TONE_WORD, analystToMarkdown, sessionsToCsv } from "../../src/lib/traffic-export";
+import { TRAFFIC_SINCE_MS } from "../../src/lib/traffic-visitor";
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => { if (!ok) bad++; console.log(`${ok ? "ok  " : "FAIL"} ${name}${extra ? " — " + extra : ""}`); };
@@ -125,6 +127,26 @@ check("the demo sitting third behind the comparison is called, with the reorder"
 const adDefault = analyse([...many(20, { utmContent: "A3", industry: "default", views: 1, dwell: 8, scroll: 0.05, sections: ["hero"] }), ...many(12, { utmContent: "A1", registerViews: 1, step: 1 })], { now: NOW, adNames: { A3: "Business · crew" } });
 check("an ad whose clicks land on the general hero is told to carry ?industry= and a ?hook=", !!find(adDefault, "bounce-A3") && /100% land on the general hero/.test(find(adDefault, "bounce-A3")!.evidence) && /\?industry=<trade>/.test(find(adDefault, "bounce-A3")!.action), find(adDefault, "bounce-A3")?.evidence);
 check("every new finding carries steps the panel can list, or none", slowScreen.findings.every((f) => f.steps === undefined || (Array.isArray(f.steps) && f.steps.every((x) => typeof x === "string" && x.length > 10))));
+
+// ── the window, the exports (2026-10-04)
+check("the window never reaches before the ad launch (Sep 30, LA midnight), like the rest of the page", /timestamp >= toDateTime\('2026-09-30 00:00:00', 'America\/Los_Angeles'\)/.test(sql2) && /INTERVAL 7 DAY/.test(sql2));
+check("the window's start is seven days back, or Sep 30 when that is later", analystWindowFrom(Date.parse("2026-10-04T12:00:00-07:00")) === TRAFFIC_SINCE_MS && analystWindowFrom(Date.parse("2026-10-20T12:00:00-07:00")) === Date.parse("2026-10-13T12:00:00-07:00"));
+const manyAds = analyse(many(15 * 8, (i) => ({ utmContent: `AD${Math.floor(i / 8)}` })), { now: NOW });
+check("the report carries every ad (the panel shows twelve), and the trades and placements", manyAds.ads.length === 15 && mixed.placements.some((p) => p.placement === "hero") && mixed.trades.length >= 1);
+const result = { status: "ok" as const, fetchedAt: new Date(NOW).toISOString(), window: { from: new Date(analystWindowFrom(NOW)).toISOString(), to: new Date(NOW).toISOString() }, report: slowForm };
+const allFindings = [slowScreen, slowForm, mixed, leaky, order];
+const mdOk = allFindings.every((rep) => {
+  const md = analystToMarkdown({ ...result, report: rep }, { timezone: "America/Los_Angeles" });
+  return rep.findings.every((f, i) => md.includes(`${i + 1}. ${TONE_WORD[f.tone]} — ${f.title}`) && md.includes(f.evidence) && md.includes(f.action) && (f.steps ?? []).every((s) => md.includes(s)) && (!f.about || md.includes(`**About:** ${f.about}`)) && md.includes(`${f.confidence} confidence · \`${f.id}\``));
+});
+check("the Markdown carries every finding: its word, title, evidence, action, steps, about, sample and confidence", mdOk && allFindings.reduce((a, r) => a + r.findings.length, 0) >= 15);
+const md = analystToMarkdown({ ...result, report: mixed }, { timezone: "America/Los_Angeles" });
+check("the Markdown carries the period, the read time, the funnel, sections, every ad, trades, placements, fast and the method", /\*\*Period:\*\* Sep 30, 2026, 12:00 AM → Oct 2, 2026, 6:00 PM/.test(md) && /\*\*PostHog read at:\*\* Oct 2, 2026, 6:00 PM/.test(md) && /## The funnel/.test(md) && /## How far down the page/.test(md) && /## Ads \(2\)/.test(md) && md.includes("| Fence · 40 s v1 | A2 |") && /## Trade landings/.test(md) && /\| hero \| 30 \|/.test(md) && /Gone inside 5 s/.test(md) && /## Method/.test(md), md.slice(0, 300));
+const csv = sessionsToCsv(many(3, { sections: ["hero", "compare"], step1Errors: ["email_taken"], utmContent: "A1" }), { A1: "Roof · 40 s v1" });
+const lines = csv.split("\r\n");
+const head = lines[0].split(",").map((c) => c.replace(/^"|"$/g, ""));
+check("the sessions CSV has every session field, then the readable times and the ad's name", head.join() === [...SESSION_COLUMNS, ...SESSION_EXTRA_COLUMNS].join() && Object.keys(sess()).every((k) => head.includes(k)) && lines.length === 4 && lines[1].includes('"hero;compare"') && lines[1].includes('"Roof · 40 s v1"'), head.join());
+check("a CSV cell that a spreadsheet would run is neutralised", sessionsToCsv([sess({ utmContent: "=HYPERLINK(1)" })]).includes(`"'=HYPERLINK(1)"`));
 
 console.log(bad ? `\n${bad} FAILED` : "\nall green");
 process.exit(bad ? 1 : 0);

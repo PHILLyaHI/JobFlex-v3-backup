@@ -687,6 +687,8 @@
 /* ── The analyst (2026-10-02): findings under the live map ── */
 :global(.jf-blueprint) .analyst { margin-top: 18px; }
 :global(.jf-blueprint) .analyst h2 { display:flex; align-items:center; gap:8px; }
+/* The exports and Refresh in one row beside the title on a desk (2026-10-04); a phone wraps them under it. */
+@media (min-width: 769px) { :global(.jf-blueprint) .analyst .cardHead > .headerActions { flex-shrink:0; flex-wrap:nowrap; } }
 :global(.jf-blueprint) .analystEmpty { padding:22px 24px; font:600 13px var(--font-mono); color:var(--muted); }
 :global(.jf-blueprint) .analystHeadline { margin:0; padding:18px 24px 14px; font:700 17px/1.5 var(--font); letter-spacing:-.01em; color:var(--ink); border-bottom:1px solid var(--traffic-line); }
 :global(.jf-blueprint) .analystSample { display:flex; flex-wrap:wrap; gap:6px 18px; padding:10px 24px; border-bottom:1px solid var(--traffic-line); font:600 11px var(--font-mono); color:var(--muted); background:var(--paper); }
