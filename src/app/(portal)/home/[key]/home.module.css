@@ -177,6 +177,9 @@
 .planList { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .plan { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px 14px; border: 1px solid var(--h-line); border-radius: 8px; background: var(--h-paper); }
 .planNote { font-size: 13px; line-height: 1.45; color: var(--h-soft); overflow-wrap: anywhere; }
+.remindRow { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--h-muted); }
+.remindRow select { min-height: 32px; padding: 3px 8px; border: 1px solid var(--h-line-strong); border-radius: 8px; background: var(--h-panel); color: var(--h-ink); font: inherit; font-size: 12.5px; font-weight: 700; }
+.remindRow select:focus-visible { outline: 3px solid var(--h-blue); outline-offset: 1px; }
 .planForm { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; padding: 14px; border: 1px dashed var(--h-line-strong); border-radius: 8px; }
 .fieldWide { grid-column: 1 / -1; }
 .ideas { display: flex; flex-wrap: wrap; gap: 6px; }

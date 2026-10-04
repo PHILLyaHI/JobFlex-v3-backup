@@ -35,11 +35,39 @@ export function localHourAt(ymd: Date, hour: number, tz: string): Date {
   return new Date(guess);
 }
 
-/** When to remind about a plan: 9 AM on its day (or its month's first day); a
- *  plan whose time has already come is reminded about a week from now. */
-export function reminderFor(plannedFor: Date, tz: string, now = new Date()): Date {
-  const at = localHourAt(plannedFor, REMIND_HOUR, tz);
-  return at.getTime() > now.getTime() ? at : new Date(now.getTime() + LATE_PLAN_REMIND_MS);
+/** How the homeowner wants to be reminded about a plan (the form's choice). */
+export type RemindMode = "start" | "2w" | "1w" | "none";
+export const REMIND_MODES: ReadonlyArray<{ value: RemindMode; label: string; daysBefore: number | null }> = [
+  { value: "start", label: "When the month starts", daysBefore: 0 },
+  { value: "2w", label: "Two weeks before", daysBefore: 14 },
+  { value: "1w", label: "A week before", daysBefore: 7 },
+  { value: "none", label: "Don't remind me", daysBefore: null },
+];
+/** The nudge after a reminder nobody acted on; then it stops. */
+export const FOLLOW_UP_MS = 14 * 24 * 60 * 60_000;
+
+/** When to remind about a plan: 9 AM local, `daysBefore` days ahead of its
+ *  day (or its month's first day) — the day itself when that lead time has
+ *  already passed, and a week from now when the plan's time has come too.
+ *  Null for "don't remind me". */
+export function reminderFor(plannedFor: Date, tz: string, now = new Date(), mode: RemindMode = "start"): Date | null {
+  const choice = REMIND_MODES.find((m) => m.value === mode);
+  // null means "don't remind me" — not a missing choice, which falls back to the start.
+  const days = choice ? choice.daysBefore : 0;
+  if (days === null) return null;
+  const ahead = new Date(plannedFor.getTime() - days * 24 * 60 * 60_000);
+  for (const d of days > 0 ? [ahead, plannedFor] : [plannedFor]) {
+    const at = localHourAt(d, REMIND_HOUR, tz);
+    if (at.getTime() > now.getTime()) return at;
+  }
+  return new Date(now.getTime() + LATE_PLAN_REMIND_MS);
+}
+
+/** The mode a stored reminder time stands for, read back for the form. */
+export function remindModeOf(plannedFor: Date, remindAt: Date | null): RemindMode {
+  if (!remindAt) return "none";
+  const days = Math.round((plannedFor.getTime() - remindAt.getTime()) / (24 * 60 * 60_000));
+  return days >= 12 ? "2w" : days >= 5 ? "1w" : "start";
 }
 
 /** "November 2026" or "Nov 14, 2026". */

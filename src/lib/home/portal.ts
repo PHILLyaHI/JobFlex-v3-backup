@@ -19,7 +19,7 @@ import { appBaseUrl } from "@/lib/appUrl";
 import { buildRequestPortal, type PortalOrg, type RequestPortalView } from "@/lib/requestPortal";
 import { parseBookingSettings } from "@/lib/booking";
 import { parseTradeTypes } from "@/lib/tradeTypes";
-import { planWhen, validTimeZone } from "./dates";
+import { planWhen, remindModeOf, validTimeZone, type RemindMode } from "./dates";
 import { listFolder, type FolderFileView, type FolderRequestView } from "./files";
 import { storageMode, type StorageMode } from "@/lib/media/privateStore";
 import type { WizardPrefill } from "./prefill";
@@ -149,7 +149,12 @@ export interface HomePlanView {
   wholeMonth: boolean;
   when: string;
   status: string;
+  /** The next reminder, when one is booked. */
   remindAt: string | null;
+  /** The form's choice this reminder stands for. */
+  remindMode: RemindMode;
+  /** The first reminder went; the next is the last nudge. */
+  reminded: boolean;
   /** The request it became, when submitted. */
   token: string | null;
 }
@@ -355,6 +360,8 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     when: planWhen(p.plannedFor, p.wholeMonth),
     status: p.status,
     remindAt: p.remindAt?.toISOString() ?? null,
+    remindMode: p.remindedAt ? (p.remindAt ? "start" : "none") : remindModeOf(p.plannedFor, p.remindAt),
+    reminded: Boolean(p.remindedAt),
     token: p.platformLeadId ? tokenById.get(p.platformLeadId) || null : null,
   }));
 
