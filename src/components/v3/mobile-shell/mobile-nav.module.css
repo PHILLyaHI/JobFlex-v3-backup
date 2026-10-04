@@ -55,6 +55,11 @@
   --tbar-edge: 12px;
   --tbar-space: 8px;
   gap: var(--tbar-space);
+  /* The bar is as wide as the screen whatever box it stands in — a grid cell
+     a browser sized to content left the controls packed at the left edge
+     (owner's iPhone, 2026-10-03). No fixed widths anywhere in the bar. */
+  width: 100%;
+  min-width: 0;
   height: var(--topbar-h);
   padding: 0 var(--tbar-edge);
   background: var(--ink);
