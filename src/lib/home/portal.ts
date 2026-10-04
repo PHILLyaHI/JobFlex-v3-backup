@@ -103,11 +103,19 @@ export async function findOrCreateHome(input: NewHomeInput): Promise<{ home: Hom
 
 /** Requests made with this home's email before it existed join it. Returns how many did. */
 /** The intake prefilled from a home (and a plan on it) — /homeowner?home=&plan=. */
-export async function loadWizardPrefill(key: string | null | undefined, planId?: string | null): Promise<WizardPrefill | null> {
+export async function loadWizardPrefill(key: string | null | undefined, planId?: string | null, withOrgId?: string | null): Promise<WizardPrefill | null> {
   if (!key) return null;
   const home = await findHomeByKey(key);
   if (!home) return null;
   const plan = planId ? await db.homePlan.findFirst({ where: { id: planId, homeId: home.id, status: "PLANNED" } }) : null;
+  // "Hire again": only a shop that had one of this home's requests; the ask
+  // goes in the homeowner's own words, where the Lead Center reads it.
+  let again = "";
+  if (withOrgId) {
+    const had = await db.platformLead.findFirst({ where: { homeId: home.id, OR: [{ matchedOrgId: withOrgId }, { offers: { some: { organizationId: withOrgId } } }] }, select: { detectedTrade: true, projectType: true, createdAt: true } });
+    const org = had ? await db.organization.findUnique({ where: { id: withOrgId }, select: { name: true, deletedAt: true } }) : null;
+    if (had && org && !org.deletedAt) again = `Please send this to ${org.name} again — they did my ${(had.detectedTrade ?? had.projectType ?? "last project").toLowerCase()} in ${had.createdAt.getFullYear()}. `;
+  }
   return {
     name: home.name,
     email: home.email,
@@ -116,7 +124,7 @@ export async function loadWizardPrefill(key: string | null | undefined, planId?:
     zip: home.zip ?? "",
     homeKey: key,
     planId: plan?.id ?? null,
-    description: plan ? `${plan.title}${plan.notes ? ` — ${plan.notes}` : ""}` : "",
+    description: `${again}${plan ? `${plan.title}${plan.notes ? ` — ${plan.notes}` : ""}` : ""}`,
   };
 }
 
@@ -157,6 +165,18 @@ export interface HomeContractor {
   lastAt: string;
   /** /book/<slug> when the shop takes bookings; null otherwise. */
   bookingHref: string | null;
+  /** The intake, asking for this shop again (the Lead Center reads the ask). */
+  hireHref: string;
+}
+
+export interface HomeMembership {
+  name: string;
+  orgName: string;
+  /** SENT (offered, not yet accepted) | ACTIVE */
+  status: string;
+  href: string;
+  nextVisit: { label: string; at: string } | null;
+  endsAt: string | null;
 }
 
 export interface HomeNeed {
@@ -187,11 +207,14 @@ export interface HomeDashboard {
   projects: RequestPortalView[];
   needs: HomeNeed[];
   contractors: HomeContractor[];
+  memberships: HomeMembership[];
   plans: HomePlanView[];
   calendar: HomeCalendarItem[];
   messages: Record<string, HomeMessageView[]>;
   stats: { projects: number; hired: number; spent: number };
 }
+
+const usd0 = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 function ymdIn(iso: string, tz: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(iso));
@@ -226,7 +249,7 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
       const c = seen.get(org.id);
       if (c) c.projects += 1;
       else {
-        seen.set(org.id, { org, projects: 1, lastAt: p.submittedAt, bookingHref: null });
+        seen.set(org.id, { org, projects: 1, lastAt: p.submittedAt, bookingHref: null, hireHref: `/homeowner?home=${encodeURIComponent(key)}&with=${encodeURIComponent(org.id)}` });
         orgIds.push(org.id);
       }
     }
@@ -239,11 +262,27 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     }
   }
 
-  // Reviews waiting: a shop asked, the homeowner has not answered.
+  // Reviews waiting: a shop asked, the homeowner has not answered. And the
+  // memberships (service plans) a shop offered or runs for them.
   const clientIds = projects.flatMap((p) => p.clients.map((c) => c.clientId));
-  const reviews = clientIds.length
-    ? await db.reviewRequest.findMany({ where: { clientId: { in: clientIds }, status: "SENT", completedAt: null, hiddenAt: null }, select: { publicToken: true, organizationId: true, sentAt: true } })
-    : [];
+  const [reviews, planRowsSp] = clientIds.length
+    ? await Promise.all([
+        db.reviewRequest.findMany({ where: { clientId: { in: clientIds }, status: "SENT", completedAt: null, hiddenAt: null }, select: { publicToken: true, organizationId: true, sentAt: true } }),
+        db.servicePlan.findMany({
+          where: { clientId: { in: clientIds }, status: { in: ["SENT", "ACTIVE"] } },
+          orderBy: { createdAt: "desc" },
+          include: { organization: { select: { name: true } }, visits: { where: { status: "SCHEDULED" }, orderBy: { dueAt: "asc" }, take: 1 } },
+        }),
+      ])
+    : [[], []];
+  const memberships: HomeMembership[] = planRowsSp.map((sp) => ({
+    name: sp.name,
+    orgName: sp.organization.name,
+    status: sp.status,
+    href: `/plan/${encodeURIComponent(sp.acceptToken)}`,
+    nextVisit: sp.visits[0] ? { label: sp.visits[0].label, at: sp.visits[0].dueAt.toISOString() } : null,
+    endsAt: sp.endsAt?.toISOString() ?? null,
+  }));
 
   // What needs the homeowner now, most pressing first.
   const needs: HomeNeed[] = [];
@@ -260,6 +299,12 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
   for (const r of reviews) {
     const org = seen.get(r.organizationId)?.org;
     needs.push({ kind: "review", text: `${org?.name ?? "A contractor"} asked for a review`, href: `/review/${encodeURIComponent(r.publicToken)}`, at: r.sentAt?.toISOString() ?? null });
+  }
+  for (const m of memberships) if (m.status === "SENT") needs.push({ kind: "plan", text: `${m.orgName} offered you a plan: ${m.name}`, href: m.href, at: null });
+  for (const p of projects) {
+    for (const q of p.proposals) {
+      if (q.current && q.nextDue && q.remaining > 0) needs.push({ kind: "proposal", text: `${q.orgName}: ${q.nextDue.label} due — ${usd0(q.nextDue.amount)}`, href: `/portal/q/${encodeURIComponent(q.publicId)}`, at: null });
+    }
   }
   for (const pl of planRows) {
     if (pl.status === "PLANNED" && pl.plannedFor.getTime() <= now.getTime()) needs.push({ kind: "plan", text: `You planned: ${pl.title} — ready to submit it?`, href: `/homeowner?home=${encodeURIComponent(key)}&plan=${encodeURIComponent(pl.id)}`, at: pl.plannedFor.toISOString() });
@@ -280,6 +325,7 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
   // The calendar: plans, visits, the requests and what came of them.
   const calendar: HomeCalendarItem[] = [];
   for (const p of plans) if (p.status === "PLANNED") calendar.push({ date: p.date, kind: "plan", label: p.title, href: null });
+  for (const m of memberships) if (m.nextVisit) calendar.push({ date: ymdIn(m.nextVisit.at, tz), kind: "visit", label: `${m.orgName}: ${m.nextVisit.label} (${m.name})`, href: m.href });
   for (const p of projects) {
     const href = `/request/${encodeURIComponent(p.token)}`;
     calendar.push({ date: ymdIn(p.submittedAt, tz), kind: "request", label: `Sent: ${p.trade ?? "request"}`, href });
@@ -314,6 +360,7 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
     projects,
     needs,
     contractors: [...seen.values()],
+    memberships,
     plans,
     calendar,
     messages,

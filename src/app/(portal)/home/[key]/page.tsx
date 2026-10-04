@@ -140,6 +140,26 @@ export default async function HomePage({ params }: { params: Promise<{ key: stri
           </section>
         )}
 
+        {/* ── memberships ────────────────────────────────────────────── */}
+        {h.memberships.length > 0 && (
+          <section className={s.card} aria-labelledby="plans-sp-title">
+            <div className={s.cardHead}><h2 id="plans-sp-title" className={s.label}>Your memberships</h2></div>
+            {h.memberships.map((m) => (
+              <div key={m.href} className={s.row}>
+                <div className={s.rowMain}>
+                  <div className={s.rowTitle}>{m.name} · {m.orgName}</div>
+                  <div className={s.mono}>
+                    {m.status === "ACTIVE" ? "Member" : "Offered to you"}
+                    {m.nextVisit && <> · next visit <LocalTime iso={m.nextVisit.at} kind="day" tz={h.timeZone} /> — {m.nextVisit.label}</>}
+                    {m.endsAt && m.status === "ACTIVE" && <> · through <LocalTime iso={m.endsAt} kind="date" tz={h.timeZone} /></>}
+                  </div>
+                </div>
+                <a className={m.status === "SENT" ? s.btnPrimary : s.btnGhost} href={m.href}>{m.status === "SENT" ? "See the plan" : "Open"}</a>
+              </div>
+            ))}
+          </section>
+        )}
+
         {/* ── the contractors ────────────────────────────────────────── */}
         {h.contractors.length > 0 && (
           <section className={s.card} aria-labelledby="pros-title">
@@ -163,6 +183,7 @@ export default async function HomePage({ params }: { params: Promise<{ key: stri
                   {c.org.smsHref && <a className={s.btnGhost} href={c.org.smsHref}>Text</a>}
                   {c.org.email && <a className={s.btnGhost} href={`mailto:${c.org.email}`}>Email</a>}
                   {c.bookingHref && <a className={s.btnGhost} href={c.bookingHref}>Book a visit</a>}
+                  <a className={s.btnGhost} href={c.hireHref}>Hire again</a>
                 </div>
               </div>
             ))}
@@ -215,6 +236,15 @@ function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }) {
             <dd>
               {usd.format(shown.total + shown.approvedChanges)} · {STAGE_WORD[shown.stage]} ·{" "}
               <a className={s.link} href={`/portal/q/${encodeURIComponent(shown.publicId)}`}>{open ? "Review & accept" : "Open"}</a>
+            </dd>
+          </div>
+        )}
+        {won && (won.paid > 0 || won.remaining > 0) && (
+          <div>
+            <dt>Payments</dt>
+            <dd>
+              {won.remaining <= 0 ? "Paid in full" : `${usd.format(won.paid)} paid · ${usd.format(won.remaining)} left`}
+              {won.nextDue && won.remaining > 0 && <> · next: {won.nextDue.label} {usd.format(won.nextDue.amount)} — <a className={s.link} href={`/portal/q/${encodeURIComponent(won.publicId)}`}>pay</a></>}
             </dd>
           </div>
         )}
