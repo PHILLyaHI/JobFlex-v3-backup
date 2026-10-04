@@ -960,7 +960,7 @@
    pop-overs have no place on a phone.
    ============================================================ */
 .scrim {
-  position: fixed; inset: 0;
+  position: absolute; inset: 0;
   z-index: 80;
   background: rgba(10, 10, 10, 0.35);
   opacity: 0; pointer-events: none;
@@ -969,8 +969,10 @@
 .scrim.on { opacity: 1; pointer-events: auto; }
 /* translateY(100%) PLUS visibility:hidden, so a closed sheet leaves the tab
    order and the accessibility tree instead of lurking off-screen. */
+/* THE SHEET RULE — absolute in `.app`, capped by a percentage of it, never
+   pinned to the viewport: see mobile-clients.module.css. */
 .sheet {
-  position: fixed;
+  position: absolute;
   left: 0; right: 0; bottom: 0;
   z-index: 81;
   background: var(--paper);
@@ -993,7 +995,7 @@
   margin-bottom: 6px;
 }
 .sheetTitle { font-size: 18px; font-weight: 900; letter-spacing: 0.02em; text-transform: uppercase; line-height: 1.2; }
-.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 0 1 auto; min-height: 0; }
 /* 6px thumb on a transparent track. Never painted with --hair. */
 .sheetBody::-webkit-scrollbar { width: 6px; }
 .sheetBody::-webkit-scrollbar-track { background: transparent; }

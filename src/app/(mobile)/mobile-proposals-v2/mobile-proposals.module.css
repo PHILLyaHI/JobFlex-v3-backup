@@ -863,15 +863,17 @@
    danger item.
    ============================================================ */
 .scrim {
-  position: fixed; inset: 0;
+  position: absolute; inset: 0;
   z-index: 80;
   background: rgba(10, 10, 10, 0.35);
   opacity: 0; pointer-events: none;
   transition: opacity 0.22s ease;
 }
 .scrim.on { opacity: 1; pointer-events: auto; }
+/* THE SHEET RULE — absolute in `.app`, capped by a percentage of it, never
+   pinned to the viewport: see mobile-clients.module.css. */
 .sheet {
-  position: fixed;
+  position: absolute;
   left: 0; right: 0; bottom: 0;
   z-index: 81;
   background: var(--paper);
@@ -898,7 +900,7 @@
   letter-spacing: 0.02em; text-transform: uppercase;
   line-height: 1.2;
 }
-.sheetBody { overflow-y: auto; }
+.sheetBody { overflow-y: auto; flex: 0 1 auto; min-height: 0; }
 .pmenuItem {
   display: flex; align-items: center; gap: 12px;
   width: 100%;

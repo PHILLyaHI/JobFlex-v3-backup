@@ -646,15 +646,27 @@
    desktop centre-screen modal has no place on a phone).
    ============================================================ */
 .scrim {
-  position: fixed; inset: 0;
+  position: absolute; inset: 0;
   z-index: 80;
   background: rgba(10, 10, 10, 0.35);
   opacity: 0; pointer-events: none;
   transition: opacity 0.22s ease;
 }
 .scrim.on { opacity: 1; pointer-events: auto; }
+/* THE SHEET RULE (2026-10-04; the owner's iPhone: "Edit client" ran off the
+   end of the screen — Cancel half visible, Save not at all, and no scroll got
+   there). A sheet hangs from the page's own frame, `.app` — a fixed box with a
+   stated height — not from the viewport: absolute, its ceiling a percentage
+   of that frame. Pinned to the viewport (`position: fixed; bottom: 0`) and
+   capped by a percentage of it, iOS Safari gave it neither: the cap did not
+   bind (the body stood at its full height, so there was nothing to scroll)
+   and the foot lay below the end of the screen. Desktop engines do not
+   reproduce it. The body is the sheet's one scroller; the grab, the head and
+   the foot keep their height, so the buttons are always on screen, above the
+   home indicator (`padding-bottom: var(--safe-b)`). The scrim hangs from the
+   same frame. */
 .sheet {
-  position: fixed;
+  position: absolute;
   left: 0; right: 0; bottom: 0;
   z-index: 81;
   background: var(--paper);
@@ -691,7 +703,7 @@
   line-clamp: 2;
   overflow: hidden;
 }
-.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 0 1 auto; min-height: 0; }
 /* Row menu items: icon in a 26px tonal box, title + sub, one disabled and one
    danger present. */
 .cmenuItem {

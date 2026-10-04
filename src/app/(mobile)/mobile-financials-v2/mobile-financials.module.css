@@ -1052,15 +1052,17 @@
    prefers sheets over modals).
    ============================================================ */
 .scrim {
-  position: fixed; inset: 0;
+  position: absolute; inset: 0;
   z-index: 80;
   background: rgba(10, 10, 10, 0.35);
   opacity: 0; pointer-events: none;
   transition: opacity 0.22s ease;
 }
 .scrim.on { opacity: 1; pointer-events: auto; }
+/* THE SHEET RULE — absolute in `.app`, capped by a percentage of it, never
+   pinned to the viewport: see mobile-clients.module.css. */
 .sheet {
-  position: fixed;
+  position: absolute;
   left: 0; right: 0; bottom: 0;
   z-index: 81;
   background: var(--paper);
@@ -1071,9 +1073,10 @@
   visibility: hidden;
   transition: transform 0.3s var(--ease-out), visibility 0.3s;
   padding-bottom: var(--safe-b);
-  /* Same rule as the filter menu: the ceiling is --app-h, not 92% of the
-     layout viewport, so the form sheet's beige foot survives the keyboard. */
-  max-height: calc(var(--app-h, 100dvh) * 0.92);
+  /* The ceiling is 92% of `.app`, whose height is --app-h — the visible
+     height, keyboard included — so the form sheet's beige foot survives the
+     keyboard. */
+  max-height: 92%;
   display: flex; flex-direction: column;
 }
 .sheet.on { transform: none; visibility: visible; }
@@ -1094,6 +1097,7 @@
      drawn line. */
   scrollbar-width: thin;
   scrollbar-color: var(--muted-faint) transparent;
+  flex: 0 1 auto; min-height: 0;
 }
 .sheetBody::-webkit-scrollbar { width: 6px; }
 .sheetBody::-webkit-scrollbar-track { background: transparent; }

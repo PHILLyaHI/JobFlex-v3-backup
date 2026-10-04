@@ -253,7 +253,16 @@
   :global(.jf-blueprint :is(.content, .inv-layer)) .check li { grid-template-columns: 22px minmax(0, 1fr) auto; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .check li :global(.pstatus) { grid-column: 2 / -1; justify-self: start; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .empty { margin: 16px; }
-  :global(.jf-blueprint :is(.content, .inv-layer)) .sh, :global(.jf-blueprint :is(.content, .inv-layer)) .sh-wide { width: 100%; border-left: 0; top: auto; max-height: 92vh; border-top: 2px solid var(--ink); }
+  /* THE SHEET RULE (2026-10-04, see mobile-clients.module.css): on a phone the
+     layer is a fixed box that states its size, and the sheet hangs from it —
+     absolute, capped by a percentage of it, not by vh and not pinned to the
+     viewport's own bottom edge. .sh-b is the one scroller; the foot keeps its
+     height and clears the home indicator. */
+  :global(.jf-blueprint .inv-layer) { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 90; }
+  :global(.jf-blueprint .inv-layer) .sh-bg { position: absolute; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .sh, :global(.jf-blueprint :is(.content, .inv-layer)) .sh-wide { position: absolute; width: 100%; border-left: 0; top: auto; max-height: 92%; border-top: 2px solid var(--ink); }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .sh-b { min-height: 0; }
+  :global(.jf-blueprint :is(.content, .inv-layer)) .sh-f { flex-shrink: 0; padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
   :global(.jf-blueprint :is(.content, .inv-layer)) .sh-f { flex-wrap: wrap; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .sh-f .r { width: 100%; margin-left: 0; }
   :global(.jf-blueprint :is(.content, .inv-layer)) .sh-f .r .btn { flex: 1; }

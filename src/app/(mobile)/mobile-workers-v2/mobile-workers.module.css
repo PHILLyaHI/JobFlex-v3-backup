@@ -669,15 +669,17 @@
    invite/edit form. A centre-screen modal has no place on a phone.
    ============================================================ */
 .scrim {
-  position: fixed; inset: 0;
+  position: absolute; inset: 0;
   z-index: 80;
   background: rgba(10, 10, 10, 0.35);
   opacity: 0; pointer-events: none;
   transition: opacity 0.22s ease;
 }
 .scrim.on { opacity: 1; pointer-events: auto; }
+/* THE SHEET RULE — absolute in `.app`, capped by a percentage of it, never
+   pinned to the viewport: see mobile-clients.module.css. */
 .sheet {
-  position: fixed;
+  position: absolute;
   left: 0; right: 0; bottom: 0;
   z-index: 81;
   background: var(--paper);
@@ -766,7 +768,7 @@
   line-height: 1.45;
   color: var(--danger);
 }
-.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.sheetBody { overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 0 1 auto; min-height: 0; }
 /* 6px, thumb on muted-faint over a transparent track — never painted with
    --hair. Firefox gets the same two values through its own properties. */
 .sheetBody::-webkit-scrollbar,
