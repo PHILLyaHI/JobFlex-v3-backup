@@ -3,16 +3,19 @@
    therefore stay free of next/headers types. */
 
 import type { LandingEProps } from "./landing-e-page";
-import { pickFbclid, pickUtm, resolveLandingVariant } from "./landing-variants";
+import { pickFbclid, pickUtm, resolveLandingHook, resolveLandingVariant } from "./landing-variants";
 
 /** The variant this visit gets — from the URL and NOTHING ELSE (owner,
     2026-09-10). The jf_industry cookie the page writes is for the register
     form's pre-select only; it never chooses the landing.
 
     · `?industry=` / `?trade=` present and known → that variant.
-    · present but unknown, or absent → the default page. */
+    · present but unknown, or absent → the default page.
+    · `?hook=` (2026-10-04) → the ad's opening line as that variant's
+      headline, when the key is in the trade's table (LANDING_HOOKS); any
+      other value, or a trade without a table, is the trade's own hero. */
 export function readLandingVariant(params: Record<string, string | string[] | undefined>): LandingEProps {
   const utm = pickUtm(params);
   const variant = resolveLandingVariant(params.industry ?? params.trade);
-  return { variant, explicitVariant: Boolean(variant), utm, fbclid: pickFbclid(params) };
+  return { variant, explicitVariant: Boolean(variant), utm, fbclid: pickFbclid(params), hook: resolveLandingHook(variant, params.hook) };
 }

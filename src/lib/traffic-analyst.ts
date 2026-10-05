@@ -14,7 +14,7 @@
 // headline of what is going on. Pure: no I/O, so scripts/qa/traffic-analyst
 // .check.ts proves every rule on made-up sessions.
 
-import { LANDING_SECTIONS } from "./landing-sections";
+import { LANDING_SECTIONS, OWN_ORDER_LANDINGS, hasOwnSectionOrder, landingSectionsFor, type LandingSection } from "./landing-sections";
 import { TRAFFIC_EVENTS as E } from "./traffic-contract";
 import { classifySource } from "./traffic-live";
 import { BROWSER_TYPE_SQL, HOST_SQL, IN_APP_SQL, TRAFFIC_SINCE_MS, UA_SQL, sinceSql, visitorRuleSql } from "./traffic-visitor";
@@ -148,6 +148,7 @@ export interface AnalystFinding {
 }
 
 export interface AnalystSegment { key: string; name: string; n: number; bounce: number | null; cta: number | null; form: number | null; completed: number; platform?: string }
+export interface AnalystSectionReach { key: string; label: string; reach: number | null; shown: "all" | "some" }
 
 export interface AnalystReport {
   days: number;
@@ -160,7 +161,14 @@ export interface AnalystReport {
   headline: string;
   findings: AnalystFinding[];
   funnel: Array<{ key: string; label: string; n: number; pct: number | null }>;
-  sections: Array<{ key: string; label: string; reach: number | null; shown: "all" | "some" }>;
+  /** How far down the page they get, over the landings laid out in the usual
+   *  order (LANDING_SECTIONS). */
+  sections: AnalystSectionReach[];
+  /** A landing laid out in an order of its own (lib/landing-sections — the
+   *  roofing landing, 2026-10-04) is read apart, in that order: "the section
+   *  after the hero" is a different section there. Only landings with a
+   *  measured visit; absent on a reading saved before the field existed. */
+  landings?: Array<{ key: string; name: string; measured: number; sections: AnalystSectionReach[] }>;
   ads: AnalystSegment[];
   trades: AnalystSegment[];
   placements: Array<{ placement: string; n: number }>;
@@ -351,7 +359,14 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
   const basis: "ads" | "all" = enough ? "ads" : "all";
   const base = enough ? fromAds : landed;
   const last24h = landed.filter((r) => r.startedAt >= now - 86_400_000).length;
-  const measured = base.filter((r) => r.sections.length > 0);
+  // The visits that reported a section. A landing laid out in an order of
+  // its own (lib/landing-sections) is read apart, in that order: mixed into
+  // the usual one, a roofing visit that went hero → demo would read as a
+  // visit that never reached "the section after the hero". A visit from
+  // before that landing took its order saw the usual one, and is read there.
+  const measuredAll = base.filter((r) => r.sections.length > 0);
+  const ownOrder = (r: Read) => hasOwnSectionOrder(r.industry, r.startedAt);
+  const measured = measuredAll.filter((r) => !ownOrder(r));
 
   // The funnel in people, over the basis.
   const n = base.length;
@@ -374,8 +389,11 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
     heroMedianPhone: median(nums(base.filter((r) => !/desktop/i.test(r.device)), (r) => r.heroMs)),
     formReadyMedian: median(nums(all.filter((r) => !/desktop/i.test(r.device)), (r) => r.formReadyMs)),
   };
-  // Sections: of the visits that reported any section, how many reached each.
-  const sections = LANDING_SECTIONS.map((sec) => ({ key: sec.key, label: sec.label, shown: sec.shown, reach: measured.length ? measured.filter((r) => r.sections.includes(sec.key)).length / measured.length : null }));
+  // Sections: of the visits that reported any section, how many reached each —
+  // in the usual order, and per landing with an order of its own.
+  const reachOf = (xs: Read[], list: readonly LandingSection[]): AnalystSectionReach[] => list.map((sec) => ({ key: sec.key, label: sec.label, shown: sec.shown, reach: xs.length ? xs.filter((r) => r.sections.includes(sec.key)).length / xs.length : null }));
+  const sections = reachOf(measured, LANDING_SECTIONS);
+  const landings = OWN_ORDER_LANDINGS.map((key) => { const xs = measuredAll.filter((r) => r.industry === key && ownOrder(r)); return { key, name: TRADE_NAME(key), measured: xs.length, sections: reachOf(xs, landingSectionsFor(key)) }; }).filter((l) => l.measured > 0);
   const placementCounts = new Map<string, number>();
   for (const r of base) for (const p of r.placements) placementCounts.set(p, (placementCounts.get(p) ?? 0) + 1);
   const placements = [...placementCounts].map(([placement, c]) => ({ placement, n: c })).sort((a, b) => b.n - a.n);
@@ -522,9 +540,17 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
       action: "Bring the price and a sign-up button into the first two screens; the pricing section is too far down to be seen.", n: scrolls.length });
   }
 
-  // The section where they leave.
-  if (measured.length >= 20) {
-    const shown = sections.filter((s) => s.reach !== null && s.reach > 0);
+  // The section where they leave, and the demo that is not the second screen
+  // (2026-10-04: the ad showed the estimator, the page shows something else
+  // first) — each read in the order the sections are laid out in: the usual
+  // one, then every landing with an order of its own, named.
+  const layouts: Array<{ id: string; on: string; of: string; about?: string; n: number; secs: AnalystSectionReach[] }> = [
+    { id: "", on: "", of: "", n: measured.length, secs: sections },
+    ...landings.map((l) => ({ id: `-${l.key}`, on: `On ${l.name} `, of: ` to ${l.name}`, about: l.name, n: l.measured, secs: l.sections })),
+  ];
+  for (const lay of layouts) {
+    if (lay.n < 20) continue;
+    const shown = lay.secs.filter((s) => s.reach !== null && s.reach > 0);
     let cliff: { at: typeof shown[0]; next: typeof shown[0]; drop: number } | null = null;
     for (let i = 0; i + 1 < shown.length; i++) {
       const a = shown[i], b = shown[i + 1];
@@ -532,23 +558,19 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
       const drop = (a.reach ?? 0) - (b.reach ?? 0);
       if (drop >= 0.25 && (!cliff || drop > cliff.drop)) cliff = { at: a, next: b, drop };
     }
-    if (cliff) add({ id: "cliff", tone: "warn", title: `They leave at «${cliff.at.label}»`,
-      evidence: `${pct(cliff.at.reach)} of ${measured.length} measured visits reach «${cliff.at.label}», ${pct(cliff.next.reach)} reach the next section («${cliff.next.label}»).`,
-      action: `Shorten «${cliff.at.label}» or move what matters below it («${cliff.next.label}») above it — and put a sign-up button right there, at the point where they stop.`, n: measured.length });
-  }
+    if (cliff) add({ id: `cliff${lay.id}`, tone: "warn", title: lay.on ? `${lay.on}they leave at «${cliff.at.label}»` : `They leave at «${cliff.at.label}»`,
+      evidence: `${pct(cliff.at.reach)} of ${lay.n} measured visits${lay.of} reach «${cliff.at.label}», ${pct(cliff.next.reach)} reach the next section («${cliff.next.label}»).`,
+      action: `Shorten «${cliff.at.label}» or move what matters below it («${cliff.next.label}») above it — and put a sign-up button right there, at the point where they stop.`, ...(lay.about ? { about: lay.about } : {}), n: lay.n });
 
-  // The demo is not the second screen (2026-10-04): the ad showed the
-  // estimator, the page shows something else first.
-  if (measured.length >= 20) {
-    const second = LANDING_SECTIONS[1];
-    const demoIndex = LANDING_SECTIONS.findIndex((x) => x.key === "showcase");
-    const secondReach = sections.find((x) => x.key === second.key)?.reach ?? null;
-    const demoReach = sections.find((x) => x.key === "showcase")?.reach ?? null;
-    if (second.key !== "showcase" && demoIndex > 1 && secondReach !== null && demoReach !== null && secondReach >= 0.25 && demoReach < secondReach) {
-      add({ id: "order", tone: "warn", title: `The demo is the ${ordinal(demoIndex + 1)} screen; «${second.label}» comes before it`,
-        evidence: `${pct(secondReach)} of ${measured.length} measured visits reach «${second.label}», ${pct(demoReach)} reach the demo («${LANDING_SECTIONS[demoIndex].label}») after it.`,
+    const second = lay.secs[1];
+    const demoIndex = lay.secs.findIndex((x) => x.key === "showcase");
+    const secondReach = second?.reach ?? null;
+    const demoReach = lay.secs[demoIndex]?.reach ?? null;
+    if (second && second.key !== "showcase" && demoIndex > 1 && secondReach !== null && demoReach !== null && secondReach >= 0.25 && demoReach < secondReach) {
+      add({ id: `order${lay.id}`, tone: "warn", title: `${lay.on}${lay.on ? "the" : "The"} demo is the ${ordinal(demoIndex + 1)} screen; «${second.label}» comes before it`,
+        evidence: `${pct(secondReach)} of ${lay.n} measured visits${lay.of} reach «${second.label}», ${pct(demoReach)} reach the demo («${lay.secs[demoIndex].label}») after it.`,
         action: "Put the estimator demo directly under the hero — it is what the ad showed — and move the rest down.",
-        steps: [`Reorder landing-e-page.tsx: hero → the estimators showcase → …; «${second.label}» after the proof, near the pricing.`, "Let the hero's product shot play its sequence on phones too (it opens as a still today), with the sign-up button under it."], n: measured.length });
+        steps: [`Reorder landing-e-page.tsx: hero → the estimators showcase → …; «${second.label}» after the proof, near the pricing.`, "Let the hero's product shot play its sequence on phones too (it opens as a still today), with the sign-up button under it."], ...(lay.about ? { about: lay.about } : {}), n: lay.n });
     }
   }
 
@@ -696,9 +718,11 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
 
   return {
     days, period: period.label, windowFrom,
-    sample: { sessions: all.length, landed: landed.length, fromAds: fromAds.length, last24h, measured: measured.length, enough, needed: ANALYST_MIN_AD_VISITS, basis },
+    // `measured` is every visit with a section reading; the sections table is
+    // over the usual order's share of them, each own-order landing has its own.
+    sample: { sessions: all.length, landed: landed.length, fromAds: fromAds.length, last24h, measured: measuredAll.length, enough, needed: ANALYST_MIN_AD_VISITS, basis },
     // Every ad, trade and placement (2026-10-04): the panel shows the first
     // dozen ads; the exports carry them all.
-    headline, findings, funnel, sections, ads, trades, placements, stats,
+    headline, findings, funnel, sections, landings, ads, trades, placements, stats,
   };
 }

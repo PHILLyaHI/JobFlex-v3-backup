@@ -108,8 +108,16 @@ export function analystToMarkdown(result: AnalystResult, opts: { timezone: strin
 
   out.push(`${h(1)} The funnel · ${r.sample.basis === "ads" ? "visits from ads" : "all landing visits"}`);
   out.push(mdTable(["Step", "People", "Share"], r.funnel.map((s) => [s.label, s.n, pct(s.pct)])));
-  out.push(`${h(1)} How far down the page they get · ${r.sample.measured} measured ${r.sample.measured === 1 ? "visit" : "visits"}`);
+  // A landing laid out in an order of its own (the roofing landing) is read
+  // apart, in that order, under the usual order's table.
+  const ownOrder = r.landings ?? [];
+  const usualMeasured = r.sample.measured - ownOrder.reduce((a, l) => a + l.measured, 0);
+  out.push(`${h(1)} How far down the page they get · ${usualMeasured} measured ${usualMeasured === 1 ? "visit" : "visits"}`);
   out.push(mdTable(["Section", "Reached", "On"], r.sections.map((s) => [s.label, pct(s.reach), s.shown === "all" ? "every landing" : "where shown"])));
+  for (const l of ownOrder) {
+    out.push(`${h(2)} ${l.name[0].toUpperCase()}${l.name.slice(1)}, in its own order · ${l.measured} measured ${l.measured === 1 ? "visit" : "visits"}`);
+    out.push(mdTable(["Section", "Reached"], l.sections.filter((s) => s.shown === "all" || (s.reach ?? 0) > 0).map((s) => [s.label, pct(s.reach)])));
+  }
   out.push(`${h(1)} Ads (${r.ads.length})`);
   out.push(mdTable(["Ad", "Id", "Platform", "Visits", "Bounced", "Pressed", "Opened the form", "Signed up"], segmentRows(r.ads, true)));
   const money = result.money;

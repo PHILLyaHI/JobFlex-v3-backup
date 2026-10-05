@@ -270,7 +270,12 @@ export function RoofShot({
   return (
     <AppFrame
       path="app.jobflex.com/estimators/roof"
-      body={tilted ? "#f6f7f5" : aerial ? "#3b4034" : "#e9eae6"}
+      // The frame takes the aerial's dark ground so the rail's column beside
+      // the stage reads as part of the photo. In the hero on a phone the
+      // rail's room is UNDER the stage, and while the sequence plays there
+      // (2026-10-04) that would be a dark slab under a light stage: the frame
+      // stays the stage's own grey until the drawing stands.
+      body={tilted ? "#f6f7f5" : aerial && !(hero && compact) ? "#3b4034" : "#e9eae6"}
     >
       <div className="relative">
         <Prompt label="Address" value={typed} lifted={lifted} search />
@@ -366,9 +371,9 @@ export function RoofShot({
           <Stat k="Total squares" v="17.6" accent />
           <Stat k="Pitch" v="8/12" />
           <Stat k="Ridge" v="48 lf" />
-          <Stat k="Hip" v="62 lf" />
-          <Stat k="Eave" v="96 lf" />
-          <Stat k="Bundles" v="56" />
+          <Stat k="Hip" v="62 lf" minor />
+          <Stat k="Eave" v="96 lf" minor />
+          <Stat k="Bundles" v="56" minor />
           <Stat k="Labor" v="$6,610" />
           <TotalPlate total="$13,190" note="Estimate total" play={measured} />
         </Rail>

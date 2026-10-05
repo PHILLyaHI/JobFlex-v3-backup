@@ -56,7 +56,9 @@ export function rememberFbclidForGoogle(fbclid: string | null | undefined) {
    2. ANALYTICS. One `landing_view` per page load with the industry that was
       shown ("default" when none) and whatever utm_* the visit carried. Goes
       through trackTraffic, which queues until PostHog is initialised and
-      never throws.
+      never throws. When the headline was an ad's opening line (`?hook=`,
+      2026-10-04) the event names it as `hook`, so one hook can be read
+      against another; a view of the trade's own hero carries no `hook`.
 
    3. META ViewContent (owner, 2026-10-01 — reverses "no Meta Pixel here" of
       2026-09-06): once per page load, content_name = the trade ("Roofing";
@@ -68,15 +70,18 @@ export function LandingVariantEffects({
   industry,
   remember,
   utm,
+  hook,
 }: {
   industry: LandingVariantKey | undefined;
   /** True only when the variant came from the URL, not the cookie. */
   remember: boolean;
   utm: UtmParams;
+  /** The key of the ad's opening line the headline showed (LANDING_HOOKS), if any. */
+  hook?: string;
 }) {
   useEffect(() => {
     writeLandingCookies(industry && remember ? industry : undefined, utm);
-    trackTraffic(TRAFFIC_EVENTS.landingView, { industry: industry ?? "default", variant: "e", ...utm });
+    trackTraffic(TRAFFIC_EVENTS.landingView, { industry: industry ?? "default", variant: "e", ...(hook ? { hook } : {}), ...utm });
     // One capture per page load; the props only change on a full navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

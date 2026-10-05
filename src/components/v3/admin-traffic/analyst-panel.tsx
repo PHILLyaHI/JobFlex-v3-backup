@@ -12,7 +12,7 @@ import { AlertTriangle, CheckCircle2, Info, Lightbulb, RefreshCw, Sparkles } fro
 import { getTrafficAnalyst, type AnalystResult } from "@/actions/trafficDashboard";
 import { AnalystExport } from "./analyst-export";
 import { AnalystMoney } from "./analyst-money";
-import { pct, type AnalystFinding } from "@/lib/traffic-analyst";
+import { pct, type AnalystFinding, type AnalystSectionReach } from "@/lib/traffic-analyst";
 import { staleLabel } from "@/lib/traffic-contract";
 import s from "./traffic.module.css";
 
@@ -20,6 +20,15 @@ const READ_EVERY_MS = 10 * 60_000;
 const TONE_ICON: Record<AnalystFinding["tone"], typeof Info> = { bad: AlertTriangle, warn: AlertTriangle, good: CheckCircle2, info: Info };
 const TONE_WORD: Record<AnalystFinding["tone"], string> = { bad: "Fix", warn: "Watch", good: "Working", info: "Note" };
 const clock = (iso: string, timezone: string) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return ""; } };
+const visits = (n: number) => `${n} measured ${n === 1 ? "visit" : "visits"}`;
+/** How far down a page they get: one bar a section, in the order that page lays them out. */
+function SectionReach({ sections }: { sections: AnalystSectionReach[] }) {
+  return (
+    <ol className={s.analystFunnel}>
+      {sections.filter((sec) => sec.reach !== null && (sec.reach > 0 || sec.shown === "all")).map((sec) => <li key={sec.key}><span>{sec.label}{sec.shown === "some" ? " ·" : ""}{sec.shown === "some" ? <small> where shown</small> : null}</span><i style={{ width: `${Math.max(2, Math.round((sec.reach ?? 0) * 100))}%` }}/><b>{pct(sec.reach)}</b></li>)}
+    </ol>
+  );
+}
 
 export function AnalystPanel({ timezone }: { timezone: string }) {
   const [result, setResult] = useState<AnalystResult | null>(null);
@@ -45,6 +54,10 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
 
   const r = result?.report ?? null;
   const ok = result?.status === "ok" && r;
+  // A landing laid out in an order of its own (the roofing landing) is read
+  // apart, under the usual order's table; the count beside each is its own.
+  const ownOrder = r?.landings ?? [];
+  const usualMeasured = r ? r.sample.measured - ownOrder.reduce((a, l) => a + l.measured, 0) : 0;
   return (
     <section className={`${s.card} ${s.analyst}`} aria-label="The analyst" data-testid="analyst">
       <div className={s.cardHead}>
@@ -96,11 +109,15 @@ export function AnalystPanel({ timezone }: { timezone: string }) {
             </ol>
           </div>
           <div>
-            <span className={s.micro}>How far down the page they get · {r.sample.measured} measured {r.sample.measured === 1 ? "visit" : "visits"}</span>
-            {r.sample.measured ? <ol className={s.analystFunnel}>
-              {r.sections.filter((sec) => sec.reach !== null && (sec.reach > 0 || sec.shown === "all")).map((sec) => <li key={sec.key}><span>{sec.label}{sec.shown === "some" ? " ·" : ""}{sec.shown === "some" ? <small> where shown</small> : null}</span><i style={{ width: `${Math.max(2, Math.round((sec.reach ?? 0) * 100))}%` }}/><b>{pct(sec.reach)}</b></li>)}
-            </ol> : <div className={s.analystEmpty}>No section readings yet — they arrive with the next visits.</div>}
+            <span className={s.micro}>How far down the page they get · {visits(usualMeasured)}{ownOrder.length ? ` · ${ownOrder.map((l) => l.name).join(", ")} apart` : ""}</span>
+            {usualMeasured ? <SectionReach sections={r.sections}/> : <div className={s.analystEmpty}>No section readings yet — they arrive with the next visits.</div>}
           </div>
+          {ownOrder.map((l) => (
+            <div key={l.key} data-testid={`analyst-landing-${l.key}`}>
+              <span className={s.micro}>How far down {l.name} they get, in its own order · {visits(l.measured)}</span>
+              <SectionReach sections={l.sections}/>
+            </div>
+          ))}
         </div>}
 
         {r.ads.length > 0 && <div className={s.tableScroll}>

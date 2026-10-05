@@ -292,9 +292,12 @@ export function Rail({ title, shown, children }: { title: string; shown: boolean
   );
 }
 
-export function Stat({ k, v, accent }: { k: string; v: string; accent?: boolean }) {
+export function Stat({ k, v, accent, minor }: { k: string; v: string; accent?: boolean;
+  /** A row a short rail can do without (2026-10-04): the stylesheet leaves
+   *  it out of an ad landing's hero on a phone (landing-e.css, [data-minor]). */
+  minor?: boolean }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-black/[0.08] pb-2 last:border-0">
+    <div className="flex items-baseline justify-between gap-3 border-b border-black/[0.08] pb-2 last:border-0" data-minor={minor ? "" : undefined}>
       <span className="truncate text-[11px] text-ink-muted">{k}</span>
       <span className={`shrink-0 font-mono text-[12.5px] font-bold ${accent ? "" : "text-ink"}`} style={accent ? { color: BLUE } : undefined}>
         {v}

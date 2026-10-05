@@ -8,6 +8,7 @@ import { Reveal } from "./reveal";
 import { GoogleSignupButton } from "./google-signup-button";
 import { CtaNote } from "./cta-note";
 import { TrialLine } from "./trial-line";
+import { trialLine } from "@/lib/trialPolicy";
 import { HeroEntrance } from "./hero-entrance";
 import { HeroExperiment } from "./hero-experiment";
 import type { InAppBrowser } from "@/lib/inAppBrowser";
@@ -41,7 +42,12 @@ export function Hero({
   fbclid,
   requiresCard = true,
   inAppBrowser = null,
+  priceLine = null,
 }: {
+  /** The trade's price for the first screen ("Then from $95/mo · roof
+   *  estimator included"), read from the plan catalogue by the page
+   *  (hero-price.ts). Null — every landing but an ad landing — renders nothing. */
+  priceLine?: string | null;
   /** The in-app browser the server read from the request (lib/inAppBrowser):
    *  no Google button there, from the first paint. */
   inAppBrowser?: InAppBrowser | null;
@@ -59,6 +65,10 @@ export function Hero({
   fbclid?: string;
 }) {
   const shot = variant.visual !== "dashboard";
+  // An ad landing's first screen (landing-variants.ts, 2026-10-04): tighter
+  // on a phone, so the claim, the button, the trial and the price are all
+  // above the fold and the product shot starts inside it.
+  const adScreen = shot && !!variant.shotCta;
   // The hero plate is the LCP element: preload the one this viewport's CSS
   // will ask for (landing-e.css switches at 860 px). One <link rel="preload">
   // per breakpoint in <head>, with imagesrcset/imagesizes and a media query.
@@ -67,7 +77,7 @@ export function Hero({
   return (
     <section id="hero" className="lp-hero">
       <div className="lp-bg lp-bg--ridge" aria-hidden />
-      <div className="relative z-[1] mx-auto flex max-w-[86rem] flex-col items-center gap-3 px-5 pt-[12vmin] text-center sm:pt-[14vmin]">
+      <div className={`relative z-[1] mx-auto flex max-w-[86rem] flex-col items-center gap-3 px-5 pt-[12vmin] text-center sm:pt-[14vmin]${adScreen ? " lp-hero-copy--ad" : ""}`}>
         {/* On the first screen nothing waits for a script to be seen (2026-10-04): `shown`. */}
         <Reveal shown>
           {/* The gold pill is the same on every variant — one launch line, one
@@ -95,13 +105,14 @@ export function Hero({
             variant is its own page and is never bucketed. */}
         <HeroExperiment enabled={!variantKey}>
         <h1
-          className={`lp-enter ${variant.h1Long ? "text-[clamp(32px,4.8vw,68px)]" : "text-[clamp(38px,6.7vw,96px)]"} font-bold leading-[1.02] tracking-[-0.025em] text-ink`}
+          className={`lp-enter ${variant.h1Long ? "text-[clamp(32px,4.8vw,68px)]" : "text-[clamp(38px,6.7vw,96px)]"} font-bold leading-[1.02] tracking-[-0.025em] text-ink${variant.h1Break ? " lp-h1--lines" : ""}`}
           data-entrance="h1"
         >
           {variant.h1[0]}
           {/* A sentence-long headline breaks where it falls on a phone; the
-              set break is the desk's. */}
-          {variant.h1Long ? (
+              set break is the desk's. An ad's opening line and its answer
+              (h1Break) are two sentences and keep the break everywhere. */}
+          {variant.h1Long && !variant.h1Break ? (
             <>
               {" "}
               <br className="hidden sm:inline" />
@@ -134,7 +145,7 @@ export function Hero({
               bottom margin, the room it takes beyond that note; under 640 it
               keeps its ~30 px to the dashboard and the hero's bottom padding
               gives it back instead (.lp-trial-line--bar, .lp-hero-vis). */}
-          <div className="mx-auto mt-4 flex w-full max-w-[22rem] flex-col gap-3 sm:w-auto sm:max-w-none">
+          <div className={`mx-auto mt-4 flex w-full max-w-[22rem] flex-col gap-3 sm:w-auto sm:max-w-none${priceLine ? " lp-hero-pair--priced" : ""}`}>
           <div className="flex w-full flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-center">
             <a
               href={registerHref}
@@ -168,11 +179,14 @@ export function Hero({
           {requiresCard ? null : <TrialLine tone="dark" size="bar" href={registerHref} spot="hero" />}
           </div>
           {requiresCard ? <CtaNote tone="dark" className="mt-3 text-center" /> : null}
+          {/* The price, in the first screen (2026-10-04): under the trial's
+              line, in the same mono caps as the card-first note. */}
+          {priceLine ? <p className="lp-hero-price">{priceLine}</p> : null}
         </div>
         </HeroEntrance>
       </div>
 
-      <div className={`lp-hero-vis relative z-[1] mt-[8vmin] px-5 pb-[26vmin] sm:px-6${requiresCard ? "" : " lp-hero-vis--badge"}`}>
+      <div className={`lp-hero-vis relative z-[1] mt-[8vmin] px-5 pb-[26vmin] sm:px-6${requiresCard ? "" : " lp-hero-vis--badge"}${adScreen ? " lp-hero-vis--cta" : ""}`}>
         {/* Two builds of the same screen, not one build clipped: the desktop
             plate's 208px sidebar and four-across KPI row cannot survive a
             phone column (owner, 2026-08-25). The phone build also skips
@@ -187,6 +201,21 @@ export function Hero({
             <div data-parallax="18">{shot ? <HeroVisual variant={variant} /> : <DashboardMock />}</div>
           </Reveal>
         </div>
+        {/* THE BUTTON UNDER THE SHOT (2026-10-04; the analyst: "they leave at
+            the hero — put a sign-up button right there, at the point where
+            they stop"). The shot has just shown the estimate being made; the
+            next thing under it is the way to make one. The top-of-page words
+            and the trial's own line, the blue of every section's button.
+            Clicks are `cta_click` with placement "hero-shot". */}
+        {adScreen ? (
+          <div className="lp-hero-after">
+            <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="hero-shot">
+              {cta ?? variant.primaryCta}
+              <span aria-hidden>→</span>
+            </a>
+            <span className="lp-hero-after-note">{trialLine(requiresCard)}</span>
+          </div>
+        ) : null}
       </div>
     </section>
   );

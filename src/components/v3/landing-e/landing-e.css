@@ -2007,3 +2007,103 @@ html[data-lp-entrance] .jf-lp .lp-enter { visibility: hidden; }
    lines are balanced, so the last one carries its share of the words
    ("pretty" only moved one more word down — "your phone." — not enough). */
 .jf-lp .lp-sub--even { text-wrap: balance; }
+
+/* ── THE AD'S FIRST SCREEN (2026-10-04; roofing first — landing-variants.ts) ──
+   The analyst's fixes for the landing the ads arrive on: the price in the
+   first screen, a sign-up button under the product shot, the comparison
+   moved down beside the pricing. Every rule here hangs on a class only such
+   a landing renders, so every other landing is untouched. */
+
+/* AN AD'S OPENING LINE AS THE HEADLINE (`?hook=`, landing-variants.ts): two
+   sentences, one to a line. Where a sentence is wider than a phone it wraps
+   in balanced lines, so its last word never stands alone ("Stop Buying Roof
+   / Reports."). */
+.jf-lp .lp-h1--lines { text-wrap: balance; }
+
+/* THE PRICE, under the trial's line (hero.tsx, hero-price.ts): the landing's
+   mono caps, as the card-first note is lettered; white at 72% on the ink is
+   9:1. It may wrap on a narrow phone, and then its two lines balance. */
+.jf-lp .lp-hero-price {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  text-wrap: balance;
+  color: rgba(255, 255, 255, 0.72);
+}
+@media (min-width: 1024px) {
+  .jf-lp .lp-hero-price { font-size: 12px; }
+}
+/* On the narrowest phones (360 px and under) the letters close up, so the
+   line stays one line instead of leaving its dot at the end of the first. */
+@media (max-width: 374px) {
+  .jf-lp .lp-hero-price { letter-spacing: 0.05em; }
+}
+/* The hero's badge hands its extra height back as a negative bottom margin
+   from 640 px (.lp-trial-line--bar, above), so the default hero keeps its
+   height to the pixel. With a line under it that margin would pull the
+   price up over the badge: here the badge keeps its own height. */
+@media (min-width: 640px) {
+  .jf-lp .lp-hero-pair--priced .lp-trial-line--bar { margin-bottom: 0; }
+}
+
+/* THE BUTTON UNDER THE SHOT (hero.tsx): where the hero's readers stop. One
+   column a thumb wide on a phone, centred under the plate from 640 px; the
+   plate drifts ±18 px against the scroll there (data-parallax), so the gap
+   above the button is wider than the drift. The trial's line under it in
+   the same mono caps as the price. */
+.jf-lp .lp-hero-after {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  max-width: 22rem;
+  margin: 20px auto 0;
+  text-align: center;
+}
+.jf-lp .lp-hero-after-note {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+@media (min-width: 640px) {
+  .jf-lp .lp-hero-after { align-items: center; max-width: none; margin-top: 44px; }
+}
+@media (min-width: 1024px) {
+  .jf-lp .lp-hero-after-note { font-size: 12px; }
+}
+
+/* THE HERO NO TALLER FOR IT ("shorten the hero": 99% of the measured ad
+   visits reached it, 37% the section after). The button and the price add
+   about 125 px; the hero's foot — 26vmin of ink left under the plate for the
+   ridge photo to end in — gives most of it back, since the button now
+   stands there. On a phone the copy also starts 5vmin higher, so the plate's
+   top is inside the first screen, and the takeoff keeps its four telling
+   rows and the total (the three marked `minor` are on the showcase's roof
+   slide, the very next section). Net: the phone hero is shorter than it was
+   without the button. */
+.jf-lp .lp-hero-vis--cta { padding-bottom: 14vmin; }
+@media (max-width: 639px) {
+  .jf-lp .lp-hero-copy--ad { padding-top: 7vmin; }
+  .jf-lp .lp-hero-vis--cta { padding-bottom: 16vmin; }
+  .jf-lp .lp-hero-vis--cta .lp-est-rail [data-minor] { display: none; }
+}
+
+/* THE COMPARISON'S BOX, where a landing moves it under the fold (roofing;
+   landing-e-page.tsx). Its measured height per band, like the sections'
+   own above (.lp-cv--…): the same content-visibility box, the same reason —
+   the scrollbar stays honest before the section has been laid out. On the
+   landings that keep it second it has no box and none of this applies. */
+.jf-lp .lp-cv--compare { --lp-cv: 1605px; }
+@media (min-width: 1280px) { .jf-lp .lp-cv--compare { --lp-cv: 1552px; } }
+@media (max-width: 1023px) { .jf-lp .lp-cv--compare { --lp-cv: 1673px; } }
+@media (max-width: 767px) { .jf-lp .lp-cv--compare { --lp-cv: 704px; } }
+@media (max-width: 639px) { .jf-lp .lp-cv--compare { --lp-cv: 694px; } }
+

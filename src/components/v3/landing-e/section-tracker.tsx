@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { trackTraffic } from "@/lib/traffic-client";
 import { TRAFFIC_EVENTS } from "@/lib/traffic-contract";
-import { LANDING_SECTIONS } from "@/lib/landing-sections";
+import { landingSectionsFor } from "@/lib/landing-sections";
 import type { LandingVariantKey } from "./landing-variants";
 
 /* One `landing_section` per section the visitor actually reaches (the
@@ -13,14 +13,16 @@ import type { LandingVariantKey } from "./landing-variants";
    wrapper, so the server-rendered markup stays as it is. A section counts
    once per load, when a quarter of it is on screen — or, for a block taller
    than the window, when a third of the window is showing it. One observer
-   for all of them; sent by beacon, so the last one survives the page leaving. */
+   for all of them; sent by beacon, so the last one survives the page leaving.
+   `index` is the section's place on THIS landing (2026-10-04): a landing
+   with an order of its own — roofing — numbers them as it lays them out. */
 export function SectionTracker({ industry }: { industry: LandingVariantKey | undefined }) {
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
     const start = performance.now();
     const seen = new Set<string>();
     const targets = new Map<Element, { key: string; index: number }>();
-    LANDING_SECTIONS.forEach((section, index) => {
+    landingSectionsFor(industry).forEach((section, index) => {
       const el = section.selector.map((sel) => document.querySelector(sel)).find((x): x is Element => !!x);
       if (el) targets.set(el, { key: section.key, index });
     });

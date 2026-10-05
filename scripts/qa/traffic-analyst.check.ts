@@ -134,6 +134,26 @@ const adDefault = analyse([...many(20, { utmContent: "A3", industry: "default", 
 check("an ad whose clicks land on the general hero is told to carry ?industry= and a ?hook=", !!find(adDefault, "bounce-A3") && /100% land on the general hero/.test(find(adDefault, "bounce-A3")!.evidence) && /\?industry=<trade>/.test(find(adDefault, "bounce-A3")!.action), find(adDefault, "bounce-A3")?.evidence);
 check("every new finding carries steps the panel can list, or none", slowScreen.findings.every((f) => f.steps === undefined || (Array.isArray(f.steps) && f.steps.every((x) => typeof x === "string" && x.length > 10))));
 
+// ── a landing laid out in an order of its own (roofing: the demo second, the comparison by the pricing) is read apart, in that order
+const LATER = Date.parse("2026-10-12T12:00:00-07:00"); // after the roofing order went live
+const liveOrder = { startedAt: LATER - 3_600_000, endedAt: LATER - 3_540_000 };
+const ownOrder = analyse([
+  ...many(30, { ...liveOrder, industry: "roofing", sections: ["hero", "showcase"] }),
+  ...many(10, { ...liveOrder, industry: "roofing", sections: ["hero", "showcase", "proposals", "portal"] }),
+  ...many(30, { ...liveOrder, industry: "fencing", sections: ["hero", "compare"] }),
+  ...many(10, { ...liveOrder, industry: "fencing", sections: ["hero", "compare", "showcase", "proposals"] }),
+], { now: LATER });
+const roofLanding = ownOrder.landings?.find((l) => l.key === "roofing");
+check("the roofing landing is read apart, its sections in its own order: the demo second, the comparison beside the pricing", !!roofLanding && ownOrder.landings!.length === 1 && roofLanding.measured === 40 && roofLanding.name === "the roofing landing" && roofLanding.sections[0].key === "hero" && roofLanding.sections[1].key === "showcase" && roofLanding.sections.findIndex((x) => x.key === "compare") === roofLanding.sections.findIndex((x) => x.key === "pricing") - 1 && roofLanding.sections[1].reach === 1 && roofLanding.sections.find((x) => x.key === "proposals")!.reach === 0.25, JSON.stringify(roofLanding?.sections.map((x) => x.key)));
+check("the usual order's table is over the other landings only, and the sample still counts every measured visit", ownOrder.sample.measured === 80 && ownOrder.sections.find((x) => x.key === "compare")!.reach === 1 && ownOrder.sections.find((x) => x.key === "showcase")!.reach === 0.25);
+const oc = find(ownOrder, "cliff-roofing")!;
+check("where the roofing landing loses them is named for that landing, with ITS next section", !!oc && /^On the roofing landing they leave at «Estimators»$/.test(oc.title) && /100% of 40 measured visits to the roofing landing reach «Estimators», 25% reach the next section \(«Proposals»\)/.test(oc.evidence) && oc.about === "the roofing landing" && oc.n === 40, oc?.evidence);
+check("the demo-is-third finding is about the usual order only: roofing shows the demo second", !!find(ownOrder, "order") && /100% of 40 measured visits reach «JobFlex vs other apps», 25% reach the demo/.test(find(ownOrder, "order")!.evidence) && !find(ownOrder, "order-roofing") && /They leave at «JobFlex vs other apps»/.test(find(ownOrder, "cliff")!.title));
+const beforeOrder = analyse([...many(30, { industry: "roofing", sections: ["hero", "compare"] }), ...many(10, { industry: "roofing", sections: ["hero", "compare", "showcase"] })], { now: NOW });
+check("a roofing visit from before the order went live saw the usual order and is read in it", (beforeOrder.landings ?? []).length === 0 && beforeOrder.sections.find((x) => x.key === "compare")!.reach === 1 && !!find(beforeOrder, "order") && !find(beforeOrder, "cliff-roofing"));
+const ownMd = analystToMarkdown({ status: "ok" as const, fetchedAt: new Date(LATER).toISOString(), report: ownOrder }, { timezone: "America/Los_Angeles" });
+check("the Markdown carries the roofing landing's own table under the usual one, each with its own count", /## How far down the page they get · 40 measured visits/.test(ownMd) && /### The roofing landing, in its own order · 40 measured visits/.test(ownMd) && ownMd.indexOf("### The roofing landing") > ownMd.indexOf("## How far down the page") && /\| Estimators \| 100% \|\n\| Proposals \| 25% \|/.test(ownMd.slice(ownMd.indexOf("### The roofing landing"))), ownMd.slice(ownMd.indexOf("### The roofing landing"), ownMd.indexOf("### The roofing landing") + 260));
+
 // ── the window, the exports (2026-10-04)
 check("the window never reaches before the ad launch (Sep 30, LA midnight), like the rest of the page", /timestamp >= toDateTime\('2026-09-30 00:00:00', 'America\/Los_Angeles'\)/.test(sql2) && /INTERVAL 7 DAY/.test(sql2));
 check("the window's start is seven days back, or Sep 30 when that is later", analystWindowFrom(Date.parse("2026-10-04T12:00:00-07:00")) === TRAFFIC_SINCE_MS && analystWindowFrom(Date.parse("2026-10-20T12:00:00-07:00")) === Date.parse("2026-10-13T12:00:00-07:00"));

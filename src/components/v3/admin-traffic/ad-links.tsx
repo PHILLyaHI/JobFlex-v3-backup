@@ -6,9 +6,11 @@
 // "URL parameters" field gets these placeholders; Google's ValueTrack fills
 // the campaign and creative ids; X does not fill anything in. The link can
 // open the landing on a trade's own hero (`?industry=`), which the signup
-// remembers as landingIndustry.
+// remembers as landingIndustry. A trade with ad hooks (roofing, 2026-10-04 —
+// landing-variants LANDING_HOOKS) can also open on the ad's own opening line
+// as the headline (`&hook=`), so the page continues the ad's sentence.
 import { useState } from "react";
-import { VARIANT_KEYS } from "@/components/v3/landing-e/landing-variants";
+import { VARIANT_KEYS, hooksOf, resolveLandingVariant } from "@/components/v3/landing-e/landing-variants";
 import s from "./traffic.module.css";
 
 type Kind = "meta" | "tiktok" | "google" | "x" | "organic";
@@ -54,10 +56,15 @@ export function AdLinks({ origin = "https://www.jobflex.app" }: { origin?: strin
   const [platform, setPlatform] = useState("instagram");
   const [page, setPage] = useState("/");
   const [industry, setIndustry] = useState("");
+  const [hook, setHook] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const preset = PRESETS[kind];
   const params = preset.params(slug(campaign), platform);
-  const base = `${origin.replace(/\/$/, "")}${page}${industry && page === "/" ? `?industry=${industry}` : ""}`;
+  // The opening lines this trade's landing knows; a hook picked for one trade
+  // does not follow the link to another.
+  const hooks = page === "/" ? hooksOf(resolveLandingVariant(industry)) : [];
+  const hookOn = hooks.find((x) => x.key === hook) ?? null;
+  const base = `${origin.replace(/\/$/, "")}${page}${industry && page === "/" ? `?industry=${industry}${hookOn ? `&hook=${hookOn.key}` : ""}` : ""}`;
   const full = `${base}${base.includes("?") ? "&" : "?"}${params}`;
   const copy = async (text: string, which: string) => { try { await navigator.clipboard.writeText(text); setCopied(which); setTimeout(() => setCopied(null), 1600); } catch { /* select and copy by hand */ } };
 
@@ -71,6 +78,7 @@ export function AdLinks({ origin = "https://www.jobflex.app" }: { origin?: strin
         <div className={s.linksForm}>
           <label className={s.filterLabel}><span>Page it opens</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" value={page} onChange={(e) => setPage(e.target.value)}>{PAGES.map(([p, name]) => <option key={p} value={p}>{name}</option>)}</select></div></label>
           {page === "/" && <label className={s.filterLabel}><span>Trade hero on the landing</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" value={industry} onChange={(e) => setIndustry(e.target.value)}><option value="">Default (every trade)</option>{VARIANT_KEYS.map((k) => <option key={k} value={k}>{heroName(k)}</option>)}</select></div></label>}
+          {hooks.length > 0 && <label className={s.filterLabel}><span>Headline: the ad&apos;s opening line</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" data-testid="ad-link-hook" value={hookOn?.key ?? ""} onChange={(e) => setHook(e.target.value)}><option value="">The trade&apos;s own headline</option>{hooks.map((x) => <option key={x.key} value={x.key}>{x.h1.join(" ")} — {x.ad}</option>)}</select></div></label>}
           {(kind === "x" || kind === "google" || kind === "organic") && <label className={s.filterLabel}><span>Campaign name</span><input className={s.linksInput} value={campaign} onChange={(e) => setCampaign(e.target.value)} placeholder="october-roofers"/></label>}
           {kind === "organic" && <label className={s.filterLabel}><span>Platform</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" value={platform} onChange={(e) => setPlatform(e.target.value)}><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="tiktok">TikTok</option><option value="x">X (Twitter)</option><option value="youtube">YouTube</option><option value="linkedin">LinkedIn</option><option value="nextdoor">Nextdoor</option></select></div></label>}
         </div>
@@ -79,7 +87,7 @@ export function AdLinks({ origin = "https://www.jobflex.app" }: { origin?: strin
           <div className={s.linksRow}><span>URL parameters</span><code data-testid="ad-link-params">{params}</code><button type="button" className={s.primary} onClick={() => copy(params, "params")}>{copied === "params" ? "Copied" : "Copy"}</button></div>
         </>}
         <div className={s.linksRow}><span>{preset.fills ? "Or the full link in one" : "Link"}</span><code data-testid="ad-link-full">{full}</code><button type="button" className={preset.fills ? s.button : s.primary} onClick={() => copy(full, "full")}>{copied === "full" ? "Copied" : "Copy"}</button></div>
-        <p className={s.footnote}>{preset.note}{industry && page === "/" ? ` The link opens the landing on the ${heroName(industry)} hero; the signup remembers it as its landing trade.` : ""}</p>
+        <p className={s.footnote}>{preset.note}{industry && page === "/" ? ` The link opens the landing on the ${heroName(industry)} hero; the signup remembers it as its landing trade.` : ""}{hookOn ? ` Its headline is the ad's own opening line — “${hookOn.h1.join(" ")}” — with the ad's next line under it; pick the line the ad really opens on.` : hooks.length ? " Pick the ad's opening line and the page's headline continues it." : ""}</p>
       </div>
     </section>
   );

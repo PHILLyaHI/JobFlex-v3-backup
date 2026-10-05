@@ -40,14 +40,20 @@ export function HeroVisual({ variant }: { variant: LandingVariant }) {
   /* landing-e (pass B): on a phone the shot opens FILLED — lines written,
      total on the plate — so the first screen of the mock shows the result;
      the typing sequence runs from 1024px. Decided after mount (no UA
-     sniffing); until then the shot waits, so nothing starts twice. */
+     sniffing); until then the shot waits, so nothing starts twice.
+     A variant with `playOnPhone` (roofing, 2026-10-04 — the analyst: "let
+     the hero's product shot play its sequence on phones too, it opens as a
+     still today") runs the sequence at every width: the address typed, the
+     roof found, traced and tilted, then the takeoff. Nothing moves under it
+     while it plays — the rail keeps its room and opens by a clip — and a
+     reduced-motion visitor still gets the filled shot (usePhases). */
   const [instant, setInstant] = useState<boolean | null>(null);
   useEffect(() => {
     const id = requestAnimationFrame(() => setInstant(!window.matchMedia("(min-width: 1024px)").matches));
     return () => cancelAnimationFrame(id);
   }, []);
   const active = instant === null ? false : inView;
-  const now = instant === true;
+  const now = instant === true && !variant.playOnPhone;
   return (
     <div ref={ref}>
       {variant.visual === "fence" && <FenceShot active={active} instant={now} onStep={fenceStep} />}

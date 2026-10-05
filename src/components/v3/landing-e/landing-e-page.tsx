@@ -18,10 +18,24 @@
    variant is resolved by the entry point on the server and handed down as
    props — nothing in this tree reads the URL — so the first paint is already
    the right one. With no variant every prop below is its default and the
-   page renders exactly as it did before. */
+   page renders exactly as it did before.
 
+   THE ORDER IS A LIST, AND A LANDING MAY HAVE ITS OWN (2026-10-04). The
+   blocks below are keyed by section and laid out in landingSectionOrder()
+   (lib/landing-sections) — the list the section tracker and the admin's
+   analyst read too. Every landing but roofing gets the order above, to the
+   byte. Roofing is where the ads land, and the analyst's reading of them
+   was: the demo is the third screen, behind the comparison; the hero does
+   not continue the ad's line; no price in the first screen. So on roofing
+   the estimators come directly under the hero and the comparison moves down
+   beside the pricing; `?hook=` puts the ad's opening line in the headline;
+   the hero carries the roof estimator's plan price, plays its sequence on a
+   phone and has a sign-up button under the shot (landing-variants.ts). */
+
+import { Fragment, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
+import { landingSectionOrder } from "@/lib/landing-sections";
 import { CrewGuide } from "./crew-guide";
 import { CtaFooter } from "./cta-footer";
 import { LandingFaq } from "./landing-faq";
@@ -56,12 +70,15 @@ const StatsSection = dynamic(() => import("./stats-section").then((m) => m.Stats
 const BuiltSection = dynamic(() => import("./built-section").then((m) => m.BuiltSection));
 const ScrollFx = dynamic(() => import("./scroll-fx").then((m) => m.ScrollFx));
 import {
+  hookContent,
   isVariantReady,
   signupHref,
   variantContent,
+  withHook,
   type LandingVariantKey,
   type UtmParams,
 } from "./landing-variants";
+import { heroPriceLine } from "./hero-price";
 import { MobileCta } from "./mobile-cta";
 import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { Nav } from "./nav";
@@ -83,10 +100,15 @@ export interface LandingEProps {
   /** The in-app browser the request's user agent names (lib/inAppBrowser), so
    *  the hero's first paint already has no Google button there. */
   inAppBrowser?: InAppBrowser | null;
+  /** The ad's opening line for the headline: a key of the trade's own table
+   *  (LANDING_HOOKS), resolved by the entry point. Absent: the trade's hero. */
+  hook?: string;
 }
 
-export async function LandingE({ variant, explicitVariant = false, utm = {}, fbclid, inAppBrowser = null }: LandingEProps) {
-  const v = variantContent(variant);
+export async function LandingE({ variant, explicitVariant = false, utm = {}, fbclid, inAppBrowser = null, hook }: LandingEProps) {
+  // The trade's hero — with the ad's two lines in place of its own when the
+  // link carried a `?hook=` the trade knows.
+  const v = withHook(variantContent(variant), hookContent(variant, hook));
   // TRIAL_REQUIRES_CARD (lib/trialPolicy): the card-less trial's line under
   // the hero heading, the plan cards' words and the FAQ's card answer.
   const requiresCard = trialRequiresCard();
@@ -118,31 +140,48 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
   // (content-visibility: auto): the browser skips its style and layout until
   // it is near the viewport — the mobile LCP's render delay was style/layout
   // of the whole page.
+
+  // The trade's price for the first screen (hero-price.ts): the cheapest plan
+  // on sale that carries the trade's estimator. Null for a variant that names
+  // no plan row, and when the catalogue could not be read.
+  const priceLine = heroPriceLine(v, plans);
+  // THE BLOCKS BY SECTION KEY, LAID OUT IN THE LANDING'S ORDER (the header
+  // above; lib/landing-sections). A block that this landing does not show is
+  // null. The comparison is on the second screen in the usual order and is
+  // rendered as it always was; a landing that moves it down the page gives
+  // it a content-visibility box like every other section under the fold.
+  const order = landingSectionOrder(variant);
+  const compareBelow = order.indexOf("compare") > 1;
+  const blocks: Record<string, ReactNode> = {
+    hero: <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} requiresCard={requiresCard} inAppBrowser={inAppBrowser} priceLine={priceLine} />,
+    compare: compareBelow ? <div className="lp-cv lp-cv--compare"><Intro /></div> : <Intro />,
+    showcase: <div className="lp-cv lp-cv--showcase"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>,
+    hvac: variant === "hvac" ? <div className="lp-cv lp-cv--hvac"><HvacServiceSection registerHref={register} cta={top} /></div> : null,
+    montage: (g?.montage ?? true) ? <div className="lp-cv lp-cv--montage"><Montage /></div> : null,
+    proposals: <div className="lp-cv lp-cv--proposals"><ProposalsSection proposal={g?.proposal} registerHref={register} cta={low} /></div>,
+    portal: <div className="lp-cv lp-cv--portal"><PortalSection portal={g?.portal} client={g?.proposal?.client} /></div>,
+    // One content-visibility box for the two sections the guide line runs
+    // through, so both are laid out together and the line can be measured.
+    crew: (
+      <div className="lp-cv lp-cv--crew">
+        <CrewGuide>
+          <JobsSection crew={g?.crew} phoneLanes={g?.phoneLanes} />
+          <FlowFeatures />
+        </CrewGuide>
+      </div>
+    ),
+    integrations: <div className="lp-cv lp-cv--integrations"><Integrations registerHref={register} /></div>,
+    stats: <div className="lp-cv lp-cv--stats"><StatsSection rows={g?.stats} /></div>,
+    built: <div className="lp-cv lp-cv--built"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>,
+    pricing: <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} requiresCard={requiresCard} /></div>,
+    faq: <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={low} requiresCard={requiresCard} /></div>,
+    final: <CtaFooter registerHref={register} cta={low} requiresCard={requiresCard} />,
+  };
   return (
     <div className="jf-lp min-h-full bg-white">
       <Nav registerHref={register} pricingHref={pricing} cta={top} />
       <main>
-        <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} requiresCard={requiresCard} inAppBrowser={inAppBrowser} />
-        <Intro />
-        <div className="lp-cv lp-cv--showcase"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>
-        {variant === "hvac" && <div className="lp-cv lp-cv--hvac"><HvacServiceSection registerHref={register} cta={top} /></div>}
-        {(g?.montage ?? true) && <div className="lp-cv lp-cv--montage"><Montage /></div>}
-        <div className="lp-cv lp-cv--proposals"><ProposalsSection proposal={g?.proposal} registerHref={register} cta={low} /></div>
-        <div className="lp-cv lp-cv--portal"><PortalSection portal={g?.portal} client={g?.proposal?.client} /></div>
-        {/* One content-visibility box for the two sections the guide line runs
-            through, so both are laid out together and the line can be measured. */}
-        <div className="lp-cv lp-cv--crew">
-          <CrewGuide>
-            <JobsSection crew={g?.crew} phoneLanes={g?.phoneLanes} />
-            <FlowFeatures />
-          </CrewGuide>
-        </div>
-        <div className="lp-cv lp-cv--integrations"><Integrations registerHref={register} /></div>
-        <div className="lp-cv lp-cv--stats"><StatsSection rows={g?.stats} /></div>
-        <div className="lp-cv lp-cv--built"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>
-        <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} requiresCard={requiresCard} /></div>
-        <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={low} requiresCard={requiresCard} /></div>
-        <CtaFooter registerHref={register} cta={low} requiresCard={requiresCard} />
+        {order.map((key) => (blocks[key] ? <Fragment key={key}>{blocks[key]}</Fragment> : null))}
       </main>
       <MobileCta registerHref={register} cta={top} requiresCard={requiresCard} />
       <ScrollFx />
@@ -157,7 +196,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
       <SectionTracker industry={variant} />
       {/* When the first screen really showed on this visitor's phone (2026-10-04). */}
       <LandingTiming industry={variant} />
-      <LandingVariantEffects industry={variant} remember={explicitVariant} utm={utm} />
+      <LandingVariantEffects industry={variant} remember={explicitVariant} utm={utm} hook={hook} />
       {/* Google One Tap (pass A): only when NEXT_PUBLIC_GOOGLE_CLIENT_ID is set;
           loads after the page is idle, so it never competes with the hero. */}
       <GoogleOneTap />

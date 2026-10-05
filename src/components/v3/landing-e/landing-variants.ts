@@ -51,6 +51,25 @@ export type LandingVariant = {
   /** The hero's own primary button, when it differs from the top-of-page CTA
    *  the nav, the showcase and the sticky bar carry (cta-copy.ts). */
   heroCta?: string;
+  /** The two headline lines are two sentences (an ad's opening line and its
+   *  answer): the break between them holds on a phone too. */
+  h1Break?: boolean;
+
+  /* THE AD'S FIRST SCREEN (2026-10-04) — the analyst's fixes for a landing
+     that ad clicks arrive on, tried on roofing first: the price in the first
+     screen, the product shot playing on a phone, a sign-up button where the
+     hero's readers stop. A variant without these fields is as it was. */
+  /** The plan row the hero's price is read from: the cheapest plan on sale
+   *  that ticks this row is what the trade's estimator costs after the trial
+   *  (hero-price.ts). No such plan in the catalogue: no price line. */
+  priceFeature?: string;
+  /** What follows the amount on the price line. */
+  priceNote?: string;
+  /** The product shot plays its sequence on a phone too; without it a phone
+   *  opens the shot filled (hero-visual.tsx). */
+  playOnPhone?: boolean;
+  /** A sign-up button stands under the product shot. */
+  shotCta?: boolean;
 };
 
 /** The hero as it shipped on 2026-08-25 — the page with no `?industry=`. */
@@ -118,6 +137,14 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
     heroCta: "Get My First Roofing Report & Proposal →",
     showcaseSlide: "roof",
     visual: "roof",
+    // The ad's first screen (2026-10-04): the roof estimator's plan price
+    // under the buttons, the sequence on a phone, a button under the shot.
+    // The page's own order — the demo second, the comparison by the pricing —
+    // is lib/landing-sections; the ads' opening lines are LANDING_HOOKS below.
+    priceFeature: "Roof estimator",
+    priceNote: "roof estimator included",
+    playOnPhone: true,
+    shotCta: true,
   },
   "kitchen-bath": {
     h1: ["The full remodel estimate.", "From a description and a photo."],
@@ -292,6 +319,126 @@ export function variantContent(key: LandingVariantKey | undefined): LandingVaria
 /** True when the key has a written hero (not a TODO placeholder). */
 export function isVariantReady(key: LandingVariantKey): boolean {
   return LANDING_VARIANTS[key] !== null;
+}
+
+/* ── the ad's opening line as the headline ─────────────────
+   `?hook=<key>` beside `?industry=<trade>` (2026-10-04; the analyst: "the
+   hero does not continue the ad's first line"). An ad that opens on "Stop
+   buying roof reports" lands on a first screen whose headline says exactly
+   that, with the ad's next line under it. Only the two lines change: the
+   button, the trial badge, the price and the product shot stay the trade's.
+
+   A KEY, NEVER THE WORDS. The URL carries a key into this table and nothing
+   else — a headline read from the query string would let anyone print their
+   own sentence under JobFlex's name and pass the link around. An unknown
+   key, or a key on a trade that has no table, is the trade's own hero.
+
+   EVERY ENTRY IS AN AD THAT EXISTS (advertisement/…): the headline is that
+   ad's opening line and the line under it says no more than the ad shows.
+   A new ad gets a new entry; the admin's "Links for your ads" lists them. */
+export type LandingHook = {
+  /** The ad's opening line, as the hero's two lines. */
+  h1: [string, string];
+  /** The ad's next line, under it. */
+  sub: string;
+  /** Which ad opens this way, for the admin's link builder. */
+  ad: string;
+};
+
+export const LANDING_HOOKS: Partial<Record<LandingVariantKey, Readonly<Record<string, LandingHook>>>> = {
+  roofing: {
+    "no-report": {
+      h1: ["Stop Buying Roof Reports.", "Stop Retyping Them."],
+      sub: "Type the address and hit Measure. The roof lands on your estimate and rides into the proposal — no PDF to order, no hours to wait.",
+      ad: "No report to buy · 40 s",
+    },
+    hours: {
+      h1: ["Roof Estimates Shouldn't Take Hours.", "From Address to Signed Roof Contract."],
+      sub: "Measure. Estimate. Send. Get signed. All in JobFlex.",
+      ad: "Address to signed · 40 s and the 23 s cut",
+    },
+    "all-in-one": {
+      h1: ["No Report to Buy.", "No Proposal to Rebuild."],
+      sub: "Type the address: the roof is measured, priced at your rates and sent as a proposal your client signs on their phone.",
+      ad: "All in one · 40 s",
+    },
+    "one-address": {
+      h1: ["One Address.", "The Whole Roof Is Priced."],
+      sub: "Hit Measure: squares, pitch, facets, eaves, ridges and valleys — usually in under a minute. The estimate is already built, at your rates.",
+      ad: "Measured & built · dark, with voice",
+    },
+    "your-price": {
+      h1: ["Your Price. Your Proposal.", "And You See It First."],
+      sub: "Start with your own rates: change a number and every line re-prices. Preview exactly what the homeowner sees, then send.",
+      ad: "Your price, previewed · dark, with voice",
+    },
+    "line-by-line": {
+      h1: ["Where Does the Number Come From?", "Let's Go Line by Line."],
+      sub: "Every quantity on the estimate is labeled measured, estimated or entered — shingles with waste, ice and water, drip edge, ridge cap, labor by pitch.",
+      ad: "Line by line · dark, with voice",
+    },
+    coffee: {
+      h1: ["Your Coffee's Still Hot.", "The Roof Is Already Priced."],
+      sub: "Type the address. The house is found from the air, measured and priced line by line, and the proposal is on your client's phone.",
+      ad: "Coffee clock · 28 s",
+    },
+    signature: {
+      h1: ["Address to Signature.", "One App."],
+      sub: "Measured from the air, priced in shingles or metal, sent as a proposal with the roof picture, accepted on the phone.",
+      ad: "Five sheets · 28 s",
+    },
+    deposit: {
+      h1: ["Stop Chasing the Deposit.", "Get Paid by Stage."],
+      sub: "Your client accepts on the phone and the deposit is due right then. Every job shows what is paid and what is due.",
+      ad: "Receipt roll · 28 s",
+    },
+    "two-prices": {
+      h1: ["Same Roof.", "Two Prices."],
+      sub: "Shingles or metal with one switch. Every line re-prices, any line can be edited, and it goes to the client's phone.",
+      ad: "Metal switch · 28 s",
+    },
+    "first-bid": {
+      h1: ["The First Bid Wins.", "Be Their First Bid."],
+      sub: "The homeowner gets a proposal with their own roof on it, priced line by line, and accepts it on their phone.",
+      ad: "First bid · 28 s",
+    },
+    "win-more": {
+      h1: ["Estimate Faster.", "Win More Roofs."],
+      sub: "Type the address. JobFlex finds the roof from the air and measures it — squares, ridge, hips, valleys. One click makes the proposal.",
+      ad: "Address to accepted · 50 s",
+    },
+  },
+};
+
+/** `?hook=No_Report` → "no-report" when the trade has that hook; anything
+ *  else → undefined (the trade's own hero). Case, spaces and underscores do
+ *  not matter. */
+export function resolveLandingHook(variant: LandingVariantKey | undefined, raw: string | string[] | null | undefined): string | undefined {
+  const table = variant ? LANDING_HOOKS[variant] : undefined;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!table || typeof value !== "string") return undefined;
+  const key = value.trim().toLowerCase().replace(/[\s_]+/g, "-").slice(0, 40);
+  return Object.prototype.hasOwnProperty.call(table, key) ? key : undefined;
+}
+
+/** The hook's lines for a resolved key. */
+export function hookContent(variant: LandingVariantKey | undefined, key: string | undefined): LandingHook | undefined {
+  const table = variant ? LANDING_HOOKS[variant] : undefined;
+  return table && key && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
+}
+
+/** A trade's hooks, in the table's order — the admin's link builder lists them. */
+export function hooksOf(variant: LandingVariantKey | undefined): Array<{ key: string } & LandingHook> {
+  const table = variant ? LANDING_HOOKS[variant] : undefined;
+  return table ? Object.entries(table).map(([key, hook]) => ({ key, ...hook })) : [];
+}
+
+/** The trade's hero with the ad's two lines in place of its own. A hook is
+ *  two sentences, so the break holds on a phone; the bold third line some
+ *  trades carry belongs to their own copy and goes with it. */
+export function withHook(v: LandingVariant, hook: LandingHook | undefined): LandingVariant {
+  if (!hook) return v;
+  return { ...v, h1: hook.h1, sub: hook.sub, subStrong: undefined, subEven: true, h1Long: true, h1Break: true };
 }
 
 /* ── normalisation ─────────────────────────────────────────
