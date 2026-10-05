@@ -14,11 +14,16 @@
 //               request by /api/public-quote/[publicId]/fence-plan;
 //   roof-photo  the aerial (EagleView ortho, else Google satellite) with the
 //               measured outline overlaid, when a key is on the server;
-//   roof-plan   the measured outline as a plan, when there is no aerial.
+//   roof-plan   the measured outline as a plan, when there is no aerial;
+//   deck-scene  the Deck Studio's deck in 3D (2026-10-04): the scene frozen
+//               with the proposal (an ActivityEvent DECK_PLAN), served by
+//               /api/public-quote/[publicId]/deck-scene, mounted by
+//               components/v3/deck-scene.
 
 import { db } from "@/lib/db";
 import { isEagleViewEnabled, type InstantRoofData } from "@/lib/eagleview";
 import { FENCE_PLAN_EVENT, parseFencePlan } from "@/lib/fence/planSvg";
+import { DECK_PLAN_EVENT, parseDeckPlan } from "@/lib/deck/convertSchema";
 import { roofFactsLine, roofFrameFor, roofOverlayPoints, roofRings, type RoofFacts } from "@/lib/roofPictures";
 import type { PortalPicture } from "@/components/v3/mobile-proposal-client/portal-view";
 
@@ -57,6 +62,15 @@ export async function proposalPictures(p: { id: string; publicId: string; trade?
     out.push({ kind: "fence-plan", src: `${base}/fence-plan`, alt: "Your fence on the lot", caption: "Your fence on the lot", facts, overlay: null });
   } else if (preview) {
     out.push({ kind: "fence-3d", src: preview, alt: "Your fence, in 3D", caption: "Your fence, as it will stand", facts: null, overlay: null });
+  }
+
+  // ── the deck
+  try {
+    const ev = await db.activityEvent.findFirst({ where: { proposalId: p.id, kind: DECK_PLAN_EVENT }, orderBy: { createdAt: "desc" }, select: { meta: true } });
+    const deck = ev?.meta ? parseDeckPlan(JSON.parse(ev.meta)) : null;
+    if (deck) out.push({ kind: "deck-scene", src: `${base}/deck-scene`, alt: "Your deck, in 3D", caption: "Your deck, as it will stand", facts: deck.scene.facts || null, overlay: null });
+  } catch {
+    /* no deck, or the row does not read */
   }
 
   // ── the roof

@@ -389,7 +389,9 @@ export function MobileNav() {
                     {/* Custom-plan lock beats the badge: a page the plan does
                         not include has no unread anything worth advertising.
                         Still a live link — the route shows the upgrade offer. */}
-                    {item.locked ? (
+                    {item.soon && !item.locked ? (
+                      <span className={styles.sbSoon}>Coming soon</span>
+                    ) : item.locked ? (
                       <svg className={styles.sbLockIc} viewBox="0 0 24 24" aria-label="Not in your plan">
                         <rect x="5" y="11" width="14" height="10" rx="1.5" />
                         <path d="M8 11V7a4 4 0 0 1 8 0v4" />

@@ -106,6 +106,7 @@ import { PaymentBlock } from "./bp-money";
 import { MarkupBlock } from "./bp-markup";
 import { PrintOptions, FilesBlock } from "./bp-blocks";
 import { FenceSceneFigure } from "@/components/v3/fence-scene/fence-scene-figure";
+import { DeckSceneFigure } from "@/components/v3/deck-scene/deck-scene-figure";
 import { TheirCopy } from "./bp-proof";
 // Card 11. The same proposal as PAPER — see the header of bp-pdf.tsx for why
 // the file is produced by print CSS rather than by a PDF library.
@@ -245,7 +246,10 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
   const [publicId, setPublicId] = useState<string | null>(data.proposal?.publicId ?? null);
   // A fence traced on the map gets a card of its own after the line items;
   // the cards after it move down one number.
-  const drawing = !!data.proposal?.fenceDrawing;
+  const fenceDrawing = !!data.proposal?.fenceDrawing;
+  // A deck from the Deck Studio gets the same card, its 3D alone (2026-10-04).
+  const deckDrawing = !!data.proposal?.deckDrawing;
+  const drawing = fenceDrawing || deckDrawing;
   const N = (k: number) => String(drawing && k >= 4 ? k + 1 : k).padStart(2, "0");
   // The page's own host, for the link shown and copied: "" on the server and
   // on the first client paint (so they agree), the real origin right after.
@@ -802,7 +806,13 @@ export function ManualBlueprintContent({ data }: { data: ManualBuilderData }) {
             showed and the fence on the lot, both from the stored plan — the two
             the client's page carries (2026-09-27: "when I open the fence
             proposal after saving, it shows no 3D and no layout"). */}
-        {drawing && publicId ? (
+        {deckDrawing && publicId ? (
+          <Card num="04" title="The drawing" id="q-drawing">
+            <DeckSceneFigure className={styles.drawingScene} src={`/api/public-quote/${publicId}/deck-scene`} caption="In 3D" facts="Drag to look around · Build it stands it up layer by layer" />
+            <p className={styles.drawingNote}>The client&apos;s page carries the same 3D, frozen as it was priced.</p>
+          </Card>
+        ) : null}
+        {fenceDrawing && publicId ? (
           <Card num="04" title="The drawing" id="q-drawing">
             <div className={styles.drawing}>
               <FenceSceneFigure className={styles.drawingScene} src={`/api/public-quote/${publicId}/fence-scene`} caption="In 3D" facts="Drag to look around · click to walk through" />

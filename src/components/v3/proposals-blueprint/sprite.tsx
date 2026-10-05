@@ -51,6 +51,7 @@ export function Sprite() {
             for `i-bolt`, which only the Financials sprite has, so every other
             page drew a blank. */}
         <symbol id="i-heatpump" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="12" cy="12" r="4.5" /><path d="M12 12V8.5" /><path d="m12 12 3 1.8" /><path d="m12 12-3 1.8" /></symbol>
+        <symbol id="i-deck" viewBox="0 0 24 24"><path d="M2 10h20" /><path d="M2 13h20" /><path d="M4 13v8" /><path d="M20 13v8" /><path d="M12 13v8" /><path d="M5 10V5h14v5" /></symbol>
         <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.13.96.36 1.9.7 2.8a2 2 0 0 1-.45 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.45c.9.34 1.84.57 2.8.7A2 2 0 0 1 22 16.9z" /></symbol>
         {/* Same optical correction as i-cal / i-jobs above, same reason: one
             large thin outline filling the box (18×14 of a 24), whose long

@@ -23,6 +23,7 @@ const ESTIMATOR_ROUTES = [
   "/dashboard/roof-estimator",
   "/dashboard/fence-estimator",
   "/dashboard/hvac-estimator",
+  "/dashboard/deck-estimator",
   "/dashboard/video-estimator",
 ];
 

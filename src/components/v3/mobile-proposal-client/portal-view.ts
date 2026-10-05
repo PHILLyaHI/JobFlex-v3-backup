@@ -70,8 +70,9 @@ export type PortalRating = {
  *  plan. `overlay` is the measured outline in a 0…1000 square over `src`. */
 export type PortalPicture = {
   /** fence-scene (2026-09-27): the fence stood up in 3D on the page; `src` is
-   *  the scene's JSON route and `poster` the studio's snapshot, when stored. */
-  kind: "fence-3d" | "fence-scene" | "fence-plan" | "roof-photo" | "roof-plan";
+   *  the scene's JSON route and `poster` the studio's snapshot, when stored.
+   *  deck-scene (2026-10-04): the Deck Studio's deck, the same way. */
+  kind: "fence-3d" | "fence-scene" | "fence-plan" | "roof-photo" | "roof-plan" | "deck-scene";
   src: string;
   alt: string;
   caption: string;

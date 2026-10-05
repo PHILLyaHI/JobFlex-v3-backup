@@ -40,6 +40,7 @@ const NAV_LIMIT_KEYS: Record<string, LimitKey[]> = {
   // HVAC has its own meter (hvacEstimates) on top of the shared gate.
   "/dashboard/hvac-estimator": ["hvacEstimates", "estimatorUses"],
   "/dashboard/video-estimator": ["estimatorUses"],
+  "/dashboard/deck-estimator": ["estimatorUses"],
   // Classic-shell paths, kept for the old sidebar.
   "/dashboard/advanced-ai/roof": ["estimatorUses"],
   "/dashboard/advanced-ai/fence/studio": ["estimatorUses"],

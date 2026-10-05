@@ -23,6 +23,7 @@
 import { db } from "@/lib/db";
 import { mediaHref } from "@/lib/media/signedLink";
 import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
+import { DECK_PLAN_EVENT } from "@/lib/deck/convertSchema";
 import { mediaOf } from "@/lib/jobMediaShared";
 import { actorsOf } from "@/lib/activityLog";
 import type { CrewMediaItem } from "./manual-blueprint-bridge";
@@ -215,6 +216,8 @@ export async function loadManualBuilder({
   // The fence drawing (2026-09-27): a FENCE_PLAN row means the drawing card
   // has something to show — the 3D and the plan come off the public routes.
   let fenceDrawing = false;
+  // The Deck Studio's deck (2026-10-04): a DECK_PLAN row, its 3D off the public route.
+  let deckDrawing = false;
   // What the crew shot on this proposal's job (2026-09-27): the newest 24
   // files, with who added each from the trail rows that name them.
   let media: CrewMediaItem[] = [];
@@ -255,12 +258,18 @@ export async function loadManualBuilder({
     } catch {
       fenceDrawing = false;
     }
+    try {
+      deckDrawing = !!(await db.activityEvent.findFirst({ where: { proposalId: proposalRow.id, kind: DECK_PLAN_EVENT }, select: { id: true } }));
+    } catch {
+      deckDrawing = false;
+    }
   }
   const proposal: ManualProposal | null = proposalRow
     ? {
         id: proposalRow.id,
         publicId: proposalRow.publicId,
         fenceDrawing,
+        deckDrawing,
         priceOnly: !!proposalRow.trade,
         media,
         ref: proposalRef(proposalRow.publicId),

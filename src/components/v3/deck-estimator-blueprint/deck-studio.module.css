@@ -1,0 +1,306 @@
+/* ============================================================
+   DECK STUDIO — BLUEPRINT
+   /dashboard/deck-estimator
+
+   The HVAC estimator's convention (hvac-estimator.module.css): every class
+   is this module's own, scoped `:global(.jf-blueprint .content) .cls`
+   (0,3,0) so the dashboard reset never strips a control. Tokens come from
+   the dashboard module's `.content` block; nothing is redeclared. Status
+   colour is spent on statuses only: the check levels and the stamps.
+   ============================================================ */
+
+:global(.jf-blueprint .content) .studio { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* Page head */
+:global(.jf-blueprint .content) .pageHead { padding-top: 6px; }
+:global(.jf-blueprint .content) .kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
+}
+:global(.jf-blueprint .content) .kicker::before { content: ''; width: 7px; height: 7px; background: var(--blueprint); border-radius: 50%; }
+:global(.jf-blueprint .content) .pageTitle { font-size: 46px; font-weight: 900; letter-spacing: -0.03em; text-transform: uppercase; line-height: 0.95; }
+:global(.jf-blueprint .content) .pageSub { margin-top: 10px; max-width: 72ch; font-size: 13px; line-height: 1.5; color: var(--muted); }
+
+/* Cards */
+:global(.jf-blueprint .content) .card { background: #fff; border: var(--border); border-radius: var(--radius); min-width: 0; }
+:global(.jf-blueprint .content) .head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding: 15px 18px 13px; border-bottom: 1.5px solid var(--hair-soft);
+}
+:global(.jf-blueprint .content) .headStamps { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .cardTitle { font-size: 15px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .cardSub { margin-top: 6px; max-width: 70ch; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+:global(.jf-blueprint .content) .mono { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; line-height: 1.5; color: var(--muted); }
+
+/* Buttons */
+:global(.jf-blueprint .content) .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 40px; padding: 0 16px; border: var(--border); border-radius: var(--radius); background: #fff; color: var(--ink);
+  font-family: var(--font); font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; cursor: pointer;
+  transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s;
+}
+:global(.jf-blueprint .content) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .btn:active { transform: none; box-shadow: none; }
+:global(.jf-blueprint .content) .btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint .content) .btn[disabled] { opacity: 0.45; pointer-events: none; }
+:global(.jf-blueprint .content) .btnSm { height: 36px; padding: 0 12px; font-size: 11px; }
+:global(.jf-blueprint .content) .btnPrimary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .btnPrimary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .btnOn { background: var(--ink); color: #fff; }
+:global(.jf-blueprint .content) .link {
+  padding: 0; border: 0; background: none; cursor: pointer; justify-self: start;
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--blueprint);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+
+/* Stamps */
+:global(.jf-blueprint .content) .stamp {
+  display: inline-block; padding: 3px 7px; border: 1.5px solid currentColor; border-radius: var(--radius);
+  font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; line-height: 1.3; white-space: nowrap; background: #fff;
+}
+:global(.jf-blueprint .content) .stampPass { color: var(--success-dark); background: var(--success-soft); }
+:global(.jf-blueprint .content) .stampWarn { color: var(--warning-dark); background: var(--warning-soft); }
+:global(.jf-blueprint .content) .stampBad { color: var(--danger); background: var(--danger-soft); }
+
+/* Job bar */
+:global(.jf-blueprint .content) .jobBar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 14px 18px; }
+:global(.jf-blueprint .content) .addrForm { flex: 1 1 360px; min-width: 0; max-width: 640px; }
+:global(.jf-blueprint .content) .jobFacts { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-bottom: 8px; }
+
+/* Fields */
+:global(.jf-blueprint .content) .field { display: block; min-width: 0; }
+:global(.jf-blueprint .content) .fieldWide { grid-column: 1 / -1; }
+:global(.jf-blueprint .content) .lbl {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 16px; margin-bottom: 5px;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
+}
+:global(.jf-blueprint .content) .lblAside { letter-spacing: 0.04em; text-transform: none; color: var(--blueprint); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:global(.jf-blueprint .content) .in, :global(.jf-blueprint .content) .sel {
+  width: 100%; height: 40px; padding: 0 11px; box-sizing: border-box;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff;
+  font-family: var(--font); font-size: 14px; color: var(--ink);
+}
+:global(.jf-blueprint .content) .sel {
+  appearance: none; -webkit-appearance: none; padding-right: 28px; text-overflow: ellipsis;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%), linear-gradient(135deg, var(--ink) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 17px, calc(100% - 10px) 17px; background-size: 5px 5px; background-repeat: no-repeat;
+}
+:global(.jf-blueprint .content) .in:focus, :global(.jf-blueprint .content) .sel:focus { outline: none; border-color: var(--ink); }
+:global(.jf-blueprint .content) .in::placeholder { color: var(--muted-faint); }
+:global(.jf-blueprint .content) .num { font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+:global(.jf-blueprint .content) .hint { font-size: 12px; line-height: 1.5; color: var(--muted); max-width: 62ch; }
+:global(.jf-blueprint .content) .hintWarn { padding: 8px 10px; border-left: 3px solid var(--warning); background: var(--warning-soft); color: var(--ink-soft); }
+
+/* Segmented */
+:global(.jf-blueprint .content) .seg { display: flex; flex-wrap: wrap; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; }
+:global(.jf-blueprint .content) .segBtn {
+  flex: 1 1 auto; min-height: 40px; padding: 0 12px; border: 0; border-right: 1.5px solid var(--hair-soft); background: none; cursor: pointer;
+  font-family: var(--font); font-size: 12px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft);
+}
+:global(.jf-blueprint .content) .segBtn:last-child { border-right: 0; }
+:global(.jf-blueprint .content) .segBtn:hover { background: var(--paper); }
+:global(.jf-blueprint .content) .segBtn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: -2px; }
+:global(.jf-blueprint .content) .segOn, :global(.jf-blueprint .content) .segOn:hover { background: var(--ink); color: #fff; }
+:global(.jf-blueprint .content) .segSmall .segBtn { min-height: 36px; padding: 0 10px; font-size: 11px; letter-spacing: 0.04em; }
+
+/* Toggle */
+:global(.jf-blueprint .content) .toggle { display: flex; align-items: center; gap: 10px; min-height: 36px; cursor: pointer; font-size: 13px; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+:global(.jf-blueprint .content) .toggleBox { position: relative; flex-shrink: 0; width: 18px; height: 18px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; }
+:global(.jf-blueprint .content) .toggle input:checked + .toggleBox { background: var(--ink); }
+:global(.jf-blueprint .content) .toggle input:checked + .toggleBox::after { content: ''; position: absolute; left: 5px; top: 1px; width: 5px; height: 10px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+:global(.jf-blueprint .content) .toggle input:focus-visible + .toggleBox { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint .content) .toggles { display: grid; gap: 0; }
+
+/* Chips */
+:global(.jf-blueprint .content) .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+:global(.jf-blueprint .content) .chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; cursor: pointer;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff;
+  font-family: var(--font); font-size: 12px; font-weight: 700; color: var(--ink-soft);
+}
+:global(.jf-blueprint .content) .chip span { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+:global(.jf-blueprint .content) .chip:hover { border-color: var(--ink); }
+:global(.jf-blueprint .content) .chipOn, :global(.jf-blueprint .content) .chipOn:hover { border-color: var(--ink); background: var(--ink); color: #fff; }
+:global(.jf-blueprint .content) .chipOn span { color: rgba(255,255,255,0.75); }
+
+/* Layout: the deck on the right, sticky; the steps on the left. */
+:global(.jf-blueprint .content) .layout { display: grid; grid-template-columns: minmax(340px, 430px) minmax(0, 1fr); gap: 16px; align-items: start; }
+:global(.jf-blueprint .content) .layout > .viewer { grid-column: 2; grid-row: 1; position: sticky; top: 12px; }
+:global(.jf-blueprint .content) .layout > .steps { grid-column: 1; grid-row: 1; }
+
+/* Steps */
+:global(.jf-blueprint .content) .steps { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+:global(.jf-blueprint .content) .step { background: #fff; border: var(--border); border-radius: var(--radius); }
+:global(.jf-blueprint .content) .stepHead { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 10px; padding: 12px 16px; cursor: pointer; list-style: none; }
+:global(.jf-blueprint .content) .stepHead::-webkit-details-marker { display: none; }
+:global(.jf-blueprint .content) .step[open] > .stepHead { border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .stepN {
+  grid-row: span 2; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  border: 1.5px solid var(--ink); border-radius: 50%; font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+}
+:global(.jf-blueprint .content) .step[open] .stepN { background: var(--ink); color: #fff; }
+:global(.jf-blueprint .content) .stepTitle { font-size: 14px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .stepSum { font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; letter-spacing: 0.04em; color: var(--blueprint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+:global(.jf-blueprint .content) .stepBody { display: grid; gap: 12px; padding: 14px 16px 16px; }
+
+/* The viewer */
+:global(.jf-blueprint .content) .viewer { overflow: hidden; }
+:global(.jf-blueprint .content) .viewHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .viewTitle { display: grid; gap: 2px; min-width: 0; }
+:global(.jf-blueprint .content) .viewBox { position: relative; height: min(56vh, 520px); min-height: 320px; background: var(--paper); border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .canvas { position: absolute; inset: 0; }
+:global(.jf-blueprint .content) .viewWait { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .planWrap { position: absolute; inset: 0; padding: 12px; background: #fff; }
+:global(.jf-blueprint .content) .planSvg { width: 100%; height: 100%; display: block; }
+:global(.jf-blueprint .content) .planLabel { font-family: var(--font-mono); font-weight: 700; letter-spacing: 0.2em; fill: var(--muted); }
+:global(.jf-blueprint .content) .planNote { font-family: var(--font-mono); font-weight: 600; fill: var(--blueprint); }
+:global(.jf-blueprint .content) .planDim { stroke: var(--ink); fill: var(--ink); font-family: var(--font-mono); font-weight: 700; }
+:global(.jf-blueprint .content) .planDim text { stroke: none; }
+:global(.jf-blueprint .content) .buildRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .buildSlider { flex: 1 1 200px; display: grid; gap: 2px; min-width: 0; }
+:global(.jf-blueprint .content) .buildSlider input { width: 100%; accent-color: var(--blueprint); min-height: 24px; }
+:global(.jf-blueprint .content) .verdict { display: flex; align-items: center; gap: 8px; padding: 12px 16px; color: var(--ink); text-decoration: none; }
+:global(.jf-blueprint .content) .verdict:hover { background: var(--paper); }
+:global(.jf-blueprint .content) .verdictText { flex: 1; min-width: 0; font-size: 12.5px; line-height: 1.4; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+:global(.jf-blueprint .content) .verdictTotal { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; color: var(--blueprint); white-space: nowrap; }
+
+/* The price */
+:global(.jf-blueprint .content) .hero { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .heroCell { padding: 15px 18px 16px; border-right: 1.5px solid var(--hair-soft); min-width: 0; }
+:global(.jf-blueprint .content) .heroCell:last-child { border-right: 0; }
+:global(.jf-blueprint .content) .kpi { font-size: 11px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .heroV { margin-top: 8px; font-size: 28px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; white-space: nowrap; }
+:global(.jf-blueprint .content) .accent { color: var(--blueprint); }
+:global(.jf-blueprint .content) .heroH { margin-top: 7px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .convert { display: grid; gap: 10px; padding: 14px 18px 16px; border-top: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .convertRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .call { padding: 10px 12px; border: 1.5px solid var(--hair-soft); border-left-width: 3px; border-radius: var(--radius); font-size: 12.5px; line-height: 1.5; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .call a { color: var(--blueprint); text-decoration: underline; text-underline-offset: 2px; }
+:global(.jf-blueprint .content) .callWarn { border-left-color: var(--warning); background: var(--warning-soft); }
+:global(.jf-blueprint .content) .callBad { border-left-color: var(--danger); background: var(--danger-soft); }
+
+/* Tables */
+:global(.jf-blueprint .content) .tableWrap { overflow-x: auto; }
+:global(.jf-blueprint .content) .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+:global(.jf-blueprint .content) .table th {
+  padding: 9px 12px; text-align: left; border-bottom: 1.5px solid var(--ink);
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); white-space: nowrap;
+}
+:global(.jf-blueprint .content) .table td { padding: 9px 12px; border-bottom: 1px solid var(--hair-soft); vertical-align: top; }
+:global(.jf-blueprint .content) .table th:first-child, :global(.jf-blueprint .content) .table td:first-child { padding-left: 18px; }
+:global(.jf-blueprint .content) .table th:last-child, :global(.jf-blueprint .content) .table td:last-child { padding-right: 18px; }
+:global(.jf-blueprint .content) .table tfoot td { border-bottom: 0; border-top: 1.5px solid var(--ink); font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; font-size: 12px; }
+:global(.jf-blueprint .content) .r { text-align: right !important; }
+:global(.jf-blueprint .content) .nums { font-variant-numeric: tabular-nums; white-space: nowrap; }
+:global(.jf-blueprint .content) .strong { font-weight: 800; }
+:global(.jf-blueprint .content) .unit { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+:global(.jf-blueprint .content) .lineName { font-weight: 700; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .lineDesc { margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .groupRow td { padding-top: 12px; background: var(--paper); border-bottom: 1.5px solid var(--hair-soft); font-size: 11px; font-weight: 900; letter-spacing: 0.12em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .example { display: inline-block; margin-left: 5px; padding: 0 3px; border: 1px dashed var(--muted-light); font-family: var(--font-mono); font-size: 9px; color: var(--muted); vertical-align: 1px; }
+
+/* Checks */
+:global(.jf-blueprint .content) .checks { list-style: none; margin: 0; padding: 0; }
+:global(.jf-blueprint .content) .check { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: start; gap: 12px; padding: 11px 18px; border-bottom: 1px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .check:last-child { border-bottom: 0; }
+:global(.jf-blueprint .content) .checkLevel { padding: 2px 0; text-align: center; border: 1.5px solid currentColor; border-radius: var(--radius); font-size: 9.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+:global(.jf-blueprint .content) .level_pass .checkLevel { color: var(--success-dark); background: var(--success-soft); }
+:global(.jf-blueprint .content) .level_info .checkLevel { color: var(--muted); }
+:global(.jf-blueprint .content) .level_warn .checkLevel { color: var(--warning-dark); background: var(--warning-soft); }
+:global(.jf-blueprint .content) .level_fail .checkLevel { color: var(--danger); background: var(--danger-soft); }
+:global(.jf-blueprint .content) .level_fail { background: color-mix(in srgb, var(--danger-soft) 45%, #fff); }
+:global(.jf-blueprint .content) .checkText { font-size: 13px; line-height: 1.5; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .checkText b { color: var(--ink); }
+:global(.jf-blueprint .content) .checkRule { margin-top: 3px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--blueprint); }
+
+/* Your prices */
+:global(.jf-blueprint .content) .rates { display: grid; }
+:global(.jf-blueprint .content) .rateGroup { border-bottom: 1px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .rateGroup:last-child { border-bottom: 0; }
+:global(.jf-blueprint .content) .rateGroup > summary {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 18px; cursor: pointer; list-style: none;
+  font-size: 12.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+}
+:global(.jf-blueprint .content) .rateGroup > summary::-webkit-details-marker { display: none; }
+:global(.jf-blueprint .content) .rateRows { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0 24px; padding: 4px 18px 14px; }
+:global(.jf-blueprint .content) .rateRow { display: grid; grid-template-columns: minmax(0, 1fr) auto 96px; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .rateLabel { font-size: 12.5px; line-height: 1.35; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .rateUnit { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted); white-space: nowrap; }
+:global(.jf-blueprint .content) .rateIn { height: 36px; text-align: right; }
+
+@media (max-width: 1100px) {
+  :global(.jf-blueprint .content) .layout { grid-template-columns: minmax(0, 1fr); }
+  :global(.jf-blueprint .content) .layout > .viewer { grid-column: 1; grid-row: 1; position: relative; top: auto; }
+  :global(.jf-blueprint .content) .layout > .steps { grid-column: 1; grid-row: 2; }
+  :global(.jf-blueprint .content) .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
+}
+
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .studio { gap: 12px; }
+  :global(.jf-blueprint .content) .pageTitle { font-size: 32px; }
+  :global(.jf-blueprint .content) .pageSub { font-size: 12.5px; }
+  :global(.jf-blueprint .content) .jobBar { padding: 12px 14px; }
+  :global(.jf-blueprint .content) .jobFacts { padding-bottom: 0; }
+  :global(.jf-blueprint .content) .steps { display: flex; }
+  :global(.jf-blueprint .content) .viewBox { height: 300px; min-height: 0; }
+  :global(.jf-blueprint .content) .viewHead { padding: 10px 12px; }
+  :global(.jf-blueprint .content) .buildRow { padding: 10px 12px; }
+  :global(.jf-blueprint .content) .btn, :global(.jf-blueprint .content) .btnSm { height: auto; min-height: 44px; }
+  :global(.jf-blueprint .content) .verdict { padding: 10px 12px; flex-wrap: wrap; }
+  :global(.jf-blueprint .content) .verdictText { flex-basis: 100%; order: 3; }
+  :global(.jf-blueprint .content) .verdictTotal { margin-left: auto; }
+  :global(.jf-blueprint .content) .stepHead { padding: 12px 14px; min-height: 52px; }
+  :global(.jf-blueprint .content) .stepBody { padding: 12px 14px 14px; }
+  :global(.jf-blueprint .content) .in, :global(.jf-blueprint .content) .sel { height: 44px; font-size: 16px; }
+  :global(.jf-blueprint .content) .segBtn, :global(.jf-blueprint .content) .segSmall .segBtn { min-height: 44px; }
+  :global(.jf-blueprint .content) .toggle { min-height: 44px; }
+  :global(.jf-blueprint .content) .chip { min-height: 40px; }
+  :global(.jf-blueprint .content) .hero { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :global(.jf-blueprint .content) .heroCell:nth-child(2) { border-right: 0; }
+  :global(.jf-blueprint .content) .heroCell:nth-child(-n + 2) { border-bottom: 1.5px solid var(--hair-soft); }
+  :global(.jf-blueprint .content) .heroCell { padding: 12px 14px; }
+  :global(.jf-blueprint .content) .heroV { font-size: 22px; }
+  :global(.jf-blueprint .content) .convert { padding: 12px 14px 14px; }
+  :global(.jf-blueprint .content) .convertRow .btn { width: 100%; min-height: 48px; }
+  :global(.jf-blueprint .content) .head { padding: 12px 14px; }
+  :global(.jf-blueprint .content) .check { grid-template-columns: 48px minmax(0, 1fr); padding: 10px 14px; }
+  :global(.jf-blueprint .content) .check .btn { grid-column: 2; justify-self: start; min-height: 44px; }
+  :global(.jf-blueprint .content) .table { font-size: 12.5px; }
+  :global(.jf-blueprint .content) .table th:first-child, :global(.jf-blueprint .content) .table td:first-child { padding-left: 14px; }
+  :global(.jf-blueprint .content) .table th:last-child, :global(.jf-blueprint .content) .table td:last-child { padding-right: 14px; }
+  :global(.jf-blueprint .content) .price .table th:nth-child(3), :global(.jf-blueprint .content) .price .table td:nth-child(3),
+  :global(.jf-blueprint .content) .price .table th:nth-child(4), :global(.jf-blueprint .content) .price .table td:nth-child(4) { display: none; }
+  :global(.jf-blueprint .content) .bom th:nth-child(3), :global(.jf-blueprint .content) .bom td:nth-child(3) { display: none; }
+  :global(.jf-blueprint .content) .rateRows { grid-template-columns: minmax(0, 1fr); padding: 4px 14px 12px; }
+  :global(.jf-blueprint .content) .rateRow { grid-template-columns: minmax(0, 1fr) 96px; }
+  :global(.jf-blueprint .content) .rateUnit { grid-column: 1; grid-row: 2; }
+  :global(.jf-blueprint .content) .rateIn { grid-row: span 2; height: 44px; font-size: 16px; }
+  :global(.jf-blueprint .content) .rateGroup > summary { padding: 0 14px; min-height: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.jf-blueprint .content) .btn { transition: none; }
+}
+
+/* A narrow column: the label's aside drops under it rather than being cut. */
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .lbl { flex-wrap: wrap; align-items: baseline; }
+  :global(.jf-blueprint .content) .lblAside { white-space: normal; text-align: left; overflow: visible; }
+}
+
+/* Coming soon, for the admins testing it (2026-10-04). */
+:global(.jf-blueprint .content) .previewNote { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+
+/* The coming-soon page everyone else gets at this URL. */
+:global(.jf-blueprint .content) .soonCard { max-width: 760px; }
+:global(.jf-blueprint .content) .soonBody { display: grid; gap: 14px; padding: 18px; }
+:global(.jf-blueprint .content) .soonBody p { margin: 0; max-width: 64ch; font-size: 13.5px; line-height: 1.55; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .soonList { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .soonActs { display: flex; gap: 10px; flex-wrap: wrap; padding-top: 4px; }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .soonBody { padding: 14px; }
+  :global(.jf-blueprint .content) .soonActs .btn { width: 100%; min-height: 48px; }
+}
+:global(.jf-blueprint .content) .soonList li { list-style: square; }

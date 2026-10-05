@@ -140,7 +140,7 @@ export function Sidebar({
                   className={`sb-link${item.href === active ? " active" : ""}${item.locked ? " sb-lockd" : ""}`}
                   href={item.href as Route}
                   {...tipProps(
-                    (badges[item.href] ?? 0) > 0 ? `${item.label} · ${badges[item.href]} new` : item.locked ? `${item.label} · not in your plan` : quota ? `${item.label} · ${quota.text}` : item.label,
+                    (badges[item.href] ?? 0) > 0 ? `${item.label} · ${badges[item.href]} new` : item.locked ? `${item.label} · not in your plan` : item.soon ? `${item.label} · coming soon` : quota ? `${item.label} · ${quota.text}` : item.label,
                   )}
                 >
                   <svg className="ic">
@@ -154,7 +154,9 @@ export function Sidebar({
                   {/* CUSTOM-PLAN LOCK — the page is not in this org's plan.
                       Still a live link on purpose: the route renders the
                       upgrade offer, so the padlock is a door, not a wall. */}
-                  {item.locked ? (
+                  {item.soon && !item.locked ? (
+                    <span className="sb-soon" aria-label="Coming soon">Soon</span>
+                  ) : item.locked ? (
                     <svg className="sb-lock-ic" viewBox="0 0 24 24" aria-label="Not in your plan">
                       <rect x="5" y="11" width="14" height="10" rx="1.5" />
                       <path d="M8 11V7a4 4 0 0 1 8 0v4" />

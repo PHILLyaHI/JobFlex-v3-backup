@@ -8,6 +8,7 @@
 // src/actions/notify.ts.
 import { db } from "@/lib/db";
 import { FENCE_PLAN_EVENT } from "@/lib/fence/planSvg";
+import { DECK_PLAN_EVENT } from "@/lib/deck/convertSchema";
 import { contractSchedule } from "@/lib/contractTotal";
 import { appBaseUrl } from "@/lib/appUrl";
 import { sendEmail, isEmailEnabled } from "@/lib/sdk/resend";
@@ -158,6 +159,8 @@ export async function notifyProposalSent({ proposalId }: NotifyProposalSentInput
   try {
     const drawn = await db.activityEvent.findFirst({ where: { proposalId: proposal.id, kind: FENCE_PLAN_EVENT }, select: { id: true } });
     if (drawn) after = ["Your fence is drawn on your lot and stands in 3D on your page — open it and drag to look around.", "Anything you'd like changed? Just reply — it comes straight to us."];
+    // A deck from the Deck Studio (2026-10-04): the same promise, for the deck.
+    else if (await db.activityEvent.findFirst({ where: { proposalId: proposal.id, kind: DECK_PLAN_EVENT }, select: { id: true } })) after = ["Your deck stands in 3D on your page — open it, drag to look around, and press Build it to watch it go up.", "Anything you'd like changed? Just reply — it comes straight to us."];
   } catch {
     after = undefined;
   }

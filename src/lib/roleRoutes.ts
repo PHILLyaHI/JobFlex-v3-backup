@@ -80,6 +80,7 @@ export const ROLE_ROUTE_GATES: Record<string, RoleRouteGate> = {
       "/dashboard/roof-estimator",
       "/dashboard/fence-estimator",
       "/dashboard/hvac-estimator",
+      "/dashboard/deck-estimator",
       "/dashboard/messages",
     ],
     home: "/dashboard/proposals",

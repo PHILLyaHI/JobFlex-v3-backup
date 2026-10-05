@@ -1,0 +1,22 @@
+/* THE DECK IN 3D ON A PAGE (deck-scene-figure). The fence figure's frame
+   (fence-scene.css) plus one control: Build it, over the scene's left corner
+   (the phone portal's frame runs wider than its figure on the right).
+   Global like the fence's — the client's portal, desk and phone, and the
+   contractor's proposal mount it; tokens with their values as the fallback,
+   because the portal pages do not all carry the dashboard's token block.
+   Selectors are four classes deep on purpose: the proposal builder's page
+   reset strips any button lighter than that. */
+
+/* Full width always: with only an aspect ratio and a max height, the frame
+   took its width from the height cap and stopped at 768 px on a wide card. */
+.jf-fs.jf-ds .jf-fs-frame { width: 100%; }
+
+.jf-fs.jf-ds .jf-fs-frame .jf-ds-build {
+  position: absolute; left: 10px; bottom: 10px; z-index: 2;
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; cursor: pointer;
+  border: 2px solid var(--ink, #0a0a0a); border-radius: var(--radius, 2px); background: var(--paper-deep, #fff); color: var(--ink, #0a0a0a);
+  font-family: var(--font-sans, var(--font, Inter, system-ui, sans-serif)); font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase;
+}
+.jf-fs.jf-ds .jf-fs-frame .jf-ds-build:hover { background: var(--ink, #0a0a0a); color: var(--paper-deep, #fff); }
+.jf-fs.jf-ds .jf-fs-frame .jf-ds-build:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
+.jf-fs.jf-ds .jf-fs-frame .jf-ds-build[disabled] { opacity: 0.6; cursor: default; }

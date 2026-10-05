@@ -669,3 +669,6 @@ body:has(.jf-blueprint) {
 @media (min-width: 861px) {
   .jf-blueprint .main:has(.mdl.open, .mdl.mdl--closing) { z-index: 31; }
 }
+
+/* The folded rail has no room for the Coming soon plate; the hover label says it. */
+.jf-blueprint[data-sb="fold"] .sb-soon { display: none; }

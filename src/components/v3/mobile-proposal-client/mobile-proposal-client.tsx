@@ -13,6 +13,7 @@ import { PaymentCenter } from "./payment-center";
 import { usePayReturn } from "./use-pay-return";
 import { StarsInline } from "@/components/reviews/StarsInline";
 import { FenceSceneFigure } from "@/components/v3/fence-scene/fence-scene-figure";
+import { DeckSceneFigure } from "@/components/v3/deck-scene/deck-scene-figure";
 import "./mobile-proposal-client.css";
 
 /** `"open"` is the one local value the SERVER never sends: a revert has put the
@@ -355,7 +356,10 @@ export function MobileProposalClient({ view }: { view: PortalView }) {
             {view.pictures.filter((p) => p.kind === "fence-scene").map((p) => (
               <FenceSceneFigure key={p.kind} className="mpc-scene" src={p.src} poster={p.poster ?? null} caption={p.caption} facts={p.facts} />
             ))}
-            {view.pictures.filter((p) => p.kind !== "fence-scene").map((p) => (
+            {view.pictures.filter((p) => p.kind === "deck-scene").map((p) => (
+              <DeckSceneFigure key={p.kind} className="mpc-scene" src={p.src} caption={p.caption} facts={p.facts} />
+            ))}
+            {view.pictures.filter((p) => p.kind !== "fence-scene" && p.kind !== "deck-scene").map((p) => (
               <figure key={p.kind} className="mpc-site" data-picture={p.kind}>
                 <div className="mpc-site-frame">
                   {/* eslint-disable-next-line @next/next/no-img-element -- streamed from this app's own routes or Blob; next/image adds nothing */}

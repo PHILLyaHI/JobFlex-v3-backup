@@ -31,6 +31,9 @@ export type NavItem = {
    *  Drawn indented beneath the parent with a chevron to fold them; the
    *  handheld drawer and the palette list them flat after the parent. */
   children?: NavItem[];
+  /** Coming soon (2026-10-04): the row is shown with a "Soon" mark; the page
+   *  itself says so to everyone but the admins who are testing it. */
+  soon?: boolean;
 };
 export type NavSection = { label: string; items: NavItem[] };
 
@@ -111,6 +114,9 @@ export const NAV_SECTIONS: NavSection[] = [
       // item asked for `i-bolt`, which only the Financials sprite carries, so
       // the sidebar drew a blank beside it on every other page).
       { label: "HVAC estimator", icon: "i-heatpump", href: "/dashboard/hvac-estimator" },
+      // The deck estimator (2026-10-04): marked Coming soon for everyone,
+      // open to admins for testing (lib/deck/access).
+      { label: "Deck estimator", icon: "i-deck", href: "/dashboard/deck-estimator", soon: true },
       // Price book + stock for every trade (owner, 2026-09-29). The HVAC
       // service menu is a tab of it (trade=hvac).
       { label: "Inventory", icon: "i-folder", href: "/dashboard/inventory" },
@@ -230,6 +236,7 @@ const ROLE_NAV: Record<string, RoleNavPlan> = {
         "/dashboard/roof-estimator",
         "/dashboard/fence-estimator",
         "/dashboard/hvac-estimator",
+        "/dashboard/deck-estimator",
         "/dashboard/messages",
       ],
     },

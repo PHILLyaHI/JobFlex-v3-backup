@@ -40,6 +40,7 @@ import { parseProposalSettings } from "@/lib/settings";
 import { buildPortalView, type PortalRating } from "@/components/v3/mobile-proposal-client/portal-view";
 import { proposalPictures } from "@/lib/proposalPictures";
 import { FenceSceneFigure } from "@/components/v3/fence-scene/fence-scene-figure";
+import { DeckSceneFigure } from "@/components/v3/deck-scene/deck-scene-figure";
 import { buildPortalPayModel } from "@/lib/payments/portalModel";
 import { formatAvg, orgPublicRating, publicReviewsPath } from "@/lib/reviews/publicSummary";
 import { StarsInline } from "@/components/reviews/StarsInline";
@@ -123,7 +124,9 @@ export default async function PublicProposalPortal({
   const pictures = await proposalPictures({ id: proposal.id, publicId, trade: proposal.trade, beforePhotos: proposal.beforePhotos }).catch(() => []);
   // The fence in 3D stands on its own, full width, above the stills (2026-09-27).
   const sceneShot = pictures.find((p) => p.kind === "fence-scene") ?? null;
-  const stills = pictures.filter((p) => p.kind !== "fence-scene");
+  // The deck in 3D (2026-10-04) stands the same way.
+  const deckShot = pictures.find((p) => p.kind === "deck-scene") ?? null;
+  const stills = pictures.filter((p) => p.kind !== "fence-scene" && p.kind !== "deck-scene");
 
   // THE SHOP'S OWN OPENS DO NOT COUNT (2026-09-20). The contractor checking
   // their own link — the preview from the proposals list, a reread before a
@@ -284,6 +287,7 @@ export default async function PublicProposalPortal({
             {sceneShot && (
               <FenceSceneFigure className="pv-scene" src={sceneShot.src} poster={sceneShot.poster ?? null} caption={sceneShot.caption} facts={sceneShot.facts} />
             )}
+            {deckShot && <DeckSceneFigure className="pv-scene" src={deckShot.src} caption={deckShot.caption} facts={deckShot.facts} />}
             {stills.length > 0 && (
               <div className={`pv-pics${stills.length > 1 ? " pv-pics--two" : ""}`} data-pictures={pictures.map((p) => p.kind).join(" ")}>
                 {stills.map((p) => (

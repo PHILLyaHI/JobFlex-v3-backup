@@ -1291,3 +1291,13 @@
 .bp :global(.sb-link.active .sb-quota) { color: var(--blueprint); }
 .bp :global(.sb-link.active .sb-quota.is-out) { color: var(--danger); }
 .bp :global(.sb-quota:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+
+/* COMING SOON (2026-10-04): a page that is built but not open yet carries a
+   quiet mono "Soon" plate in the badge slot — an outline, not the blue fill
+   of a count, so it never reads as something waiting for the user. */
+.bp :global(.sb-soon) {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 5px;
+  border: 1.5px solid var(--muted-light); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1;
+  color: var(--muted); white-space: nowrap;
+}

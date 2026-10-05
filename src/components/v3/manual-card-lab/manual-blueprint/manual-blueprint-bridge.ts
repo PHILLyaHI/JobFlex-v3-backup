@@ -162,6 +162,8 @@ export type ManualProposal = {
   /** The proposal carries a fence traced on the map (a FENCE_PLAN row): the
    *  drawing card shows it in 3D and on the lot (2026-09-27). */
   fenceDrawing?: boolean;
+  /** A deck from the Deck Studio is kept with it (DECK_PLAN, 2026-10-04). */
+  deckDrawing?: boolean;
   /** Made by an estimator (fence, roof, HVAC — `Proposal.trade`): its lines
    *  carry the estimator's INSTALLED prices, profit already inside, with no
    *  cost of the contractor's under them — so there is no margin to grade
