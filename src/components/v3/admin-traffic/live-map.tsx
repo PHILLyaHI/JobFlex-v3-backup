@@ -17,7 +17,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { PARTY_LABEL, partyOf } from "@/lib/usPolitics";
-import type { LiveStage, LiveTotals, LiveVisitor } from "@/lib/traffic-live";
+import { LIVE_ACTIVE_MINUTES, type LiveStage, type LiveTotals, type LiveVisitor } from "@/lib/traffic-live";
 import { Ago } from "./ticker";
 import { JourneyLine } from "./journey-line";
 import s from "./traffic.module.css";
@@ -44,6 +44,10 @@ const ago = (ms: number) => (ms < 60_000 ? `${Math.max(1, Math.round(ms / 1000))
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 /** A map pin, tip at 0,0, head centred 15 above it. */
 const PIN = "M0 0C-1.6-5-8-9.4-8-15A8 8 0 1 1 8-15C8-9.4 1.6-5 0 0Z";
+/** The pin as the key draws it. */
+const PinIcon = ({ colour }: { colour: string }) => (
+  <svg viewBox="-11 -27 22 30" aria-hidden="true"><path d={PIN} fill="none" stroke="var(--ink)" strokeWidth={4.4} strokeLinejoin="round" opacity={0.9} /><path d={PIN} fill={colour} stroke="#fff" strokeWidth={1.9} /><circle cx={0} cy={-15} r={3} fill="#fff" /></svg>
+);
 
 /** What a pin says about the visitor: the stage, folded to four colours. */
 /* Five kinds, five hues far apart (2026-09-30). The old four sat close
@@ -116,6 +120,8 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
   const [states, setStates] = useState<Shape[] | null>(null);
   /** The US states in red and blue (owner, 2026-10-03); on until turned off. */
   const [party, setParty] = useState(true);
+  /** The guide under the map (2026-10-04): closed until asked for. */
+  const [help, setHelp] = useState(false);
   const [view, setView] = useState<View | null>(null);
   const [failed, setFailed] = useState(false);
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -350,6 +356,15 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
     const el = svgRef.current?.querySelector<SVGGraphicsElement>(`[data-country="${cc}"]`);
     if (el) { const b = el.getBBox(); flyToBox(b.x, b.y, b.x + b.width, b.y + b.height); }
   };
+  const flyToState = (code: string) => {
+    const el = /^[A-Z]{2}$/.test(code) ? svgRef.current?.querySelector<SVGGraphicsElement>(`[data-state="${code}"]`) : null;
+    if (el) { const b = el.getBBox(); flyToBox(b.x, b.y, b.x + b.width, b.y + b.height); return; }
+    // The state shapes are not drawn (lighting off, zoomed out): frame its pins.
+    const here = places.filter((p) => p.visitors.some((v) => v.countryCode === "US" && v.regionCode === code));
+    if (here.length === 0) return;
+    const xs = here.map((p) => p.x), ys = here.map((p) => p.y);
+    flyToBox(Math.min(...xs) - 20, Math.min(...ys) - 20, Math.max(...xs) + 20, Math.max(...ys) + 20);
+  };
   const clock = (iso: string) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(iso)); } catch { return ""; } };
   const stateName = (code: string) => (code ? states?.find((x) => x.r === code)?.n ?? code : "");
   const placeName = (v: LiveVisitor) => `${v.city || countryName(v.countryCode, v.country)}${v.countryCode === "US" && v.regionCode ? `, ${stateName(v.regionCode)}` : ""}`;
@@ -361,6 +376,12 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
   const showStates = Boolean(states) && (party || (detailed && overUS));
   const labelled = zoom >= 2.5;
   const topCountries = [...perCountry].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  // Where they are, at the grain that says something (2026-10-04): the states
+  // when everyone on the map is in the US — "Washington · 7, Utah · 2" tells
+  // a US business more than "United States · 9" — the countries otherwise.
+  const topStates = perCountry.size === 1 && perCountry.has("US") ? [...perState].sort((a, b) => b[1] - a[1]).slice(0, 8) : [];
+  // The key names only the pins that are on the map: a colour nobody wears needs no line.
+  const kinds = (Object.keys(PIN_META) as PinKind[]).map((key) => [key, visitors.filter((v) => PIN_KIND[v.stage] === key).length] as const);
   const unplaced = visitors.filter((v) => v.lat === null || v.lon === null).length;
   const count = visitors.length;
   const onNow = visitors.filter((v) => v.active).length;
@@ -424,7 +445,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAround(view.x + view.w / 2, view.y + view.h / 2, 1 / 0.6)}>−</button>
           <button type="button" title="Fit the visitors" aria-label="Fit the visitors" onClick={fitAll}>◎</button>
           <button type="button" title="Whole world" aria-label="Whole world" onClick={() => flyTo(full)}>⟲</button>
-          <button type="button" title={party ? "Stop lighting up the states" : "Light up states with visitors in red and blue (2024 vote)"} aria-label="US states in red and blue" aria-pressed={party} data-party-toggle onClick={() => setParty((x) => !x)}>◐</button>
+          <button type="button" title={party ? "States with visitors are lit red or blue: how they voted for president in 2024. Click to stop lighting them up" : "Light up states with visitors in red and blue (2024 vote)"} aria-label="US states in red and blue" aria-pressed={party} data-party-toggle onClick={() => setParty((x) => !x)}>◐</button>
           <button type="button" title={wide ? "Back to the page · Esc" : "Full screen"} aria-label={wide ? "Exit full screen" : "Full screen"} aria-pressed={wide} onClick={() => (wide ? closeWide() : openWide())}>{wide ? <Minimize2 size={14}/> : <Maximize2 size={14}/>}</button>
         </div>
         {zoom > 1.05 && <span className={s.mapZoomLevel} data-card={!!open}>{Math.round(zoom * 10) / 10}×{showStates ? " · US states" : detailed ? " · detailed" : ""}</span>}
@@ -495,28 +516,46 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
         })()}
       </div>
 
-      <div className={s.mapLegend}>
-        {(Object.keys(PIN_META) as PinKind[]).filter((key) => !prospects || (key !== "member" && key !== "signing-in")).map((key) => (
-          <span key={key}>
-            <svg viewBox="-11 -27 22 30" aria-hidden="true"><path d={PIN} fill="none" stroke="var(--ink)" strokeWidth={4.4} strokeLinejoin="round" opacity={0.9} /><path d={PIN} fill={PIN_META[key].colour} stroke="#fff" strokeWidth={1.9} /><circle cx={0} cy={-15} r={3} fill="#fff" /></svg>
-            {PIN_META[key].label} · <b>{visitors.filter((v) => PIN_KIND[v.stage] === key).length}</b>
-          </span>
+      {/* Under the map (2026-10-04; owner: "remove this part to save space or
+          put other smart info"): one line that holds only what the map is
+          showing — the pins that are on it with their counts, the ad ring
+          when someone came off an ad, the red/blue swatches when a state is
+          lit, and where they are, by state when they are all in the US. The
+          manual and the whole key open from the "?" at its end; with nobody
+          on the map the line is that button alone. */}
+      <div className={s.mapLegend} data-map-legend>
+        {kinds.filter(([, n]) => n > 0).map(([key, n]) => (
+          <span key={key}><PinIcon colour={PIN_META[key].colour}/>{PIN_META[key].label} · <b>{n}</b></span>
         ))}
-        <span><i className={s.mapAdRing} aria-hidden="true"/>From an ad</span>
-        {party && <span className={s.mapLegendParty}><i data-party="D" aria-hidden="true"/>Democratic <i data-party="R" aria-hidden="true"/>Republican <em>a US state lights up while a visitor is in it · its 2024 presidential vote</em></span>}
-        <span className={s.mapLegendNote}>Pulsing: on the site in the last 5 minutes</span>
+        {fromAds > 0 && <span><i className={s.mapAdRing} aria-hidden="true"/>From an ad · <b>{fromAds}</b></span>}
+        {party && lit.size > 0 && <span className={s.mapLegendParty} title="A US state lights up while a visitor on the map is in it; the colour is how it voted for president in 2024: blue Democratic, red Republican. The half-circle button on the map turns the lighting off."><i data-party="D" aria-hidden="true"/>Dem <i data-party="R" aria-hidden="true"/>Rep</span>}
         {prospects && <span className={s.mapLegendNote}>Prospects: members and customers signing in are left off; a signup stays on the map for a day.</span>}
         {unplaced > 0 && <span className={s.mapLegendNote}>{plural(unplaced, "visitor", "visitors")} without a known place: counted, not on the map</span>}
+        {(topStates.length > 0 || topCountries.length > 0) && (
+          <span className={s.mapChips} data-map-places>
+            <em>Where</em>
+            {topStates.length > 0
+              ? topStates.map(([code, n]) => <button key={code} type="button" onClick={() => flyToState(code)} title={`Show ${stateName(code)}`}>{stateName(code)} · <b>{n}</b></button>)
+              : topCountries.map(([cc, n]) => <button key={cc} type="button" onClick={() => flyToCountry(cc)} title={`Show ${countryName(cc)}`}>{flag(cc)} {countryName(cc)} · <b>{n}</b></button>)}
+          </span>
+        )}
+        <button type="button" className={s.mapHelpToggle} aria-expanded={help} aria-controls="live-map-guide" aria-label={help ? "Hide the guide" : "How the map works"} title={help ? "Hide the guide" : "How the map works"} onClick={() => setHelp((x) => !x)}>?</button>
       </div>
-      {topCountries.length > 0 && (
-        <div className={s.mapChips}>
-          <span>Where they are</span>
-          {topCountries.map(([cc, n]) => (
-            <button key={cc} type="button" onClick={() => flyToCountry(cc)} title={`Show ${countryName(cc)}`}>{flag(cc)} {countryName(cc)} · <b>{n}</b></button>
-          ))}
+      {help && (
+        <div className={s.mapHelp} id="live-map-guide">
+          <ul>
+            <li>Scroll or pinch to zoom, drag to move, double-click to zoom in. Zoomed in, the map turns detailed and shows the US states.</li>
+            <li>Hover for names; click a pin for who it is and what they did.</li>
+            <li>A pin pulses while its visitor was on the site in the last {LIVE_ACTIVE_MINUTES} minutes. A violet ring: they came from an ad.</li>
+            <li>A US state lights up red or blue, how it voted for president in 2024, while a visitor on the map is in it; the rest of the map keeps its colour, and the half-circle button in the corner turns the lighting off.</li>
+            <li>The last button fills the screen with the map; Esc brings the page back.</li>
+          </ul>
+          <p className={s.mapHelpKey}>
+            {kinds.filter(([key]) => !prospects || (key !== "member" && key !== "signing-in")).map(([key]) => <span key={key}><PinIcon colour={PIN_META[key].colour}/>{PIN_META[key].label}</span>)}
+            <span><i className={s.mapAdRing} aria-hidden="true"/>From an ad</span>
+          </p>
         </div>
       )}
-      <p className={s.mapNote}>Scroll or pinch to zoom, drag to move, double-click to zoom in; zoomed in, the map turns detailed and shows the US states. Hover for names, click a pin for who it is. A US state lights up in red or blue, how it voted for president in 2024, while a visitor on the map is in it; the rest of the map keeps its colour, and the half-circle button in the corner turns the lighting off. The last button fills the screen with the map; Esc brings the page back.</p>
     </div>
   );
 });

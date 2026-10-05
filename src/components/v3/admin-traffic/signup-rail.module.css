@@ -4,7 +4,10 @@
    gutters (.map in traffic.module.css: 0 24px 8px); the rail's column adds
    the right one, so the two end flush. The row is as tall as the map: the
    rail's scroller is absolute inside it, so a long list never stretches the
-   row. Below 1100px the rail sits under the map with a ceiling of its own. */
+   row. Below 1240px the rail sits under the map with a ceiling of its own:
+   beside it there, the map column gets too short for its own corner controls
+   (six buttons, 205px; the box clips what runs past — measured 2026-10-04,
+   383x171 at a 1101px window). */
 
 :global(.jf-blueprint) .mapRow { display:grid; grid-template-columns:minmax(0,1fr) 344px; align-items:stretch; }
 :global(.jf-blueprint) .mapCol { min-width:0; }
@@ -62,7 +65,7 @@
 @keyframes railSpin { to { transform:rotate(360deg); } }
 @keyframes railIn { from { transform:translateX(-28px); opacity:0; background:var(--live-ok); } 40% { opacity:1; } to { transform:none; opacity:1; background:var(--live-ok-soft); } }
 
-@media (max-width: 1100px) {
+@media (max-width: 1240px) {
   :global(.jf-blueprint) .mapRow { grid-template-columns:minmax(0,1fr); }
   :global(.jf-blueprint) .railCol { padding:0 24px 12px; }
   :global(.jf-blueprint) .rail { min-height:0; height:380px; }
