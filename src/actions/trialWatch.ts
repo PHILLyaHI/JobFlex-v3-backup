@@ -9,6 +9,7 @@
 // table is not in this database yet, the page still lists the companies and
 // the signals that need no page views, and says so.
 
+import { countedOrgs, statsHiddenIds } from "@/lib/statsHidden";
 import { db } from "@/lib/db";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { scoreTrial, sortAssessments, TRIAL_WINDOW_DAYS, WATCH_DAYS, type TrialAssessment, type ViewIn } from "@/lib/trialWatch";
@@ -44,7 +45,7 @@ export async function getTrialWatch(): Promise<TrialWatchData> {
   await requirePlatformAdmin();
   const since = new Date(Date.now() - TRIAL_WINDOW_DAYS * 86_400_000);
   const orgs = await db.organization.findMany({
-    where: { createdAt: { gte: since }, deletedAt: null },
+    where: { createdAt: { gte: since }, ...countedOrgs(await statsHiddenIds()) },
     orderBy: { createdAt: "desc" },
     take: 300,
     select: {

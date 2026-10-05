@@ -623,6 +623,8 @@ export interface SignupRecord {
    *  its chance of paying and the two multiplied; a paying account's price.
    *  Absent for the other states and on ledgers read before. */
   value?: { monthlyCents: number | null; tier?: TrialTier; chance?: number; expectedCents?: number };
+  /** Why a lapsed account lapsed, in a sentence, and when (2026-10-05, lib/lapseReason). */
+  lapse?: { at: string | null; reason: string };
 }
 
 /** The coarse state a subscription is in, for the colour and the counts. */
@@ -646,6 +648,8 @@ export interface SignupLedger {
   truncated: boolean;
   /** What the span's trials are likely to bring per month (lib/trialProjection); null when it could not be read. */
   projection?: TrialProjection | null;
+  /** Accounts of the span an admin took out of the statistics (lib/statsHidden) — listed apart, counted nowhere. */
+  hidden?: SignupRecord[];
 }
 
 /** The counts under the ledger — what the span actually produced. */

@@ -7,6 +7,8 @@ import { readAnalyst, type AnalystResult } from "@/lib/traffic-analyst-read";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import { TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
 import { valueSignups } from "@/lib/trialProjectionRead";
+import { countedOrgs, setStatsHidden, statsHiddenIds } from "@/lib/statsHidden";
+import { lapseReasons } from "@/lib/lapseReason";
 import type { SignupAttribution } from "@/lib/traffic-contract";
 import { adNameKey, adTagsOf, isMapSpan, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type LiveVisitor, type MapHistory, type MapSpan, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
@@ -16,7 +18,7 @@ import { adNameKey, adTagsOf, isMapSpan, signupLedgerSummary, signupPlanLabel, s
 async function freshSignups(hours = 24, take = 60): Promise<FreshSignup[]> {
   try {
     const rows = await db.organization.findMany({
-      where: { createdAt: { gte: new Date(Date.now() - hours * 60 * 60 * 1000) }, deletedAt: null },
+      where: { createdAt: { gte: new Date(Date.now() - hours * 60 * 60 * 1000) }, ...countedOrgs(await statsHiddenIds()) },
       orderBy: { createdAt: "desc" },
       take,
       select: {
@@ -142,7 +144,7 @@ export async function getSignupAttribution(input: Record<string, unknown> = {}):
   const from = zonedMidnight(f.from, f.timezone);
   const to = zonedMidnight(f.to, f.timezone, 1);
   const rows = await db.organization.findMany({
-    where: { createdAt: { gte: from, lt: to }, deletedAt: null },
+    where: { createdAt: { gte: from, lt: to }, ...countedOrgs(await statsHiddenIds()) },
     select: { landingIndustry: true, signupVariant: true, utmSource: true, utmMedium: true, utmCampaign: true, utmContent: true },
   });
   const keys = ["landingIndustry", "signupVariant", "utmSource", "utmMedium", "utmCampaign", "utmContent"] as const;
@@ -186,13 +188,13 @@ export async function getSignupLedger(input: Record<string, unknown> = {}): Prom
   const page = truncated ? rows.slice(0, LEDGER_LIMIT) : rows;
 
   // The subscriptions, separately — see the note above.
-  let subs = new Map<string, { plan: string; status: string; trialEndsAt: Date | null; stripePriceId: string | null; externalSubId: string | null; provider: string }>();
+  let subs = new Map<string, { plan: string; status: string; trialEndsAt: Date | null; stripePriceId: string | null; externalSubId: string | null; provider: string; canceledAt: Date | null }>();
   try {
     const found = await db.subscription.findMany({
       where: { organizationId: { in: page.map((r) => r.id) } },
-      select: { organizationId: true, plan: true, status: true, trialEndsAt: true, stripePriceId: true, externalSubId: true, provider: true },
+      select: { organizationId: true, plan: true, status: true, trialEndsAt: true, stripePriceId: true, externalSubId: true, provider: true, canceledAt: true },
     });
-    subs = new Map(found.map((x) => [x.organizationId, { plan: x.plan, status: x.status, trialEndsAt: x.trialEndsAt, stripePriceId: x.stripePriceId, externalSubId: x.externalSubId, provider: x.provider }]));
+    subs = new Map(found.map((x) => [x.organizationId, { plan: x.plan, status: x.status, trialEndsAt: x.trialEndsAt, stripePriceId: x.stripePriceId, externalSubId: x.externalSubId, provider: x.provider, canceledAt: x.canceledAt }]));
   } catch {
     // The ledger still lists who signed up and where from; only the plan
     // column goes quiet.
@@ -212,13 +214,36 @@ export async function getSignupLedger(input: Record<string, unknown> = {}): Prom
       state: signupState(shape.subStatus),
     };
   });
+  // Accounts an admin took out of the statistics (lib/statsHidden): listed
+  // apart under the list, in no count and no figure.
+  const hiddenIds = new Set(await statsHiddenIds());
+  const hidden = records.filter((r) => hiddenIds.has(r.orgId));
+  const counted = records.filter((r) => !hiddenIds.has(r.orgId));
+  const pageCounted = page.filter((r) => !hiddenIds.has(r.id));
+
+  // Why each lapsed account lapsed (lib/lapseReason) — its own try.
+  try {
+    const lapsed = records.filter((r) => r.state === "lapsed");
+    const reasons = await lapseReasons(lapsed.map((r) => {
+      const sub = subs.get(r.orgId);
+      return { orgId: r.orgId, status: sub?.status ?? "", canceledAt: sub?.canceledAt ?? null, externalSubId: sub?.externalSubId ?? null };
+    }));
+    for (const r of lapsed) {
+      const why = reasons.get(r.orgId);
+      if (why) r.lapse = { at: why.at, reason: why.reason };
+    }
+  } catch {
+    /* the reason is a courtesy */
+  }
+
   // What the trials are likely to bring per month, and what each account is
   // worth (2026-10-05, lib/trialProjection). Its own try: a failure here
   // costs the money figures, never the list.
   let projection: SignupLedger["projection"] = null;
   try {
-    const valued = await valueSignups(page.map((r, i) => ({ orgId: r.id, createdAt: r.createdAt, state: records[i].state, sub: subs.get(r.id) ?? null })));
-    for (const rec of records) {
+    const byId = new Map(counted.map((r) => [r.orgId, r]));
+    const valued = await valueSignups(pageCounted.map((r) => ({ orgId: r.id, createdAt: r.createdAt, state: byId.get(r.id)!.state, sub: subs.get(r.id) ?? null })));
+    for (const rec of counted) {
       const v = valued.values.get(rec.orgId);
       if (v) rec.value = v;
     }
@@ -226,7 +251,22 @@ export async function getSignupLedger(input: Record<string, unknown> = {}): Prom
   } catch {
     projection = null;
   }
-  return { days, records, summary: signupLedgerSummary(records), truncated, projection };
+  return { days, records: counted, summary: signupLedgerSummary(counted), truncated, projection, hidden };
+}
+
+/** Take an account out of every admin statistic, or put it back (lib/statsHidden). */
+export async function setSignupHidden(input: Record<string, unknown> = {}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const admin = await requirePlatformAdmin();
+  const orgId = typeof input.orgId === "string" ? input.orgId.trim() : "";
+  if (!orgId || orgId.length > 64) return { ok: false, error: "No account given." };
+  const exists = await db.organization.findUnique({ where: { id: orgId }, select: { id: true } }).catch(() => null);
+  if (!exists) return { ok: false, error: "That account was not found." };
+  try {
+    await setStatsHidden(orgId, input.hidden !== false, admin.email ?? null);
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "The change could not be saved. Try again." };
+  }
 }
 
 export async function getTrafficDashboard(input: Record<string, unknown> = {}) {

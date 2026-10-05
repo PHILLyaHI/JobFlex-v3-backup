@@ -10,6 +10,7 @@
 
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { statsHiddenIds } from "@/lib/statsHidden";
 import { QUOTA_KEY as PARCEL_QUOTA_KEY } from "@/lib/parcelLookup";
 import { QUOTA_ALLTIME as PARCEL_QUOTA_TOTAL } from "@/lib/reportall";
 import { getSubscribersData } from "@/actions/subscribers";
@@ -160,11 +161,17 @@ const ACTIVITY_ROWS = 8;
    WHERE m.userId = u.id) AND u.email NOT LIKE '%@platform.jobflex.local'; */
 const ADMIN_EMAIL_DOMAIN = "@platform.jobflex.local";
 
-function signedUpPeopleCount() {
+function signedUpPeopleCount(hidden: readonly string[] = []) {
   return db.user.count({
-    where: { memberships: { some: {} }, email: { not: { endsWith: ADMIN_EMAIL_DOMAIN } } },
+    where: {
+      memberships: hidden.length ? { some: { organizationId: { notIn: [...hidden] } } } : { some: {} },
+      email: { not: { endsWith: ADMIN_EMAIL_DOMAIN } },
+    },
   });
 }
+
+/** Accounts an admin took out of the statistics (lib/statsHidden, 2026-10-05) — out of every count here too. */
+const notHidden = (hidden: readonly string[]) => (hidden.length ? { id: { notIn: [...hidden] } } : {});
 
 export async function getAdminOverview(): Promise<AdminOverviewData> {
   await requirePlatformAdmin();
@@ -180,19 +187,21 @@ export async function getAdminOverview(): Promise<AdminOverviewData> {
   // owner of the MRR rule and of the Stripe-live / local-mirror fallback, so
   // the overview never re-derives either — it reads the same rows the
   // subscribers page reads, and says which source answered.
+  const hidden = await statsHiddenIds();
   const [organizations, users, orgsThisMonth, supportUnread, recentOrgs, recentCreatedAts, billing] =
     await Promise.all([
-      db.organization.count(),
-      signedUpPeopleCount(),
-      db.organization.count({ where: { createdAt: { gte: monthStart } } }),
+      db.organization.count({ where: notHidden(hidden) }),
+      signedUpPeopleCount(hidden),
+      db.organization.count({ where: { createdAt: { gte: monthStart }, ...notHidden(hidden) } }),
       db.supportTicket.count({ where: { adminReadAt: null } }),
       db.organization.findMany({
+        where: notHidden(hidden),
         orderBy: { createdAt: "desc" },
         take: 5,
         select: { id: true, name: true, createdAt: true, _count: { select: { memberships: true } } },
       }),
       db.organization.findMany({
-        where: { createdAt: { gte: twelveWeeksAgo } },
+        where: { createdAt: { gte: twelveWeeksAgo }, ...notHidden(hidden) },
         select: { createdAt: true },
       }),
       getSubscribersData(),

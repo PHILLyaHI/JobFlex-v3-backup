@@ -7,8 +7,8 @@
 // stored for it — these are Organization rows with the landing's tags on them
 // and the Subscription beside them, read over a span he picks.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Info, Megaphone, RefreshCw } from "lucide-react";
-import { getSignupLedger } from "@/actions/trafficDashboard";
+import { EyeOff, Info, Megaphone, RefreshCw } from "lucide-react";
+import { getSignupLedger, setSignupHidden } from "@/actions/trafficDashboard";
 import type { SignupLedger, SignupRecord, SignupState } from "@/lib/traffic-live";
 import { TIER_CHANCE, TIER_LABEL, TRIAL_TIERS, dollars, trialChance, type TrialProjection } from "@/lib/trialProjection";
 import s from "./traffic.module.css";
@@ -49,6 +49,17 @@ export function SignupLedgerPanel({ initial, timezone, fullHistory = false }: { 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only the window switch reloads here
   }, [fullHistory]);
 
+  // Take an account out of every statistic, or put it back (lib/statsHidden, 2026-10-05).
+  const hide = async (orgId: string, hidden: boolean) => {
+    setPending(true);
+    try {
+      const res = await setSignupHidden({ orgId, hidden });
+      if (!res.ok) setError(res.error);
+    } catch {
+      setError("The change could not be saved. Try again.");
+    }
+    await load(ledger.days);
+  };
   const when = (iso: string) => {
     try {
       return new Intl.DateTimeFormat("en-US", { timeZone: timezone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso));
@@ -95,15 +106,29 @@ export function SignupLedgerPanel({ initial, timezone, fullHistory = false }: { 
         <div className={s.liveEmpty}>No accounts were made in this span.</div>
       ) : (
         <ol className={s.ledgerList}>
-          {ledger.records.map((r) => <LedgerRow key={r.orgId} r={r} when={when}/>)}
+          {ledger.records.map((r) => <LedgerRow key={r.orgId} r={r} when={when} onHide={() => void hide(r.orgId, true)} pending={pending}/>)}
         </ol>
+      )}
+      {ledger.hidden && ledger.hidden.length > 0 && (
+        <details className={s.ledgerHidden}>
+          <summary>Hidden from statistics · {ledger.hidden.length}</summary>
+          <p>These accounts are in no count, no figure and no list on the admin pages. They still sign in, and they are still in Users and in billing.</p>
+          <ol>
+            {ledger.hidden.map((r) => (
+              <li key={r.orgId}>
+                <span><b>{r.orgName}</b> · {r.ownerEmail || "no owner"} · {r.planLabel}</span>
+                <button type="button" className={s.ledgerHide} onClick={() => void hide(r.orgId, false)} disabled={pending}>Count again</button>
+              </li>
+            ))}
+          </ol>
+        </details>
       )}
       {ledger.truncated && <p className={s.footnote}>Showing the newest 400 of this span. Choose a shorter one to see them all.</p>}
     </section>
   );
 }
 
-function LedgerRow({ r, when }: { r: SignupRecord; when: (iso: string) => string }) {
+function LedgerRow({ r, when, onHide, pending }: { r: SignupRecord; when: (iso: string) => string; onHide: () => void; pending: boolean }) {
   return (
     <li className={s.ledgerRow} data-state={r.state}>
       <div className={s.ledgerMark} aria-hidden="true"/>
@@ -118,8 +143,14 @@ function LedgerRow({ r, when }: { r: SignupRecord; when: (iso: string) => string
       <div className={s.ledgerPlan}>
         <b className={s.livePlan} data-state={r.state}>{r.planLabel}</b>
         <span>{STATE_LABEL[r.state]}{worth(r)}</span>
+        {r.lapse && <span className={s.ledgerWhy}><b>Why:</b> {r.lapse.reason}{r.lapse.at ? ` · ${when(r.lapse.at)}` : ""}</span>}
       </div>
-      <div className={s.ledgerWhen}><b>{when(r.createdAt)}</b></div>
+      <div className={s.ledgerWhen}>
+        <b>{when(r.createdAt)}</b>
+        <button type="button" className={s.ledgerHide} onClick={onHide} disabled={pending} title="Take this account out of every statistic on the admin pages">
+          <EyeOff size={12} aria-hidden="true"/>Hide from stats
+        </button>
+      </div>
     </li>
   );
 }

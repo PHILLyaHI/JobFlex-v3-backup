@@ -5,6 +5,7 @@
 // the panel, its exports, "Export everything" — so each of them reads the
 // same week the same way. No auth here: every caller checks it.
 
+import { countedOrgs, statsHiddenIds } from "@/lib/statsHidden";
 import { db } from "./db";
 import { analyse, analystWindowFrom, ANALYST_DAYS, type AnalystReport, type LandingSession } from "./traffic-analyst";
 import type { StaleNote } from "./traffic-contract";
@@ -43,7 +44,7 @@ export async function adNamesForTags(tags: readonly string[]): Promise<Record<st
 const MONEY_LIMIT = 5000;
 async function moneySignups() {
   const rows = await db.organization.findMany({
-    where: { createdAt: { gte: new Date(TRAFFIC_SINCE_MS) }, deletedAt: null },
+    where: { createdAt: { gte: new Date(TRAFFIC_SINCE_MS) }, ...countedOrgs(await statsHiddenIds()) },
     orderBy: { createdAt: "desc" }, take: MONEY_LIMIT,
     select: { utmCampaign: true, utmContent: true, subscription: { select: { status: true } } },
   });
