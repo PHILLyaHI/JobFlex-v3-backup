@@ -78,17 +78,15 @@ export function SignupLedgerPanel({ initial, timezone, fullHistory = false }: { 
       <div className={s.ledgerSummary}>
         <div><span>Signups</span><strong>{sum.total.toLocaleString("en-US")}</strong><small>{sum.fromAds > 0 ? `${sum.fromAds} from ads` : "none from ads"}</small></div>
         <div data-state="trial"><span>On trial</span><strong>{sum.trial}</strong><small>still deciding</small></div>
-        {/* What the trials are likely to bring each month (2026-10-05, lib/trialProjection). */}
-        <div data-state="projected" data-projected-cents={proj ? proj.expectedCents : undefined}>
-          <span>Trial revenue / month</span>
-          <strong>{proj ? dollars(proj.expectedCents) : "—"}</strong>
-          <small>{proj ? (proj.trials === 0 ? "no trials in this span" : `likely · up to ${dollars(proj.maxCents)} if all ${proj.trials} pay`) : "could not be read"}</small>
-        </div>
         <div data-state="paying"><span>Paying</span><strong>{sum.paying}</strong><small>{proj && proj.paying > 0 ? `${dollars(proj.payingCents)}/mo at list price` : "subscription active"}</small></div>
         <div data-state="lapsed"><span>Lapsed</span><strong>{sum.lapsed}</strong><small>canceled, expired or failed</small></div>
         <div data-state="free"><span>Free plan</span><strong>{sum.free + sum.unknown}</strong><small>{sum.unknown > 0 ? `${sum.unknown} with no plan row` : "never upgraded"}</small></div>
       </div>
 
+      {/* THE TRIALS IN DOLLARS (owner, 2026-10-05: "show the total revenue on
+          trial in big numbers"): what every trial adds up to per month, what
+          they are likely to bring, and what already pays — side by side. */}
+      {proj && <TrialRevenue p={proj}/>}
       {proj && proj.trials > 0 && <ProjectionHow p={proj}/>}
 
       {error && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error}</strong></div></div>}
@@ -154,5 +152,29 @@ function ProjectionHow({ p }: { p: TrialProjection }) {
       </ul>
       <p>{record}{p.unpriced > 0 ? ` ${p.unpriced} ${p.unpriced === 1 ? "trial has" : "trials have"} no price on record and ${p.unpriced === 1 ? "is" : "are"} left out.` : ""}</p>
     </details>
+  );
+}
+
+/** The band under the counts: trial revenue per month, in big numbers. */
+function TrialRevenue({ p }: { p: TrialProjection }) {
+  const trials = `${p.trials} ${p.trials === 1 ? "trial" : "trials"}`;
+  return (
+    <div className={s.trialRevenue} aria-label="Trial revenue per month" data-total-cents={p.maxCents} data-projected-cents={p.expectedCents}>
+      <span className={s.trialRevenueLabel}>Trial revenue per month</span>
+      <div className={s.trialRevenueFigures}>
+        <div data-figure="total">
+          <strong>{dollars(p.maxCents)}</strong>
+          <small>{p.trials === 0 ? "no trials in this span" : `on trial · if all ${trials} pay`}{p.unpriced > 0 ? ` · ${p.unpriced} without a price` : ""}</small>
+        </div>
+        <div data-figure="likely">
+          <strong>{dollars(p.expectedCents)}</strong>
+          <small>likely to pay{p.maxCents > 0 ? ` · ${Math.round((p.expectedCents / p.maxCents) * 100)}% of it` : ""}</small>
+        </div>
+        <div data-figure="paying">
+          <strong>{dollars(p.payingCents)}</strong>
+          <small>paying now · {p.paying} {p.paying === 1 ? "account" : "accounts"}</small>
+        </div>
+      </div>
+    </div>
   );
 }
