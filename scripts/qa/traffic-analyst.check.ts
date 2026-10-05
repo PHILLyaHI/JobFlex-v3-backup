@@ -140,8 +140,8 @@ const liveOrder = { startedAt: LATER - 3_600_000, endedAt: LATER - 3_540_000 };
 const ownOrder = analyse([
   ...many(30, { ...liveOrder, industry: "roofing", sections: ["hero", "showcase"] }),
   ...many(10, { ...liveOrder, industry: "roofing", sections: ["hero", "showcase", "proposals", "portal"] }),
-  ...many(30, { ...liveOrder, industry: "fencing", sections: ["hero", "compare"] }),
-  ...many(10, { ...liveOrder, industry: "fencing", sections: ["hero", "compare", "showcase", "proposals"] }),
+  ...many(30, { ...liveOrder, industry: "painting", sections: ["hero", "compare"] }),
+  ...many(10, { ...liveOrder, industry: "painting", sections: ["hero", "compare", "showcase", "proposals"] }),
 ], { now: LATER });
 const roofLanding = ownOrder.landings?.find((l) => l.key === "roofing");
 check("the roofing landing is read apart, its sections in its own order: the demo second, the comparison beside the pricing", !!roofLanding && ownOrder.landings!.length === 1 && roofLanding.measured === 40 && roofLanding.name === "the roofing landing" && roofLanding.sections[0].key === "hero" && roofLanding.sections[1].key === "showcase" && roofLanding.sections.findIndex((x) => x.key === "compare") === roofLanding.sections.findIndex((x) => x.key === "pricing") - 1 && roofLanding.sections[1].reach === 1 && roofLanding.sections.find((x) => x.key === "proposals")!.reach === 0.25, JSON.stringify(roofLanding?.sections.map((x) => x.key)));

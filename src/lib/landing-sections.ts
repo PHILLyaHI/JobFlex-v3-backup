@@ -42,8 +42,8 @@ export const LANDING_SECTIONS: readonly LandingSection[] = [
 export const LANDING_SECTION_KEYS = LANDING_SECTIONS.map((s) => s.key);
 
 /* THE AD LANDINGS' ORDER (owner, 2026-10-04: "take only the roofing
-   landing page and do the analyst's fixes"; then "the same fixes for the
-   HVAC landing"). The analyst's reading of the ad
+   landing page and do the analyst's fixes"; then the same fixes for the
+   HVAC and the fence landings). The analyst's reading of the ad
    visits: 99% reach the hero, 37% the comparison under it, 31% the estimator
    demo after that — "put the estimator demo directly under the hero, it is
    what the ad showed; the comparison after the proof, near the pricing".
@@ -65,6 +65,12 @@ const OWN_ORDER: Readonly<Record<string, { since: number; order: readonly string
   // Los Angeles; live a few minutes later.
   hvac: {
     since: Date.parse("2026-10-05T05:45:00Z"),
+    order: ["hero", "showcase", "hvac", "montage", "proposals", "portal", "crew", "integrations", "stats", "built", "compare", "pricing", "faq", "final"],
+  },
+  // And on fencing. Pushed 2026-10-04 ~11:45 PM Los Angeles; live a few
+  // minutes later.
+  fencing: {
+    since: Date.parse("2026-10-05T06:55:00Z"),
     order: ["hero", "showcase", "hvac", "montage", "proposals", "portal", "crew", "integrations", "stats", "built", "compare", "pricing", "faq", "final"],
   },
 };

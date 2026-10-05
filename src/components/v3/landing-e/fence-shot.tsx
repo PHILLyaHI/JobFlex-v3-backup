@@ -294,10 +294,10 @@ export function FenceShot({
         <Rail title="Takeoff" shown={graded}>
           <Stat k="Run" v="120 lf" accent />
           <Stat k="Fall over run" v="3 ft 2 in" />
-          <Stat k="Stepped panels" v="5" />
+          <Stat k="Stepped panels" v="5" minor />
           <Stat k="Posts" v="16" />
-          <Stat k="Gates" v="2" />
-          <Stat k="Concrete" v="32 bags" />
+          <Stat k="Gates" v="2" minor />
+          <Stat k="Concrete" v="32 bags" minor />
           <Stat k="Labor" v="$2,900" />
           <TotalPlate total="$6,540" note="Estimate total" play={graded} />
         </Rail>

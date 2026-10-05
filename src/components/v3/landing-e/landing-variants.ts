@@ -127,6 +127,12 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
     heroCta: "Create My Free Estimate →",
     showcaseSlide: "fence",
     visual: "fence",
+    // The ad's first screen, as on roofing and HVAC (2026-10-04): the fence
+    // estimator's plan price, the sequence on a phone, a button under it.
+    priceFeature: "Fence estimator",
+    priceNote: "fence estimator included",
+    playOnPhone: true,
+    shotCta: true,
   },
   // Owner's copy, 2026-10-01 — verbatim.
   roofing: {
@@ -416,6 +422,27 @@ export const LANDING_HOOKS: Partial<Record<LandingVariantKey, Readonly<Record<st
       h1: ["Estimate Faster.", "Win More Roofs."],
       sub: "Type the address. JobFlex finds the roof from the air and measures it — squares, ridge, hips, valleys. One click makes the proposal.",
       ad: "Address to accepted · 50 s",
+    },
+  },
+  // The three fence ads (advertisement/fence, fence-voice): each one's
+  // on-screen opening line — the same picture carries the silent cut and
+  // both voiced takes. Their "text it" line stays out: texting a proposal
+  // needs the shop's own registered number.
+  fencing: {
+    "drive-out": {
+      h1: ["Price the Fence", "Before You Drive Out."],
+      sub: "Type the address and the lot line pops up. Click the fence in, drop the gates — it is priced while you draw, then they see it in 3D.",
+      ad: "Address to fence · 30 s",
+    },
+    slope: {
+      h1: ["Yards Aren't Flat.", "Your Bids Shouldn't Be."],
+      sub: "Tap Topo and it reads the lidar on the lot: every run racked or stepped, the extended posts and slope labor priced into the bid.",
+      ad: "Reads the ground · 30 s",
+    },
+    money: {
+      h1: ["Stop Leaving Money", "On the Fence Line."],
+      sub: "Every fence type priced as you click, three packages ready to sell, tear-out and steel posts added with a tap — the material list writes itself.",
+      ad: "Money on the line · 30 s",
     },
   },
   // The HVAC ads (advertisement/hvac, hvac-40), held to their claims review:

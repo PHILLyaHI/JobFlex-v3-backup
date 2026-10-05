@@ -23,8 +23,8 @@
    THE ORDER IS A LIST, AND A LANDING MAY HAVE ITS OWN (2026-10-04). The
    blocks below are keyed by section and laid out in landingSectionOrder()
    (lib/landing-sections) — the list the section tracker and the admin's
-   analyst read too. Every landing but roofing and HVAC gets the order
-   above, to the byte. Those two are where the trade ads land, and the
+   analyst read too. Every landing but roofing, HVAC and fencing gets the
+   order above, to the byte. Those three are where the trade ads land, and the
    analyst's reading of the ads was: the demo is the third screen, behind
    the comparison; the hero does not continue the ad's line; no price in the
    first screen. So there the estimators come directly under the hero and
