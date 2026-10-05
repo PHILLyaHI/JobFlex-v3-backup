@@ -55,6 +55,10 @@ export function trafficDayStartMs(now: number = Date.now()): number {
 /** The same instant in ms: 2026-09-30 00:00 PDT (UTC−7). */
 export const TRAFFIC_SINCE_MS = Date.parse("2026-09-30T00:00:00-07:00");
 export const TRAFFIC_SINCE_LABEL = "Sep 30, 2026";
+/** The start, in words (owner, 2026-10-05: "count visitors from when we started
+ *  the live map"): Sep 30 is the live map's first full day, and the ad launch. */
+export const TRAFFIC_SINCE_SHORT = "Sep 30";
+export const TRAFFIC_SINCE_WHY = "the day the live map started";
 /** The date half of the rule, over a timestamp column; nothing when the full history is asked for. */
 export function sinceSql(fullHistory: boolean, ts = "timestamp"): string {
   return fullHistory ? "1 = 1" : `${ts} >= toDateTime('${TRAFFIC_SINCE} 00:00:00', '${TRAFFIC_SINCE_TZ}')`;

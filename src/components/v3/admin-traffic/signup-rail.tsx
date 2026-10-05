@@ -245,7 +245,7 @@ export function SignupRail({ initial, timezone, fullHistory = false, liveSignups
         {(ledger?.truncated || floored) && (
           <div className={s.foot}>
             {ledger?.truncated ? `The newest ${ledger.records.length} — the whole list is in the signup ledger below. ` : ""}
-            {floored ? `Counted from ${TRAFFIC_SINCE_LABEL}, the ad launch; "Show full history" above lifts that.` : ""}
+            {floored ? `Counted from ${TRAFFIC_SINCE_LABEL}, the day the live map started.` : ""}
           </div>
         )}
       </div>

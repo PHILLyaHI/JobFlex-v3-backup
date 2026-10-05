@@ -11,7 +11,7 @@ import { pageLabel, percent, type SignupAttribution, type TrafficFilters, type T
 import type { LiveReport, SignupLedger } from "./traffic-live";
 import type { MoneyRow } from "./traffic-money";
 import { dateInZone } from "./traffic-query";
-import { TRAFFIC_SINCE_LABEL } from "./traffic-visitor";
+import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_SHORT } from "./traffic-visitor";
 
 /** The analyst's tone as the panel prints it. */
 export const TONE_WORD: Record<AnalystFinding["tone"], string> = { bad: "FIX", warn: "WATCH", good: "WORKING", info: "NOTE" };
@@ -135,7 +135,7 @@ export function analystToMarkdown(result: AnalystResult, opts: { timezone: strin
   out.push(`${h(1)} Buttons pressed, by place on the page`);
   out.push(mdTable(["Placement", "Visits that pressed it"], r.placements.map((p) => [p.placement, p.n])));
   out.push(`${h(1)} Method`);
-  out.push("One row per browser session on www.jobflex.app, bots and previews out, counted from the ad launch. \"Left at once\" is one page, no button, no form. Time and scroll come from the browser as it leaves the landing (posthog-js $pageleave); sections from the landing's own tracker, so visits before it shipped have no section reading. The first screen's timing and the sign-up form's readiness come from two beacons added 2026-10-04 — earlier visits carry neither. "
+  out.push("One row per browser session on www.jobflex.app, bots and previews out, counted from Sep 30, the day the live map started. \"Left at once\" is one page, no button, no form. Time and scroll come from the browser as it leaves the landing (posthog-js $pageleave); sections from the landing's own tracker, so visits before it shipped have no section reading. The first screen's timing and the sign-up form's readiness come from two beacons added 2026-10-04 — earlier visits carry neither. "
     + `A finding needs its minimum sample — ${r.sample.needed} ad visits for the page, 8 for an ad or a trade — and its confidence follows its sample: high from 100 visits, medium from 40, else low. Ads carry the names given below the live list.`);
   return out.join("\n\n") + "\n";
 }
@@ -186,7 +186,7 @@ export function reportToCsv(report: TrafficReport, ledger: SignupLedger | null, 
   const rows: unknown[][] = [
     ["JobFlex traffic", report.filters.from, report.filters.to, report.filters.timezone],
     ["Filters", JSON.stringify(report.filters)],
-    ["All-time visitors", report.lifetime, "Today", report.today],
+    [`Visitors since ${TRAFFIC_SINCE_SHORT}`, report.lifetime, "Today", report.today],
     ["People (est.)", report.people?.people ?? null, "In-app visitors", report.people?.inAppVisitors ?? null, "In-app people", report.people?.inAppPeople ?? null],
     [],
     ["Daily", "Visitors", "New", "Returning", "Repeat visitors", "Sessions", "Views", "People (est.)", "In-app visitors", "In-app people", "Ads fb", "Ads ig", "Ads an", "fbclid", "Any ad tag", "Ads Manager clicks"],
@@ -268,7 +268,7 @@ export function trafficToMarkdown(x: TrafficExport): string {
   out.push(`- **Read at:** ${when(live.fetchedAt, tz)} · last ${live.activeMinutes} minutes on the site, seen within ${live.windowMinutes}${live.status !== "ok" ? ` · ${live.status}: ${live.message ?? ""}` : ""}${live.stale ? ` · PostHog unavailable, data from ${when(live.stale.since, tz)}` : ""}`);
   if (live.headline) out.push(live.headline);
   const tt = live.totals;
-  out.push(mdTable(["All-time visitors", "Today", "Yesterday to this hour", "Yesterday", "Last 7 days", "Pageviews today"],
+  out.push(mdTable([`Visitors since ${TRAFFIC_SINCE_SHORT}`, "Today", "Yesterday to this hour", "Yesterday", "Last 7 days", "Pageviews today"],
     [[n(report.lifetime ?? tt?.allTime), n(report.today ?? tt?.today), n(tt?.yesterdaySoFar), n(tt?.yesterday), n(tt?.last7Days), n(tt?.viewsToday)]]));
   out.push(mdTable(["On the site", "From ads", "Signing up", "Signed up", "Members", "Signups today", "Of them from ads"],
     [[live.counts.onSite, live.counts.fromAds, live.counts.signingUp, live.counts.signedUp, live.counts.members, live.today.signups, live.today.fromAds]]));
@@ -347,6 +347,6 @@ export function trafficToMarkdown(x: TrafficExport): string {
     }
   }
   out.push("## Measurement notes");
-  out.push(`${f.fullHistory ? "Full history: every recorded event, before the ad launch too." : `Counting since ${TRAFFIC_SINCE_LABEL}`} (the ad launch, midnight America/Los_Angeles). Visitors are distinct PostHog person IDs; People (est.) counts address + browser, unique per day. In Facebook and Instagram's in-app browsers a visitor is a click. "From ads" means the visit carried utm_source or fbclid. Admin pages, Vercel previews and bots never count. Coverage begins ${report.firstTrackedAt?.slice(0, 10) || "when the first event arrives"}. Today is the day in America/Los_Angeles; the report's dates follow ${f.timezone}.`);
+  out.push(`Counting since ${TRAFFIC_SINCE_LABEL}, the day the live map started (and the ad launch), from midnight America/Los_Angeles. Visitors are distinct PostHog person IDs; People (est.) counts address + browser, unique per day. In Facebook and Instagram's in-app browsers a visitor is a click. "From ads" means the visit carried utm_source or fbclid. Admin pages, Vercel previews and bots never count. Coverage begins ${report.firstTrackedAt?.slice(0, 10) || "when the first event arrives"}. Today is the day in America/Los_Angeles; the report's dates follow ${f.timezone}.`);
   return out.join("\n\n") + "\n";
 }

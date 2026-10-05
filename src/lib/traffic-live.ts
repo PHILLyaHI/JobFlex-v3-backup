@@ -24,6 +24,7 @@
 //     utm_*), so the line names the company and the owner.
 //   · "On the site now" = an event in the last ACTIVE_MINUTES; up to
 //     WINDOW_MINUTES they are "just left", shown dimmer, then gone.
+import type { TrialProjection, TrialTier } from "./trialProjection";
 import { TRAFFIC_EVENTS as E, pageLabel, type StaleNote } from "./traffic-contract";
 // Who counts and what is "from an ad": one rule for the whole page (2026-10-01).
 import { BROWSER_TYPE_SQL, HOST_SQL, UA_SQL, carriesAdTag, isCountedEvent, sinceSql, trafficDayStartMs, visitorRuleSql } from "./traffic-visitor";
@@ -618,6 +619,10 @@ export interface SignupRecord {
   /** What the account is now, from its Subscription row. */
   planLabel: string;
   state: SignupState;
+  /** What the account is worth per month (2026-10-05): a trial's plan price,
+   *  its chance of paying and the two multiplied; a paying account's price.
+   *  Absent for the other states and on ledgers read before. */
+  value?: { monthlyCents: number | null; tier?: TrialTier; chance?: number; expectedCents?: number };
 }
 
 /** The coarse state a subscription is in, for the colour and the counts. */
@@ -625,7 +630,9 @@ export function signupState(subStatus: string): SignupState {
   switch ((subStatus || "").trim().toUpperCase()) {
     case "TRIALING": return "trial";
     case "ACTIVE": return "paying";
-    case "PAST_DUE": case "CANCELED": case "EXPIRED": return "lapsed";
+    // TRIAL_ENDED (2026-10-05): a card-less trial that ran out with no card.
+    // It used to fall through to "no plan row" and sat under Free plan.
+    case "PAST_DUE": case "CANCELED": case "EXPIRED": case "TRIAL_ENDED": return "lapsed";
     case "FREE": return "free";
     default: return "unknown";
   }
@@ -637,6 +644,8 @@ export interface SignupLedger {
   summary: { total: number; fromAds: number; trial: number; paying: number; lapsed: number; free: number; unknown: number };
   /** True when the span held more accounts than the page asked for. */
   truncated: boolean;
+  /** What the span's trials are likely to bring per month (lib/trialProjection); null when it could not be read. */
+  projection?: TrialProjection | null;
 }
 
 /** The counts under the ledger — what the span actually produced. */

@@ -9,7 +9,7 @@ import dynamic from "next/dynamic";
 import { Building2, Info, KeyRound, Megaphone, MousePointerClick, RefreshCw } from "lucide-react";
 import { getLiveTraffic, getMapHistory, nameAdTag } from "@/actions/trafficDashboard";
 import { MAP_HISTORY_LIMIT, MAP_SPANS, isAdId, mapSpanLabel, prospectsOf, type LiveReport, type LiveStage, type LiveVisitor, type MapHistory, type MapSpan, type SignupLedger } from "@/lib/traffic-live";
-import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
+import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS, TRAFFIC_SINCE_SHORT } from "@/lib/traffic-visitor";
 import { staleLabel } from "@/lib/traffic-contract";
 import { LivePlatforms } from "./live-platforms";
 import { Ago, setClockPeriod } from "./ticker";
@@ -247,7 +247,7 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
         <small>{report.today.signups > 0 ? `${fmt(report.today.fromAds)} from ads` : t && t.today > 0 ? `${fmt(t.today)} visitors, none yet` : "none yet"}</small>
       </div>
       <div data-tone="mute">
-        <span>All-time visitors</span>
+        <span>Visitors since {TRAFFIC_SINCE_SHORT}</span>
         <strong>{t ? fmt(t.allTime) : "—"}</strong>
         <small>{t ? `${fmt(t.last7Days)} in the last 7 days · ${fmt(t.yesterday)} yesterday` : "totals unavailable"}</small>
       </div>
@@ -284,7 +284,7 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
           : history && history.status !== "ok" ? <span data-map-span-state="error">{history.message}</span>
           : history?.stale ? <span data-map-span-state="stale">{staleLabel(history.stale, timezone)}</span>
           : history?.truncated ? <span data-map-span-state="truncated">The newest {MAP_HISTORY_LIMIT.toLocaleString("en-US")} people</span> : null)}
-        {spanFromLaunch && <span data-map-span-state="since">Counted from {TRAFFIC_SINCE_LABEL}, the ad launch · Show full history reaches further</span>}
+        {spanFromLaunch && <span data-map-span-state="since">Counted from {TRAFFIC_SINCE_LABEL}, the day the live map started</span>}
         {platform && <button type="button" className={s.textButton} onClick={() => setPlatform(null)}>Show everyone</button>}
       </div>
       {/* The map, and beside it the signups of the day / two days / week /

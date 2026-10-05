@@ -6,6 +6,7 @@ import { getLiveTraffic as liveTraffic, getMapHistory as mapHistory, getStageVis
 import { readAnalyst, type AnalystResult } from "@/lib/traffic-analyst-read";
 import { parseTrafficFilters } from "@/lib/traffic-query";
 import { TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
+import { valueSignups } from "@/lib/trialProjectionRead";
 import type { SignupAttribution } from "@/lib/traffic-contract";
 import { adNameKey, adTagsOf, isMapSpan, signupLedgerSummary, signupPlanLabel, signupSource, signupState, type FreshSignup, type LiveReport, type LiveVisitor, type MapHistory, type MapSpan, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 
@@ -185,13 +186,13 @@ export async function getSignupLedger(input: Record<string, unknown> = {}): Prom
   const page = truncated ? rows.slice(0, LEDGER_LIMIT) : rows;
 
   // The subscriptions, separately — see the note above.
-  let subs = new Map<string, { plan: string; status: string; trialEndsAt: Date | null }>();
+  let subs = new Map<string, { plan: string; status: string; trialEndsAt: Date | null; stripePriceId: string | null; externalSubId: string | null; provider: string }>();
   try {
     const found = await db.subscription.findMany({
       where: { organizationId: { in: page.map((r) => r.id) } },
-      select: { organizationId: true, plan: true, status: true, trialEndsAt: true },
+      select: { organizationId: true, plan: true, status: true, trialEndsAt: true, stripePriceId: true, externalSubId: true, provider: true },
     });
-    subs = new Map(found.map((x) => [x.organizationId, { plan: x.plan, status: x.status, trialEndsAt: x.trialEndsAt }]));
+    subs = new Map(found.map((x) => [x.organizationId, { plan: x.plan, status: x.status, trialEndsAt: x.trialEndsAt, stripePriceId: x.stripePriceId, externalSubId: x.externalSubId, provider: x.provider }]));
   } catch {
     // The ledger still lists who signed up and where from; only the plan
     // column goes quiet.
@@ -211,7 +212,21 @@ export async function getSignupLedger(input: Record<string, unknown> = {}): Prom
       state: signupState(shape.subStatus),
     };
   });
-  return { days, records, summary: signupLedgerSummary(records), truncated };
+  // What the trials are likely to bring per month, and what each account is
+  // worth (2026-10-05, lib/trialProjection). Its own try: a failure here
+  // costs the money figures, never the list.
+  let projection: SignupLedger["projection"] = null;
+  try {
+    const valued = await valueSignups(page.map((r, i) => ({ orgId: r.id, createdAt: r.createdAt, state: records[i].state, sub: subs.get(r.id) ?? null })));
+    for (const rec of records) {
+      const v = valued.values.get(rec.orgId);
+      if (v) rec.value = v;
+    }
+    projection = valued.projection;
+  } catch {
+    projection = null;
+  }
+  return { days, records, summary: signupLedgerSummary(records), truncated, projection };
 }
 
 export async function getTrafficDashboard(input: Record<string, unknown> = {}) {

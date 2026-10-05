@@ -19,6 +19,8 @@
 // does not burn the project's query budget; a failed call is cached for a
 // shorter window so a flapping upstream does not hammer either.
 
+import { BROWSER_TYPE_SQL, HOST_SQL, TRAFFIC_SINCE, UA_SQL, sinceSql, visitorRuleSql } from "./traffic-visitor";
+
 export const POSTHOG_ENV = {
   key: "POSTHOG_PERSONAL_API_KEY",
   project: "POSTHOG_PROJECT_ID",
@@ -44,7 +46,7 @@ export interface TrafficPath {
 }
 
 export interface TrafficSnapshot {
-  /** Last 30 days, oldest first. Days with no events are filled with zeros. */
+  /** Last 30 days since the live map started (TRAFFIC_SINCE), oldest first. Days with no events are filled with zeros. */
   daily: TrafficDay[];
   /** Top 10 pathnames by pageviews, last 30 days. */
   topPaths: TrafficPath[];
@@ -105,12 +107,20 @@ function dayKey(v: unknown): string {
   return String(v ?? "").slice(0, 10);
 }
 
+// WHO COUNTS (2026-10-05, owner: "count visitors from when we started the
+// live map"): the /admin/traffic rule — www.jobflex.app only, no bots, no
+// previews, no admin screens — and nothing before TRAFFIC_SINCE. These
+// figures used to count every pageview PostHog held for 30 days.
+const COUNTED = `event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY AND ${sinceSql(false)}
+    AND ${visitorRuleSql({ host: HOST_SQL, ua: UA_SQL, browserType: BROWSER_TYPE_SQL, event: "event" }, "production")}
+    AND NOT startsWith(ifNull(toString(properties.$pathname), ''), '/admin')`;
+
 const DAILY_SQL = `
   SELECT toDate(timestamp) AS day,
          uniq(person_id) AS visitors,
          count() AS pageviews
   FROM events
-  WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY
+  WHERE ${COUNTED}
   GROUP BY day
   ORDER BY day`;
 
@@ -119,7 +129,7 @@ const PATHS_SQL = `
          count() AS pageviews,
          uniq(person_id) AS visitors
   FROM events
-  WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY
+  WHERE ${COUNTED}
     AND properties.$pathname IS NOT NULL
   GROUP BY path
   ORDER BY pageviews DESC
@@ -131,7 +141,7 @@ const WINDOWS_SQL = `
          uniq(person_id) AS v30d,
          count() AS pv30d
   FROM events
-  WHERE event = '$pageview' AND timestamp >= now() - INTERVAL 30 DAY`;
+  WHERE ${COUNTED}`;
 
 async function fetchSnapshot(): Promise<TrafficSnapshot> {
   const [dailyRows, pathRows, windowRows] = await Promise.all([
@@ -151,6 +161,8 @@ async function fetchSnapshot(): Promise<TrafficSnapshot> {
   for (let i = 29; i >= 0; i--) {
     const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - i));
     const date = d.toISOString().slice(0, 10);
+    // Days before the live map started are not part of the count, not zeros in it.
+    if (date < TRAFFIC_SINCE) continue;
     daily.push(byDay.get(date) ?? { date, visitors: 0, pageviews: 0 });
   }
 

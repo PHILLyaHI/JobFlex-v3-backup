@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Info, Megaphone, RefreshCw } from "lucide-react";
 import { getSignupLedger } from "@/actions/trafficDashboard";
 import type { SignupLedger, SignupRecord, SignupState } from "@/lib/traffic-live";
+import { TIER_CHANCE, TIER_LABEL, TRIAL_TIERS, dollars, trialChance, type TrialProjection } from "@/lib/trialProjection";
 import s from "./traffic.module.css";
 
 const SPANS: Array<[number, string]> = [[1, "Today"], [7, "7 days"], [30, "30 days"], [90, "90 days"], [365, "A year"]];
@@ -33,7 +34,13 @@ export function SignupLedgerPanel({ initial, timezone, fullHistory = false }: { 
       setPending(false);
     }
   }, [fullHistory]);
-  useEffect(() => { setLedger(initial); }, [initial]);
+  // A new server read (a page refresh) replaces the list — adjusted while
+  // rendering, the React way, instead of a second pass from an effect.
+  const [seen, setSeen] = useState(initial);
+  if (seen !== initial) {
+    setSeen(initial);
+    setLedger(initial);
+  }
   // "Show full history" switched: the same span, counted again.
   const firstWindow = useRef(true);
   useEffect(() => {
@@ -48,6 +55,7 @@ export function SignupLedgerPanel({ initial, timezone, fullHistory = false }: { 
     } catch { return ""; }
   };
   const sum = ledger.summary;
+  const proj = ledger.projection ?? null;
   return (
     <section className={s.ledger} aria-label="Every signup" aria-busy={pending}>
       <div className={s.ledgerHead}>
@@ -70,10 +78,18 @@ export function SignupLedgerPanel({ initial, timezone, fullHistory = false }: { 
       <div className={s.ledgerSummary}>
         <div><span>Signups</span><strong>{sum.total.toLocaleString("en-US")}</strong><small>{sum.fromAds > 0 ? `${sum.fromAds} from ads` : "none from ads"}</small></div>
         <div data-state="trial"><span>On trial</span><strong>{sum.trial}</strong><small>still deciding</small></div>
-        <div data-state="paying"><span>Paying</span><strong>{sum.paying}</strong><small>subscription active</small></div>
+        {/* What the trials are likely to bring each month (2026-10-05, lib/trialProjection). */}
+        <div data-state="projected" data-projected-cents={proj ? proj.expectedCents : undefined}>
+          <span>Trial revenue / month</span>
+          <strong>{proj ? dollars(proj.expectedCents) : "—"}</strong>
+          <small>{proj ? (proj.trials === 0 ? "no trials in this span" : `likely · up to ${dollars(proj.maxCents)} if all ${proj.trials} pay`) : "could not be read"}</small>
+        </div>
+        <div data-state="paying"><span>Paying</span><strong>{sum.paying}</strong><small>{proj && proj.paying > 0 ? `${dollars(proj.payingCents)}/mo at list price` : "subscription active"}</small></div>
         <div data-state="lapsed"><span>Lapsed</span><strong>{sum.lapsed}</strong><small>canceled, expired or failed</small></div>
         <div data-state="free"><span>Free plan</span><strong>{sum.free + sum.unknown}</strong><small>{sum.unknown > 0 ? `${sum.unknown} with no plan row` : "never upgraded"}</small></div>
       </div>
+
+      {proj && proj.trials > 0 && <ProjectionHow p={proj}/>}
 
       {error && <div className={s.notice} role="status"><Info size={16}/><div><strong>{error}</strong></div></div>}
 
@@ -103,9 +119,40 @@ function LedgerRow({ r, when }: { r: SignupRecord; when: (iso: string) => string
       </div>
       <div className={s.ledgerPlan}>
         <b className={s.livePlan} data-state={r.state}>{r.planLabel}</b>
-        <span>{STATE_LABEL[r.state]}</span>
+        <span>{STATE_LABEL[r.state]}{worth(r)}</span>
       </div>
       <div className={s.ledgerWhen}><b>{when(r.createdAt)}</b></div>
     </li>
+  );
+}
+
+/** "· $79/mo · 45% likely" for a trial, "· $79/mo" for a paying account. */
+function worth(r: SignupRecord): string {
+  const v = r.value;
+  if (!v) return "";
+  const price = v.monthlyCents === null ? "price unknown" : `${dollars(v.monthlyCents)}/mo`;
+  if (r.state !== "trial" || !v.tier) return v.monthlyCents === null ? "" : ` · ${price}`;
+  return ` · ${price} · ${Math.round((v.chance ?? 0) * 100)}% likely`;
+}
+
+/** How the projection is figured: each tier with its count and its share, and the shop's own record. */
+function ProjectionHow({ p }: { p: TrialProjection }) {
+  const c = p.calibration;
+  const record = c.finished === 0
+    ? "No trial has finished yet, so these are the starting chances."
+    : `Your finished trials: ${Math.round((c.observedRate ?? 0) * c.finished)} of ${c.finished} paid. ${c.factor === 1 ? "That matches the starting chances." : `The middle groups are scaled ×${c.factor.toFixed(2)} to match (pulled toward a 20% start until more trials finish).`}`;
+  return (
+    <details className={s.ledgerHow}>
+      <summary>How the {dollars(p.expectedCents)} is figured</summary>
+      <p>Each trial counts at its plan&apos;s monthly price (a yearly plan as a twelfth, a custom plan by its pages, at list price) times its chance of paying, read from what the account has done:</p>
+      <ul>
+        {TRIAL_TIERS.filter((t) => p.byTier[t].count > 0).map((t) => (
+          <li key={t}>
+            <b>{TIER_LABEL[t]}</b> · {p.byTier[t].count} {p.byTier[t].count === 1 ? "trial" : "trials"} · {Math.round(trialChance(t, c.factor) * 100)}%{trialChance(t, c.factor) !== TIER_CHANCE[t] ? ` (starts at ${Math.round(TIER_CHANCE[t] * 100)}%)` : ""} · {dollars(p.byTier[t].expectedCents)}/mo
+          </li>
+        ))}
+      </ul>
+      <p>{record}{p.unpriced > 0 ? ` ${p.unpriced} ${p.unpriced === 1 ? "trial has" : "trials have"} no price on record and ${p.unpriced === 1 ? "is" : "are"} left out.` : ""}</p>
+    </details>
   );
 }

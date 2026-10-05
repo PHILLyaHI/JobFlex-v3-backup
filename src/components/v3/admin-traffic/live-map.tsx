@@ -18,6 +18,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { PARTY_LABEL, partyOf } from "@/lib/usPolitics";
 import { LIVE_ACTIVE_MINUTES, type LiveStage, type LiveTotals, type LiveVisitor } from "@/lib/traffic-live";
+import { TRAFFIC_SINCE_SHORT } from "@/lib/traffic-visitor";
 import { Ago } from "./ticker";
 import { JourneyLine } from "./journey-line";
 import s from "./traffic.module.css";
@@ -458,7 +459,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           <span>{prospects ? (count === 1 ? "prospect on the map" : "prospects on the map") : count === 1 ? "visitor on the map" : "visitors on the map"}</span>
           <i>{onNow.toLocaleString("en-US")} on the site now{fromAds > 0 ? ` · ${fromAds.toLocaleString("en-US")} from ads` : ""}{perCountry.size > 0 ? ` · ${plural(perCountry.size, "country", "countries")}` : ""}</i>
           {prospects && <i>{converted.toLocaleString("en-US")} signed up in the last 24 h</i>}
-          {totals && <i>{totals.today.toLocaleString("en-US")} today · {totals.allTime.toLocaleString("en-US")} all time</i>}
+          {totals && <i>{totals.today.toLocaleString("en-US")} today · {totals.allTime.toLocaleString("en-US")} since {TRAFFIC_SINCE_SHORT}</i>}
         </div>
 
         {/* The name of what is under the pointer */}
