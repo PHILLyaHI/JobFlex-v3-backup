@@ -10,7 +10,7 @@
 // landing-variants LANDING_HOOKS) can also open on the ad's own opening line
 // as the headline (`&hook=`), so the page continues the ad's sentence.
 import { useState } from "react";
-import { VARIANT_KEYS, hooksOf, resolveLandingVariant } from "@/components/v3/landing-e/landing-variants";
+import { VARIANT_KEYS, VARIANT_TRADE, hooksOf, resolveLandingVariant, type LandingVariantKey } from "@/components/v3/landing-e/landing-variants";
 import s from "./traffic.module.css";
 
 type Kind = "meta" | "tiktok" | "google" | "x" | "organic";
@@ -48,7 +48,8 @@ const PRESETS: Record<Kind, { label: string; params: (campaign: string, platform
 };
 const slug = (v: string) => v.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 const PAGES: Array<[string, string]> = [["/", "Landing page"], ["/auth/register", "Straight to sign-up"], ["/pricing", "Pricing"], ["/homeowner", "Homeowner page"]];
-const heroName = (key: string) => key.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+/** The trade's own name ("HVAC", "Kitchen & Bath"), not its slug title-cased ("Hvac"). */
+const heroName = (key: string) => VARIANT_TRADE[key as LandingVariantKey] ?? key.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 export function AdLinks({ origin = "https://www.jobflex.app" }: { origin?: string }) {
   const [kind, setKind] = useState<Kind>("meta");

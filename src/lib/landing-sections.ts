@@ -41,8 +41,9 @@ export const LANDING_SECTIONS: readonly LandingSection[] = [
 
 export const LANDING_SECTION_KEYS = LANDING_SECTIONS.map((s) => s.key);
 
-/* THE ROOFING LANDING'S ORDER (owner, 2026-10-04: "take only the roofing
-   landing page and do the analyst's fixes"). The analyst's reading of the ad
+/* THE AD LANDINGS' ORDER (owner, 2026-10-04: "take only the roofing
+   landing page and do the analyst's fixes"; then "the same fixes for the
+   HVAC landing"). The analyst's reading of the ad
    visits: 99% reach the hero, 37% the comparison under it, 31% the estimator
    demo after that — "put the estimator demo directly under the hero, it is
    what the ad showed; the comparison after the proof, near the pricing".
@@ -57,6 +58,13 @@ const OWN_ORDER: Readonly<Record<string, { since: number; order: readonly string
   roofing: {
     // Pushed 2026-10-04 ~7:45 PM Los Angeles; live a few minutes later.
     since: Date.parse("2026-10-05T03:00:00Z"),
+    order: ["hero", "showcase", "hvac", "montage", "proposals", "portal", "crew", "integrations", "stats", "built", "compare", "pricing", "faq", "final"],
+  },
+  // The same move on HVAC: the estimators, then the HVAC service book, then
+  // the rest; the comparison beside the pricing. Pushed 2026-10-04 ~10:35 PM
+  // Los Angeles; live a few minutes later.
+  hvac: {
+    since: Date.parse("2026-10-05T05:45:00Z"),
     order: ["hero", "showcase", "hvac", "montage", "proposals", "portal", "crew", "integrations", "stats", "built", "compare", "pricing", "faq", "final"],
   },
 };

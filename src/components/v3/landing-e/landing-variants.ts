@@ -248,6 +248,16 @@ export const LANDING_VARIANTS: Record<LandingVariantKey, LandingVariant | null> 
     showcaseSlide: "hvac",
     visual: "hvac",
     scenario: "hvac",
+    // The ad's first screen, as on roofing (2026-10-04). The HVAC window
+    // already plays on a phone. The price line waits for the plan cards:
+    // none of them lists an "HVAC estimator" row today (every plan opens the
+    // estimator, capped per plan by limitsJson hvacEstimates), so the hero
+    // prints no price until /admin/plans gives the plans that include it
+    // that row — then it reads it like roofing's.
+    priceFeature: "HVAC estimator",
+    priceNote: "HVAC estimator included",
+    playOnPhone: true,
+    shotCta: true,
   },
   drywall: {
     h1: ["The complete drywall bid.", "From the sheet count."],
@@ -408,6 +418,52 @@ export const LANDING_HOOKS: Partial<Record<LandingVariantKey, Readonly<Record<st
       ad: "Address to accepted · 50 s",
     },
   },
+  // The HVAC ads (advertisement/hvac, hvac-40), held to their claims review:
+  // the load is "Manual J-based", state rules exist for six states, there is
+  // no duct diagram. The service-plans clip has no entry while plans are
+  // early access (lib/earlyAccess) — a new account could not open them.
+  hvac: {
+    tonnage: {
+      h1: ["Still Sizing by the Square Foot?", "Stop Guessing Tonnage."],
+      sub: "Size it from the load: a Manual J-based block load on the county's design day, the unit that fits it, and the code checks behind it.",
+      ad: "Sized to the house · 41 s, with voice",
+    },
+    "every-call": {
+      h1: ["Not Every Call Is a Full System.", "Repairs. Swaps. Service."],
+      sub: "A furnace or condenser swap, a ductless zone for the addition, a service call priced task by task — every HVAC call in one estimator.",
+      ad: "Every HVAC call · 43 s, with voice",
+    },
+    math: {
+      h1: ["The HVAC Estimate", "That Does the Math."],
+      sub: "Type the address: the house is pulled, the load figured on the county's design day, the system sized and every line written for you.",
+      ad: "The whole estimate · 49 s",
+    },
+    "nine-jobs": {
+      h1: ["One House.", "Nine HVAC Jobs."],
+      sub: "Full system, furnace, heat pump, water heater, ductless or a service call — pick the job and it is sized and priced for that house.",
+      ad: "Pick the job · 36 s",
+    },
+    address: {
+      h1: ["Type the Address.", "Get the House."],
+      sub: "One click pulls the parcel record, the building outline, the lidar elevation and the county's design day — every fact shows its source.",
+      ad: "Type an address · 29 s",
+    },
+    code: {
+      h1: ["Code-Checked,", "Rule by Rule."],
+      sub: "Each code check comes with the rule behind it — state rules for CA, WA, OR, FL, TX and NY, the federal efficiency floors everywhere.",
+      ad: "Code by state · 37 s",
+    },
+    "repair-replace": {
+      h1: ["Repair It or Replace It?", "The Math Says."],
+      sub: "Price the service call from your own menu, task by task — and when the repairs outgrow the system, one click quotes the replacement.",
+      ad: "Service & repair · 21 s",
+    },
+    inventory: {
+      h1: ["Know What's Short", "Before the Truck Rolls."],
+      sub: "Connect the estimate to your shelf: every material checked against stock, short items grouped by supplier, the crew's list to load.",
+      ad: "Inventory · 38 s",
+    },
+  },
 };
 
 /** `?hook=No_Report` → "no-report" when the trade has that hook; anything
@@ -434,8 +490,9 @@ export function hooksOf(variant: LandingVariantKey | undefined): Array<{ key: st
 }
 
 /** The trade's hero with the ad's two lines in place of its own. A hook is
- *  two sentences, so the break holds on a phone; the bold third line some
- *  trades carry belongs to their own copy and goes with it. */
+ *  set as the ad sets it — two sentences, or one over two lines — so the
+ *  break holds on a phone; the bold third line some trades carry belongs to
+ *  their own copy and goes with it. */
 export function withHook(v: LandingVariant, hook: LandingHook | undefined): LandingVariant {
   if (!hook) return v;
   return { ...v, h1: hook.h1, sub: hook.sub, subStrong: undefined, subEven: true, h1Long: true, h1Break: true };

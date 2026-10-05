@@ -23,14 +23,15 @@
    THE ORDER IS A LIST, AND A LANDING MAY HAVE ITS OWN (2026-10-04). The
    blocks below are keyed by section and laid out in landingSectionOrder()
    (lib/landing-sections) — the list the section tracker and the admin's
-   analyst read too. Every landing but roofing gets the order above, to the
-   byte. Roofing is where the ads land, and the analyst's reading of them
-   was: the demo is the third screen, behind the comparison; the hero does
-   not continue the ad's line; no price in the first screen. So on roofing
-   the estimators come directly under the hero and the comparison moves down
-   beside the pricing; `?hook=` puts the ad's opening line in the headline;
-   the hero carries the roof estimator's plan price, plays its sequence on a
-   phone and has a sign-up button under the shot (landing-variants.ts). */
+   analyst read too. Every landing but roofing and HVAC gets the order
+   above, to the byte. Those two are where the trade ads land, and the
+   analyst's reading of the ads was: the demo is the third screen, behind
+   the comparison; the hero does not continue the ad's line; no price in the
+   first screen. So there the estimators come directly under the hero and
+   the comparison moves down beside the pricing; `?hook=` puts the ad's
+   opening line in the headline; the hero carries the estimator's plan price
+   (when the plan cards name it), plays its sequence on a phone and has a
+   sign-up button under the shot (landing-variants.ts). */
 
 import { Fragment, type ReactNode } from "react";
 import dynamic from "next/dynamic";

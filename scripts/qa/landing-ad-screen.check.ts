@@ -13,7 +13,9 @@ const check = (name: string, ok: boolean, extra = "") => { if (!ok) bad++; conso
 
 // ── the order
 const roof = landingSectionOrder("roofing");
-check("every landing but roofing is laid out in the list's own order", landingSectionOrder(undefined) === LANDING_SECTION_KEYS && landingSectionOrder("default") === LANDING_SECTION_KEYS && landingSectionOrder("fencing") === LANDING_SECTION_KEYS && landingSectionOrder("hvac") === LANDING_SECTION_KEYS && !hasOwnSectionOrder("fencing") && !hasOwnSectionOrder("") && !hasOwnSectionOrder(null));
+check("every landing but roofing and HVAC is laid out in the list's own order", landingSectionOrder(undefined) === LANDING_SECTION_KEYS && landingSectionOrder("default") === LANDING_SECTION_KEYS && landingSectionOrder("fencing") === LANDING_SECTION_KEYS && landingSectionOrder("painting") === LANDING_SECTION_KEYS && !hasOwnSectionOrder("fencing") && !hasOwnSectionOrder("") && !hasOwnSectionOrder(null));
+const hv = landingSectionOrder("hvac");
+check("HVAC: the estimators under the hero, then its service book, the comparison right before the pricing", hv[0] === "hero" && hv[1] === "showcase" && hv[2] === "hvac" && hv.indexOf("compare") === hv.indexOf("pricing") - 1 && hv.length === LANDING_SECTION_KEYS.length && LANDING_SECTION_KEYS.every((k) => hv.filter((x) => x === k).length === 1), hv.join(" → "));
 check("roofing puts the estimators directly under the hero and the comparison right before the pricing", roof[0] === "hero" && roof[1] === "showcase" && roof.indexOf("compare") === roof.indexOf("pricing") - 1 && roof.indexOf("compare") > roof.indexOf("stats") && roof.indexOf("compare") > roof.indexOf("built") && roof[roof.length - 1] === "final", roof.join(" → "));
 check("roofing's order is the same sections, each once", roof.length === LANDING_SECTION_KEYS.length && LANDING_SECTION_KEYS.every((k) => roof.filter((x) => x === k).length === 1));
 check("the sections come back whole in that order, for the tracker and the analyst", landingSectionsFor("roofing").map((s) => s.key).join() === roof.join() && landingSectionsFor("roofing")[1].label === "Estimators" && landingSectionsFor("fencing") === LANDING_SECTIONS);
@@ -23,8 +25,9 @@ check("an inherited name is not a landing", !hasOwnSectionOrder("constructor") &
 
 // ── the scope: roofing only
 const adScreens = (Object.keys(LANDING_VARIANTS) as LandingVariantKey[]).filter((k) => { const v = LANDING_VARIANTS[k]; return !!v && (v.shotCta || v.playOnPhone || v.priceFeature || v.priceNote); });
-check("only the roofing landing takes the ad's first screen, the hooks and an order of its own", adScreens.join() === "roofing" && Object.keys(LANDING_HOOKS).join() === "roofing" && OWN_ORDER_LANDINGS.join() === "roofing", adScreens.join());
-check("the default hero and every other trade's are as they were", DEFAULT_LANDING.h1.join(" ") === "Turn your trade into a business." && !("shotCta" in DEFAULT_LANDING) && variantContent("fencing").heroCta === "Create My Free Estimate →" && variantContent("hvac").subStrong === "No unnecessary drive. No hours of calculations.");
+check("only the roofing and HVAC landings take the ad's first screen, the hooks and an order of their own", adScreens.join() === "roofing,hvac" && Object.keys(LANDING_HOOKS).join() === "roofing,hvac" && OWN_ORDER_LANDINGS.join() === "roofing,hvac", adScreens.join());
+check("the default hero and every other trade's are as they were", DEFAULT_LANDING.h1.join(" ") === "Turn your trade into a business." && !("shotCta" in DEFAULT_LANDING) && variantContent("fencing").heroCta === "Create My Free Estimate →" && !variantContent("fencing").shotCta && !variantContent("painting").priceFeature);
+check("HVAC keeps the owner's own headline, line and button when the link carries no hook", variantContent("hvac").h1.join(" ") === "Turn an Address Into a Complete HVAC Estimate — in Seconds." && variantContent("hvac").subStrong === "No unnecessary drive. No hours of calculations." && variantContent("hvac").heroCta === "Build My First Estimate →" && variantContent("hvac").shotCta === true);
 check("roofing keeps the owner's own headline and button when the link carries no hook", variantContent("roofing").h1.join(" ") === "Complete Roof Report & Proposal — in Seconds." && variantContent("roofing").heroCta === "Get My First Roofing Report & Proposal →" && variantContent("roofing").priceFeature === "Roof estimator");
 
 // ── the hooks
@@ -43,6 +46,18 @@ const TERMS = /credit card|no card|free trial|\$\s?\d|per month|\/mo\b|instant|g
 check("no hook states the trial's terms, a price or a superlative — those lines are the page's own", all.every((h) => !TERMS.test(`${h.h1.join(" ")} ${h.sub}`)), all.filter((h) => TERMS.test(`${h.h1.join(" ")} ${h.sub}`)).map((h) => h.key).join());
 check("hooksOf is empty for a trade without a table and for no trade", hooksOf("fencing").length === 0 && hooksOf(undefined).length === 0);
 
+// ── the HVAC hooks: the ads' own opening lines, inside the claims review
+const hvAll = hooksOf("hvac");
+check("every HVAC ad on air has its opening line: eight hooks, slug keys, two lines (one sentence may run over both, as the ad sets it), a line under them", hvAll.length === 8 && hvAll.every((h) => /^[a-z0-9]+(-[a-z0-9]+)*$/.test(h.key) && h.h1.length === 2 && h.h1.every((l) => l.trim().length >= 6) && /[.?]$/.test(h.h1[1]) && h.sub.length >= 40 && h.sub.length <= 170 && /[.]$/.test(h.sub)), hvAll.filter((h) => h.sub.length > 170 || h.sub.length < 40).map((h) => `${h.key}:${h.sub.length}`).join());
+check("no HVAC hook states the trial's terms, a price or a superlative", hvAll.every((h) => !TERMS.test(`${h.h1.join(" ")} ${h.sub}`)), hvAll.filter((h) => TERMS.test(`${h.h1.join(" ")} ${h.sub}`)).map((h) => h.key).join());
+// The claims review (advertisement/hvac*/README): no duct or airflow diagram, the load is "Manual J-based", not ACCA-approved,
+// code rules only where they exist, no plans while they are early access, emailed not texted.
+const HV_FALSE = /diagram|duct design|ACCA|approved|every state|your state's code|service plan|membership|agreement|text(ed|s)? (the|your) (client|homeowner)|automatic(ally)? order/i;
+check("no HVAC hook claims what the app does not do", hvAll.every((h) => !HV_FALSE.test(`${h.h1.join(" ")} ${h.sub}`)) && hvAll.filter((h) => /Manual J/.test(h.sub)).every((h) => /Manual J-based/.test(h.sub)), hvAll.filter((h) => HV_FALSE.test(`${h.h1.join(" ")} ${h.sub}`)).map((h) => h.key).join());
+check("the HVAC and roofing tables never share a key, and a roofing key is no HVAC hook", resolveLandingHook("hvac", "tonnage") === "tonnage" && resolveLandingHook("hvac", "no-report") === undefined && resolveLandingHook("roofing", "tonnage") === undefined);
+const hvHooked = withHook(variantContent("hvac"), hookContent("hvac", "tonnage"));
+check("an HVAC hook replaces the two lines and the bold third line, keeps the button and the window", hvHooked.h1.join(" | ") === "Still Sizing by the Square Foot? | Stop Guessing Tonnage." && hvHooked.subStrong === undefined && hvHooked.heroCta === "Build My First Estimate →" && hvHooked.visual === "hvac" && hvHooked.shotCta === true);
+
 // ── the price
 const plan = (slug: string, priceCents: number, features: string[]): PricedPlan => ({ slug, priceCents, isFree: priceCents === 0, features });
 const live = [plan("starter", 4500, ["Proposal management", "CRM", "1 user"]), plan("professional", 9500, ["Everything in Starter", "Smart proposal generation", "Roof estimator", "Fence estimator"]), plan("advanced", 19900, ["Everything in Professional", "Video estimator"])];
@@ -52,6 +67,8 @@ check("a flat list of rows reads the same as a rolled-up one", heroPriceLine(var
 check("no plan on sale carries the row, an empty catalogue, or a free plan that does: no price line", heroPriceLine(variantContent("roofing"), [plan("starter", 4500, ["CRM"])]) === null && heroPriceLine(variantContent("roofing"), []) === null && heroPriceLine(variantContent("roofing"), [plan("free", 0, ["Roof estimator"])]) === null);
 check("a landing that names no plan row shows no price", heroPriceLine(variantContent("fencing"), live) === null && heroPriceLine(DEFAULT_LANDING, live) === null);
 check("cents show when the price has them", heroPriceLine({ priceFeature: "Roof estimator" }, [plan("pro", 9550, ["Roof estimator"])]) === "Then from $95.50/mo");
+check("HVAC prints no price while no plan card names the HVAC estimator (today's catalogue)", heroPriceLine(variantContent("hvac"), live) === null);
+check("…and reads it like roofing's once /admin/plans gives the plans that row", heroPriceLine(variantContent("hvac"), [plan("starter", 4500, ["CRM", "HVAC estimator"]), plan("professional", 9500, ["Everything in Starter", "Roof estimator"])]) === "Then from $45/mo · HVAC estimator included" && heroPriceLine(variantContent("hvac"), [plan("starter", 4500, ["CRM"]), plan("professional", 9500, ["Everything in Starter", "HVAC estimator"])]) === "Then from $95/mo · HVAC estimator included");
 
 console.log(bad ? `\n${bad} FAILED` : "\nall green");
 process.exit(bad ? 1 : 0);
