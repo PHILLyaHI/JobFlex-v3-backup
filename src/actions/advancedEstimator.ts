@@ -46,6 +46,7 @@ import {
 import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
 import { notePaidCall, takeTrialCap } from "@/lib/trialMeter";
+import { requirePage } from "@/lib/customPageAccess";
 
 /**
  * Quota gate for the AI *run* functions. Returned (not thrown) because these
@@ -525,6 +526,7 @@ export async function analyzeEstimatePrompt(input: {
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
+    await requirePage(organizationId, ["smart-proposal", "video-estimator"]);
     await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
@@ -661,6 +663,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
+    await requirePage(organizationId, ["smart-proposal", "video-estimator"]);
     await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
@@ -1074,6 +1077,7 @@ export async function refineAdvancedEstimate(raw: unknown): Promise<
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
+    await requirePage(organizationId, ["smart-proposal", "video-estimator"]);
     await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");
@@ -1401,6 +1405,7 @@ export async function saveEstimate(raw: {
   data: GeneratedEstimate;
 }) {
   const { organizationId, user } = await requireEstimatorOrManager();
+  await requirePage(organizationId, ["smart-proposal", "video-estimator"]);
   await enforcePlanLimit(organizationId, "estimatorUses");
   const total =
     raw.data.materials.reduce((a, l) => a + l.quantity * l.unitPrice, 0) +
@@ -1489,6 +1494,7 @@ function measurementForUnit(unit: string | null | undefined): string {
 
 export async function convertEstimateToProposal(raw: unknown) {
   const { organizationId, user, role } = await requireEstimatorOrManager();
+  await requirePage(organizationId, ["smart-proposal", "video-estimator"]);
   await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertInput.parse(raw);
 

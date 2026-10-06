@@ -24,6 +24,7 @@ import { db } from "@/lib/db";
 import { requireOrg } from "@/lib/orgContext";
 import type { InviteStatus, WorkerEntry } from "./workers-data";
 import { lastActiveLabel, laterOf } from "@/components/v3/workers-blueprint/workers-data";
+import { requirePage } from "@/lib/customPageAccess";
 
 /** `WorkerProfile.specialties` is a JSON string column. */
 function parseSpec(raw: string | null): string[] {
@@ -50,6 +51,7 @@ function joinedLabel(d: Date): string {
  */
 export async function loadRoster(): Promise<WorkerEntry[]> {
   const { organizationId } = await requireOrg();
+  await requirePage(organizationId, "workers");
 
   const workers = await db.workerProfile.findMany({
     where: { organizationId },

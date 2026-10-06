@@ -8,8 +8,11 @@ import { requireOrg, isWorkerRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { CalendarViewA } from "./calendar-view-a";
 import { MobileCalendar } from "@/app/(dashboard)/dashboard/calendar/mobile-calendar";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export default async function CalendarAPage() {
+  const gate = await customPageGate("calendar");
+  if (gate) return gate;
   const { organizationId, role } = await requireOrg();
   // Field workers get the self-scoped read-only calendar — this v3 route
   // renders the full manager dataset and must not leak it to them.

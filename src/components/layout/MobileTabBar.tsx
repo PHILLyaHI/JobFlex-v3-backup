@@ -1,4 +1,5 @@
 "use client";
+import { isCustomBlockedPath } from "@/lib/customPlan";
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -144,8 +145,7 @@ export function MobileTabBar({
   const isEstimator = role === "ESTIMATOR";
   const active = getActiveKey(pathname ?? "");
   const lockedOut = React.useCallback(
-    (href: string) =>
-      Boolean(lockedHrefs?.some((p) => href === p || href.startsWith(p + "/"))),
+    (href: string) => isCustomBlockedPath(lockedHrefs, href.split("?")[0]),
     [lockedHrefs],
   );
   const tabs = (

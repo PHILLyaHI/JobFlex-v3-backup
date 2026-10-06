@@ -26,6 +26,7 @@ import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { MobileWorkers } from "./mobile-workers";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,8 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileWorkersV2Page() {
+  const gate = await customPageGate("workers");
+  if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {
     redirect(`/auth/login?next=${encodeURIComponent("/mobile-workers-v2")}`);

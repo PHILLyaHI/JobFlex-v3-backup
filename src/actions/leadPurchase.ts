@@ -6,9 +6,11 @@ import { revalidatePath } from "next/cache";
 import { requireSalesOrManager } from "@/lib/orgContext";
 import { appBaseUrl } from "@/lib/appUrl";
 import { chargeCardOnFile, finishCheckoutReturn, startPurchase, type PurchaseStep } from "@/lib/leadCenter/purchase";
+import { requirePage } from "@/lib/customPageAccess";
 
 async function buyer() {
   const ctx = await requireSalesOrManager();
+  await requirePage(ctx.organizationId, "leads");
   return { organizationId: ctx.organizationId, userId: ctx.user.id, email: ctx.user.email ?? null };
 }
 
@@ -29,6 +31,7 @@ export async function chargeLeadOffer(offerId: string): Promise<PurchaseStep> {
  *  from Stripe, the lead opened if it is paid. */
 export async function finishLeadCheckout(sessionId: string) {
   const ctx = await requireSalesOrManager();
+  await requirePage(ctx.organizationId, "leads");
   const res = await finishCheckoutReturn(ctx.organizationId, sessionId);
   if (res.status === "unlocked") revalidatePath("/dashboard/leads");
   return res;

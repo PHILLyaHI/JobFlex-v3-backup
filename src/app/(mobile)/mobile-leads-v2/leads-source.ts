@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { relative } from "@/lib/format";
 import { contactsLocked } from "@/lib/leadCenter/contacts";
 import type { Lead, Offer } from "./leads-data";
+import { requirePage } from "@/lib/customPageAccess";
 
 /** "Bothell, WA". Either half may be missing on a real row. */
 function placeLabel(city: string | null, state: string | null): string {
@@ -34,6 +35,7 @@ export type MobileLeadsSnapshot = {
 
 export async function loadMobileLeads(): Promise<MobileLeadsSnapshot> {
   const { organizationId, role, user } = await requireOrg();
+  await requirePage(organizationId, "leads");
 
   const [leadRows, offerRows] = await Promise.all([
     db.lead.findMany({

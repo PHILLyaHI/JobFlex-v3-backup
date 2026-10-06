@@ -17,6 +17,7 @@ import { db } from "@/lib/db";
 import { requireOrg } from "@/lib/orgContext";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { VideoEstimatorViewportSwitch } from "@/components/v3/video-estimator-blueprint/video-estimator-viewport-switch";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 // A server action runs under the segment config of the page that calls it,
@@ -32,6 +33,8 @@ export const metadata: Metadata = {
 };
 
 export default async function VideoEstimatorPage() {
+  const gate = await customPageGate("video-estimator");
+  if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/auth/login?next=%2Fdashboard%2Fvideo-estimator");

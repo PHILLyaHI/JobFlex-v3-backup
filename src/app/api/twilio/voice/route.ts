@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { recordingTwiml, unavailableTwiml, verifyTwilioSignature } from "@/lib/sdk/twilioVoice";
 import { startInboundCall } from "@/lib/aiPhoneCalls";
 import { checkPlanLimit } from "@/lib/limitsEngine";
+import { isPageLocked } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 
@@ -38,7 +39,8 @@ export async function POST(req: Request) {
   // The one public path that BLOCKS at the cap (product decision): over-limit
   // orgs get a polite unavailable message and no AiPhoneCall row is written.
   const quota = await checkPlanLimit(org.id, "aiPhoneCalls");
-  if (!quota.allowed) {
+  // A custom-plan shop that did not buy Phone has no AI answering either.
+  if (!quota.allowed || (await isPageLocked(org.id, "phone"))) {
     return new NextResponse(unavailableTwiml(), {
       headers: { "Content-Type": "text/xml" },
     });

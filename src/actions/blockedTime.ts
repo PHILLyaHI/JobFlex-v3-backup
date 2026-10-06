@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireSalesOrManager, isSalesRole, UnauthorizedError } from "@/lib/orgContext";
 import { db } from "@/lib/db";
+import { requirePage } from "@/lib/customPageAccess";
 
 const input = z.object({
   id: z.string().optional(),
@@ -19,6 +20,7 @@ export async function createBlockedTime(raw: unknown) {
   // Blocks are always created self-owned, so sales reps creating their own
   // blocked time is safe by construction.
   const { organizationId, user } = await requireSalesOrManager();
+  await requirePage(organizationId, "calendar");
   const data = input.parse(raw);
   const block = await db.blockedTime.create({
     data: {
@@ -35,6 +37,7 @@ export async function createBlockedTime(raw: unknown) {
 
 export async function deleteBlockedTime(id: string) {
   const { organizationId, user, role } = await requireSalesOrManager();
+  await requirePage(organizationId, "calendar");
   const b = await db.blockedTime.findUnique({ where: { id } });
   if (!b || b.organizationId !== organizationId) throw new Error("Not found");
   // Sales reps can only remove their own blocks (org-wide blocks are manager turf).
@@ -47,6 +50,7 @@ export async function deleteBlockedTime(id: string) {
 
 export async function rescheduleBlockedTime(id: string, newStartISO: string) {
   const { organizationId, user, role } = await requireSalesOrManager();
+  await requirePage(organizationId, "calendar");
   const b = await db.blockedTime.findUnique({ where: { id } });
   if (!b || b.organizationId !== organizationId) throw new Error("Not found");
   if (isSalesRole(role) && b.ownerId !== user.id) {

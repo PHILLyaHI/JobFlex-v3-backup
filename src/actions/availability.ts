@@ -12,6 +12,7 @@ import { requireOrg, requireManager, isLimitedRole, UnauthorizedError } from "@/
 import { db } from "@/lib/db";
 import { expandRules, busyAt, type BusyInterval } from "@/lib/availability";
 import { viewerTimeZone } from "@/lib/viewerTz";
+import { requirePage } from "@/lib/customPageAccess";
 
 const ruleInput = z
   .object({
@@ -30,6 +31,7 @@ const ruleInput = z
 
 export async function createUnavailabilityRule(raw: unknown) {
   const { organizationId, user, role } = await requireOrg();
+  await requirePage(organizationId, "calendar");
   const data = ruleInput.parse(raw);
   const ownerId = data.ownerId ?? user.id;
   if (isLimitedRole(role) && ownerId !== user.id) {
@@ -57,6 +59,7 @@ export async function createUnavailabilityRule(raw: unknown) {
 
 export async function deleteUnavailabilityRule(id: string) {
   const { organizationId, user, role } = await requireOrg();
+  await requirePage(organizationId, "calendar");
   const rule = await db.unavailabilityRule.findUnique({ where: { id } });
   if (!rule || rule.organizationId !== organizationId) throw new Error("Not found");
   if (isLimitedRole(role) && rule.ownerId !== user.id) {
@@ -70,6 +73,7 @@ export async function deleteUnavailabilityRule(id: string) {
 // date of the occurrence; time-of-day is discarded.
 export async function setRuleInstanceFreed(ruleId: string, dateISO: string, freed: boolean) {
   const { organizationId, user, role } = await requireOrg();
+  await requirePage(organizationId, "calendar");
   const rule = await db.unavailabilityRule.findUnique({ where: { id: ruleId } });
   if (!rule || rule.organizationId !== organizationId) throw new Error("Not found");
   if (isLimitedRole(role) && rule.ownerId !== user.id) {
@@ -105,6 +109,7 @@ export interface OwnRule {
 // Rules visible to the caller: their own, plus (for managers) the whole org's.
 export async function listUnavailabilityRules(): Promise<OwnRule[]> {
   const { organizationId, user, role } = await requireOrg();
+  await requirePage(organizationId, "calendar");
   const rules = await db.unavailabilityRule.findMany({
     where: {
       organizationId,
@@ -139,6 +144,7 @@ export interface PersonBusy {
 // quick view.
 export async function getTeamBusy(fromISO: string, toISO: string): Promise<PersonBusy[]> {
   const { organizationId } = await requireManager();
+  await requirePage(organizationId, "calendar");
   const from = new Date(fromISO);
   const to = new Date(toISO);
   // The range is client-supplied and feeds a week-walking expansion — reject

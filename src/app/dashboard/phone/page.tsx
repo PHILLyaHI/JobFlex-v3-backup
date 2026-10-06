@@ -15,6 +15,7 @@ import type { Metadata } from "next";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { loadPhoneProps } from "./load-phone";
 import { PhoneResponsive } from "./phone-responsive";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,8 @@ export const metadata: Metadata = {
 };
 
 export default async function PhonePage() {
+  const gate = await customPageGate("phone");
+  if (gate) return gate;
   const props = await loadPhoneProps("/dashboard/phone");
 
   return (

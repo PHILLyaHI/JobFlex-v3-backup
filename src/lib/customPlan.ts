@@ -25,28 +25,89 @@ export const CUSTOM_PAGE_CENTS = 1000;
  *  the same number the signup switch reads off them. */
 export const CUSTOM_YEAR_MULTIPLIER = 10;
 
+/** The ten add-on pages, by the id stored with the subscription. */
+export type CustomPageId =
+  | "smart-proposal"
+  | "roof-estimator"
+  | "fence-estimator"
+  | "video-estimator"
+  | "hvac-estimator"
+  | "calendar"
+  | "leads"
+  | "workers"
+  | "company"
+  | "phone";
+
 export interface CustomPage {
   /** Stable id stored with the subscription. */
-  id: string;
+  id: CustomPageId;
   label: string;
   /** What the page is, in three or four words — the picker shows this. */
   note: string;
   /** The route it unlocks, for the gate that reads this selection. */
   href: string;
+  /** Every OTHER address that opens the same page: legacy aliases, the v3
+   *  sandbox copy and the standalone handheld URL. A path belongs to the page
+   *  whose href-or-alias is its LONGEST matching prefix (pageForPath), so
+   *  /dashboard/advanced-ai/roof is the roof estimator, not Smart Proposal. */
+  aliases: string[];
 }
 
 export const CUSTOM_PAGES: CustomPage[] = [
-  { id: "smart-proposal", label: "Smart Proposal", note: "AI estimate from a prompt", href: "/dashboard/advanced-ai" },
-  { id: "roof-estimator", label: "Roof estimator", note: "Aerial roof takeoff", href: "/dashboard/roof-estimator" },
-  { id: "fence-estimator", label: "Fence estimator", note: "Draw the fence on a map", href: "/dashboard/fence-estimator" },
-  { id: "video-estimator", label: "Video estimator", note: "Estimate from a walkthrough", href: "/dashboard/video-estimator" },
-  { id: "hvac-estimator", label: "HVAC estimator", note: "Load, unit and price for a replacement", href: "/dashboard/hvac-estimator" },
-  { id: "calendar", label: "Calendar", note: "Scheduling and crew days", href: "/dashboard/calendar" },
-  { id: "leads", label: "Leads", note: "Inbox and platform leads", href: "/dashboard/leads" },
-  { id: "workers", label: "Workers", note: "Crew, roles and portals", href: "/dashboard/workers" },
-  { id: "company", label: "Company", note: "Branding and lead matching", href: "/dashboard/company" },
-  { id: "phone", label: "Phone", note: "AI answering and call log", href: "/dashboard/phone" },
+  { id: "smart-proposal", label: "Smart Proposal", note: "AI estimate from a prompt", href: "/dashboard/advanced-ai",
+    aliases: ["/dashboard/proposals/ai", "/mobile-advanced-ai-v2", "/mobile-smart-estimate-v1"] },
+  { id: "roof-estimator", label: "Roof estimator", note: "Aerial roof takeoff", href: "/dashboard/roof-estimator",
+    aliases: ["/dashboard/advanced-ai/roof", "/mobile-roof-estimator-v2"] },
+  { id: "fence-estimator", label: "Fence estimator", note: "Draw the fence on a map", href: "/dashboard/fence-estimator",
+    aliases: ["/dashboard/advanced-ai/fence", "/mobile-fence-estimator-v2"] },
+  { id: "video-estimator", label: "Video estimator", note: "Estimate from a walkthrough", href: "/dashboard/video-estimator",
+    aliases: ["/mobile-video-estimator-v1"] },
+  { id: "hvac-estimator", label: "HVAC estimator", note: "Load, unit and price for a replacement", href: "/dashboard/hvac-estimator",
+    aliases: [] },
+  { id: "calendar", label: "Calendar", note: "Scheduling and crew days", href: "/dashboard/calendar",
+    aliases: ["/v3/calendar-a", "/mobile-calendar-v2"] },
+  { id: "leads", label: "Leads", note: "Inbox and platform leads", href: "/dashboard/leads",
+    aliases: ["/mobile-leads-v2"] },
+  { id: "workers", label: "Workers", note: "Crew, roles and portals", href: "/dashboard/workers",
+    aliases: ["/v3/workers-new", "/mobile-workers-v2"] },
+  { id: "company", label: "Company", note: "Branding and lead matching", href: "/dashboard/company",
+    aliases: ["/mobile-company-v2"] },
+  { id: "phone", label: "Phone", note: "AI answering and call log", href: "/dashboard/phone",
+    aliases: ["/mobile-phone-v2"] },
 ];
+
+/** Addresses under an add-on's prefix that belong to the BASE workspace: the
+ *  old Company → Subscription link (a redirect to /dashboard/subscription) and
+ *  the team list, which /dashboard/settings/team serves to every plan anyway.
+ *  Also the inventory boards the middleware redirects to /dashboard/inventory. */
+const BASE_EXCEPTIONS = [
+  "/dashboard/company/subscription",
+  "/dashboard/company/team",
+  "/dashboard/roof-estimator/board",
+  "/dashboard/fence-estimator/board",
+  "/dashboard/hvac-estimator/board",
+  "/dashboard/hvac-estimator/services",
+];
+
+function underPrefix(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(prefix + "/");
+}
+
+/** The add-on page a path opens, or null for the base workspace. Longest
+ *  matching prefix wins across every page's href and aliases. */
+export function pageForPath(pathname: string): CustomPage | null {
+  const path = pathname.split("?")[0];
+  let best: { page: CustomPage | null; len: number } = { page: null, len: -1 };
+  for (const ex of BASE_EXCEPTIONS) {
+    if (underPrefix(path, ex) && ex.length > best.len) best = { page: null, len: ex.length };
+  }
+  for (const page of CUSTOM_PAGES) {
+    for (const prefix of [page.href, ...page.aliases]) {
+      if (underPrefix(path, prefix) && prefix.length > best.len) best = { page, len: prefix.length };
+    }
+  }
+  return best.page;
+}
 
 /** What every custom plan includes before a single add-on is picked. */
 export const CUSTOM_BASE_FEATURES = [
@@ -56,7 +117,7 @@ export const CUSTOM_BASE_FEATURES = [
   "Jobs, messages & financials",
 ];
 
-const VALID = new Set(CUSTOM_PAGES.map((p) => p.id));
+const VALID = new Set<string>(CUSTOM_PAGES.map((p) => p.id));
 
 /** Drop anything that is not a real add-on id, and de-duplicate. */
 export function normalizeCustomPages(pages: readonly string[] | null | undefined): string[] {
@@ -99,14 +160,17 @@ export function blockedCustomHrefs(bought: readonly string[] | null | undefined)
   return CUSTOM_PAGES.filter((p) => !have.has(p.id)).map((p) => p.href);
 }
 
-/** Prefix match, the same shape roleRoutes' isPathAllowed uses: "/x" blocks
- *  "/x" and "/x/…", never "/xy". Query strings are the caller's to strip. */
+/** Whether a path opens a page in the blocked list (the hrefs
+ *  blockedCustomHrefs returns). The path is resolved to its page first —
+ *  aliases and handheld URLs included, longest prefix wins — so an alias is
+ *  blocked exactly when the page it opens is. */
 export function isCustomBlockedPath(
   blocked: readonly string[] | null | undefined,
   pathname: string,
 ): boolean {
   if (!blocked?.length) return false;
-  return blocked.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  const page = pageForPath(pathname);
+  return Boolean(page && blocked.includes(page.href));
 }
 
 /* WHAT THE CUSTOM PLAN TICKS on the compare matrix (subscription page).

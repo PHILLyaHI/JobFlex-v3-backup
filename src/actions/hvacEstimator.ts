@@ -55,6 +55,7 @@ import { US_CATALOG, US_CATALOG_VERIFIED_ON } from "@/lib/hvac/data/usCatalog";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
 import { fileEquipmentFromModel } from "@/lib/visitBook";
 import { notePaidCall, takeTrialCap } from "@/lib/trialMeter";
+import { requirePage } from "@/lib/customPageAccess";
 
 type Fail = { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey };
 
@@ -105,6 +106,7 @@ export async function hvacSiteFacts(raw: unknown): Promise<{ ok: true; facts: Si
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
+    await requirePage(organizationId, "hvac-estimator");
     await enforceRateLimit(`hvac-site:${organizationId}`, 40, HOUR, "site lookups");
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Not allowed" };
@@ -308,6 +310,7 @@ export async function readHvacNameplate(raw: unknown): Promise<{ ok: true; read:
  *  not pushed yet). `own` says which. */
 export async function listHvacCatalog(): Promise<{ items: CatalogItem[]; own: boolean }> {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "hvac-estimator");
   try {
     const rows = await db.hvacCatalogItem.findMany({ where: { organizationId }, orderBy: [{ kind: "asc" }, { brand: "asc" }, { model: "asc" }] });
     if (rows.length) return { items: rows.map((r) => JSON.parse(r.itemJson) as CatalogItem), own: true };
@@ -405,6 +408,7 @@ const rateCardSchema = z.object({}).passthrough().transform((raw) => normalizeRa
 
 export async function getHvacRateCard(): Promise<{ card: HvacRateCard; own: boolean }> {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "hvac-estimator");
   try {
     const row = await db.hvacSettings.findUnique({ where: { organizationId } });
     if (row) return { card: normalizeRateCard(JSON.parse(row.rateCardJson)), own: true };
@@ -578,6 +582,7 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
   let userId: string;
   try {
     const ctx = await requireEstimatorOrManager();
+    await requirePage(ctx.organizationId, "hvac-estimator");
     organizationId = ctx.organizationId;
     userId = ctx.user.id;
   } catch (err) {
@@ -633,6 +638,7 @@ export async function saveHvacEstimate(raw: unknown): Promise<{ ok: true; id: st
 
 export async function listHvacEstimates(): Promise<HvacEstimateSummary[]> {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "hvac-estimator");
   try {
     const rows = await db.hvacEstimate.findMany({ where: { organizationId }, orderBy: { createdAt: "desc" }, take: 12, select: { id: true, address: true, status: true, subtotal: true, createdAt: true, draftJson: true, sizedTons: true, jobKind: true, actualJson: true, permitJson: true, approvedReportUrl: true } });
     return rows.map((r) => {
@@ -648,6 +654,7 @@ export async function listHvacEstimates(): Promise<HvacEstimateSummary[]> {
 /** The calibration loop over every saved estimate with an actual. */
 export async function hvacCalibration(): Promise<CalibrationStats> {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "hvac-estimator");
   try {
     const rows = await db.hvacEstimate.findMany({ where: { organizationId, actualJson: { not: null } }, select: { sizedTons: true, subtotal: true, actualJson: true } });
     return calibrationStats(rows.map((r) => { const a = parseJson<HvacActual>(r.actualJson); return { sizedTons: r.sizedTons, subtotal: r.subtotal, actualTons: a?.tons ?? null, actualPrice: a?.price ?? null }; }));
@@ -663,6 +670,7 @@ export async function recordHvacActual(raw: unknown): Promise<{ ok: true } | { o
   const parsed = z.object({ estimateId: z.string(), actual: actualSchema }).safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Invalid actuals" };
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "hvac-estimator");
   const a = parsed.data.actual;
   if (a.tons === undefined && a.price === undefined) return { ok: false, error: "Enter the tons or the price." };
   try {
@@ -676,7 +684,7 @@ export async function recordHvacActual(raw: unknown): Promise<{ ok: true } | { o
 // ── permit-grade report (Cool Calc) ─────────────────────────────────────────
 
 export async function hvacPermitStatus(): Promise<{ enabled: boolean }> {
-  await requireEstimatorOrManager();
+  await requirePage((await requireEstimatorOrManager()).organizationId, "hvac-estimator");
   return { enabled: isCoolCalcEnabled() };
 }
 
@@ -687,6 +695,7 @@ export async function requestHvacPermitReport(raw: unknown): Promise<{ ok: true;
   const parsed = z.object({ estimateId: z.string() }).safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Save the estimate first." };
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "hvac-estimator");
   await enforceRateLimit(`coolcalc:${organizationId}`, 20, HOUR, "Cool Calc requests");
   const cfg = coolCalcConfig();
   if (!cfg) return { ok: false, error: "Cool Calc isn't connected — set COOLCALC_CLIENT_ID, COOLCALC_API_KEY and COOLCALC_DEALER_ID on the server." };
@@ -729,6 +738,7 @@ export async function attachHvacPermitReport(raw: unknown): Promise<{ ok: true; 
   const parsed = z.object({ estimateId: z.string(), url: z.string().max(1000).optional() }).safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Invalid request" };
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "hvac-estimator");
   let url = parsed.data.url?.trim() ?? "";
   if (url && !/^https:\/\//i.test(url)) return { ok: false, error: "The report link must start with https://" };
   try {
@@ -748,6 +758,7 @@ export async function attachHvacPermitReport(raw: unknown): Promise<{ ok: true; 
 
 export async function getHvacEstimate(id: string): Promise<{ ok: true; row: { id: string; address: string; status: string; siteFacts: unknown; model: unknown; engine: unknown; draft: z.infer<typeof draftSchema>; proposalId: string | null; approvedReportUrl: string | null; permit: HvacPermit | null; actual: HvacActual | null } } | { ok: false; error: string }> {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "hvac-estimator");
   try {
     const r = await db.hvacEstimate.findFirst({ where: { id, organizationId } });
     if (!r) return { ok: false, error: "That estimate isn't here any more." };
@@ -789,6 +800,7 @@ const convertSchema = z.object({
  *  30/70 schedule + the activity row. Assumptions stay on the estimate. */
 export async function convertHvacEstimateToProposal(raw: unknown): Promise<{ id: string }> {
   const { organizationId, user, role } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "hvac-estimator");
   await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertSchema.parse(raw);
   // Converted without a saved estimate, this is a new HVAC estimate all the

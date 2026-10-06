@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { isEagleViewEnabled, getReportFile, EV_FILE } from "@/lib/eagleview";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
   } catch {
     return new Response("Unauthorized", { status: 401 });
   }
+  const pageLocked = await pageLockedResponse(organizationId, "roof-estimator");
+  if (pageLocked) return pageLocked;
   if (!isEagleViewEnabled()) return new Response("Aerial data not configured", { status: 503 });
 
   const url = new URL(req.url);

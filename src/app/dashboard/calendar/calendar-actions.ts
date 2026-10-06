@@ -19,7 +19,11 @@
 
 import { buildCalendarSeed } from "./calendar-query";
 import type { CalendarSeed } from "@/components/v3/calendar-blueprint/calendar-data";
+import { requirePage } from "@/lib/customPageAccess";
+import { requireOrg } from "@/lib/orgContext";
 
 export async function getCalendarSeed(): Promise<CalendarSeed> {
+  const { organizationId } = await requireOrg();
+  await requirePage(organizationId, "calendar");
   return buildCalendarSeed();
 }

@@ -22,7 +22,7 @@ import { redirect } from "next/navigation";
 import { requireOrg } from "@/lib/orgContext";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { getBlockedCustomPages } from "@/lib/customPageAccess";
-import { isCustomBlockedPath } from "@/lib/customPlan";
+import { isCustomBlockedPath, pageForPath } from "@/lib/customPlan";
 import { UpgradeGate } from "@/components/v3/upgrade-gate/upgrade-gate";
 import { TrialWatchMount } from "@/components/v3/trial-watch/trial-watch-mount";
 import "@/components/v3/who/who.css";
@@ -46,7 +46,7 @@ const DESKTOP_TWIN: Record<string, string> = {
   "/mobile-overhead-v1": "/dashboard/financials",
   "/mobile-advanced-ai-v2": "/dashboard/advanced-ai",
   "/mobile-smart-estimate-v1": "/dashboard/advanced-ai",
-  "/mobile-video-estimator-v1": "/dashboard/advanced-ai",
+  "/mobile-video-estimator-v1": "/dashboard/video-estimator",
   "/mobile-roof-estimator-v2": "/dashboard/roof-estimator",
   "/mobile-fence-estimator-v2": "/dashboard/fence-estimator",
   "/mobile-phone-v2": "/dashboard/phone",
@@ -97,8 +97,10 @@ export default async function MobileGroupLayout({ children }: { children: ReactN
   const lockedPages = organizationId
     ? await getBlockedCustomPages(organizationId).catch(() => getBlockedCustomPages(organizationId!))
     : null;
-  if (lockedPages?.length && isCustomBlockedPath(lockedPages, twin)) {
-    return <UpgradeGate pathname={twin} />;
+  // Resolved from the handheld URL itself: every add-on lists its handheld
+  // addresses among its aliases (lib/customPlan), so the gate needs no twin.
+  if (lockedPages?.length && isCustomBlockedPath(lockedPages, pathname)) {
+    return <UpgradeGate pathname={pageForPath(pathname)?.href ?? twin} />;
   }
 
   // The handheld twins render the same org data as /dashboard: same beacon,

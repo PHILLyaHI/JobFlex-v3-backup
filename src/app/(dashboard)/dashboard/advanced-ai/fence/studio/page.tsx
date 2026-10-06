@@ -1,7 +1,10 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FenceStudio } from "@/components/estimator/fence/FenceStudio";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
-export default function FenceStudioPage() {
+export default async function FenceStudioPage() {
+  const gate = await customPageGate("fence-estimator");
+  if (gate) return gate;
   return (
     <>
       <PageHeader

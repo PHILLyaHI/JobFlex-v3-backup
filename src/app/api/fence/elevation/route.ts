@@ -3,6 +3,7 @@ import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { trialEndedResponse } from "@/lib/trialState";
 import { elevationForPoints, MAX_ELEVATION_POINTS } from "@/lib/elevationProfile";
 import { RateLimitError } from "@/lib/rateLimit";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,8 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+  const pageLocked = await pageLockedResponse(organizationId, "fence-estimator");
+  if (pageLocked) return pageLocked;
   const locked = await trialEndedResponse(organizationId);
   if (locked) return locked;
   let points: unknown;

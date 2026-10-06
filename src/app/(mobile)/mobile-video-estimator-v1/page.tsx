@@ -26,6 +26,7 @@ import { db } from "@/lib/db";
 import { requireOrg } from "@/lib/orgContext";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { MobileVideoEstimator } from "@/components/v3/mobile-video-estimator/mobile-video-estimator";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,8 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileVideoEstimatorV1Page() {
+  const gate = await customPageGate("video-estimator");
+  if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {
     redirect(`/auth/login?next=${encodeURIComponent("/mobile-video-estimator-v1")}`);

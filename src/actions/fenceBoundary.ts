@@ -41,6 +41,7 @@ import { askOverpass } from "@/lib/overpass";
 import { solarHousesAt, withOsmHeights } from "@/lib/solarHouses";
 import { takeTrialCap, trialPointKey } from "@/lib/trialMeter";
 import type { PlanLimitFailure } from "@/lib/planLimits";
+import { requirePage } from "@/lib/customPageAccess";
 
 export type { LatLngPoint };
 
@@ -228,6 +229,7 @@ export async function fetchPropertyBoundary(
   | { ok: false; error: string; buildings: BuildingRing[]; roads: RoadLine[]; code?: PlanLimitFailure["code"]; trialCap?: PlanLimitFailure["trialCap"]; trialEnded?: boolean }
 > {
   const { organizationId: rlOrg } = await requireEstimatorOrManager();
+  await requirePage(rlOrg, ["fence-estimator", "hvac-estimator"]);
   await enforceRateLimit(`parcels:${rlOrg}`, 30, HOUR, "property lookups");
   // The card-less trial's fence ceiling (lib/trialMeter), counted once per
   // point — /api/parcels asks for the same pin at the same moment. Inside an
@@ -308,6 +310,7 @@ export async function fetchHouseFootprints(
   | { ok: false; reason: "off" | "no-coverage" | "failed"; error?: string }
 > {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "fence-estimator");
   await enforceRateLimit(`solar-houses:${organizationId}`, 30, HOUR, "house outline lookups");
   // Google Solar, at the fence page's point: the same trial use as its lot.
   const trial = await takeTrialCap(organizationId, "fenceLookups", { dedupe: trialPointKey(lat, lng) });

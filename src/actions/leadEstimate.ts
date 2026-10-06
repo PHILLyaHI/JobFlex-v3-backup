@@ -16,11 +16,13 @@ import { writeEstimateSeed } from "@/lib/estimateSeed";
 import { ensureClientForLead } from "@/lib/leadClient";
 import { FILING_COOKIE, FILING_MAX_AGE_S, type Filing } from "@/lib/filingCookie";
 import { enforceTrialCap } from "@/lib/trialMeter";
+import { requirePage } from "@/lib/customPageAccess";
 
 const ENGINES = new Set<string>(["roof", "fence", "hvac", "smart", "manual"]);
 
 export async function startEstimateFromLead(leadId: string, estimator: string): Promise<void> {
   const { organizationId, role } = await requireEstimatorOrManager();
+  await requirePage(organizationId, ["leads", "hvac-estimator"]);
   if (!ENGINES.has(estimator)) return;
   const engine = estimator as EstimatorId;
   const lead = await db.lead.findFirst({
@@ -76,6 +78,7 @@ export async function startEstimateFromLead(leadId: string, estimator: string): 
  */
 export async function writeLeadScope(leadId: string): Promise<void> {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "leads");
   const lead = await db.lead.findFirst({
     where: { id: leadId, organizationId },
     select: { id: true, description: true, aiCategory: true, projectType: true, address: true, city: true, state: true, scope: true },

@@ -5,8 +5,11 @@ import { db } from "@/lib/db";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { LeadKanbanBoard, type KanbanLead } from "@/components/leads/LeadKanbanBoard";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export default async function LeadsKanbanPage() {
+  const gate = await customPageGate("leads");
+  if (gate) return gate;
   const { organizationId } = await requireOrg();
   const leads = await db.lead.findMany({
     where: { organizationId, status: { not: "ARCHIVED" } },

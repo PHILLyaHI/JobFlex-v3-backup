@@ -10,6 +10,7 @@ import { JobStatusBadge } from "@/components/jobs/JobStatusBadge";
 import { WorkerActions } from "./worker-actions";
 import { money, longDate, shortDate } from "@/lib/format";
 import { Mail, Phone } from "lucide-react";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 function parseSpec(raw: string | null): string[] {
   if (!raw) return [];
@@ -27,6 +28,8 @@ function parseSpec(raw: string | null): string[] {
 export const dynamic = "force-dynamic";
 
 export default async function WorkerDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const gate = await customPageGate("workers");
+  if (gate) return gate;
   const { id } = await params;
   const { organizationId } = await requireOrg();
 

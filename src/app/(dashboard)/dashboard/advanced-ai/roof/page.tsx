@@ -2,8 +2,11 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { RoofEstimatorForm } from "@/components/estimator/roof/RoofEstimatorForm";
 import { isEagleViewEnabled } from "@/lib/eagleview";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
-export default function RoofEstimatorPage() {
+export default async function RoofEstimatorPage() {
+  const gate = await customPageGate("roof-estimator");
+  if (gate) return gate;
   return (
     <>
       <PageHeader

@@ -19,6 +19,7 @@ import { loadTeamActivity } from "@/lib/teamActivity";
 import { parseTradeTypes } from "@/lib/tradeTypes";
 import { CompanyContent } from "@/components/v3/company-blueprint/company-content";
 import { toActivityEntries } from "@/components/v3/company-blueprint/company-data";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,8 @@ function activityWindowStart(): Date {
 }
 
 export default async function CompanyPage() {
+  const gate = await customPageGate("company");
+  if (gate) return gate;
   let organizationId: string;
   let role: string | null;
   try {

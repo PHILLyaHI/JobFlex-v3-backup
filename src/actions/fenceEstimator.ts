@@ -24,6 +24,7 @@ import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
 import { takeTrialCap } from "@/lib/trialMeter";
+import { requirePage } from "@/lib/customPageAccess";
 
 const STUB: GeneratedEstimate = {
   title: "Cedar privacy fence estimate · AI disabled",
@@ -61,6 +62,7 @@ export async function estimateFence(input: {
   | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
   const { organizationId, user } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "fence-estimator");
 await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
   // Union failure (not a throw): thrown messages are redacted in prod, and
   // this action's callers already branch on { ok }.
@@ -143,6 +145,11 @@ export async function convertFenceEstimateToProposal(raw: unknown): Promise<Fenc
     throw err;
   }
   const { organizationId, user, role } = ctx;
+  try {
+    await requirePage(organizationId, "fence-estimator");
+  } catch (err) {
+    return { ok: false, code: "FORBIDDEN", error: err instanceof Error ? err.message : "Fence estimator isn't in your plan." };
+  }
   const quota = await checkPlanLimit(organizationId, "proposalsCreated");
   if (!quota.allowed) {
     return { ok: false, code: "PLAN_LIMIT_REACHED", error: PLAN_LIMIT_MESSAGE, resource: quota.cappedBy ?? "proposalsCreated" };

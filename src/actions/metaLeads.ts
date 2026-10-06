@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireManager } from "@/lib/orgContext";
 import { metaAllowed, MetaApiError } from "@/lib/meta/graph";
 import { disconnectMetaPage, importMetaBatch, selectMetaPage } from "@/lib/meta/connections";
+import { requirePage } from "@/lib/customPageAccess";
 
 function message(error: unknown) {
   if (error instanceof MetaApiError) return error.message;
@@ -37,6 +38,7 @@ export async function disconnectMeta() {
 export async function importMetaLeads(restart: boolean = false) {
   try {
     const { organizationId, user } = await requireManager();
+    await requirePage(organizationId, "leads");
     if (!metaAllowed(user.email)) return { ok: false as const, error: "Meta is not enabled for this account yet." };
     const result = await importMetaBatch(organizationId, user.id, restart === true);
     refresh();

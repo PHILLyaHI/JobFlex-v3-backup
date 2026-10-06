@@ -35,6 +35,7 @@ import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { AdvancedAiContent } from "@/components/v3/advanced-ai-blueprint/advanced-ai-content";
 import { readEstimateSeed } from "@/lib/estimateSeed";
 import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 /** The hand-off seed for this company's Smart Proposal, or null — never an error. */
 async function readSmartSeed() {
@@ -60,6 +61,8 @@ export const metadata: Metadata = {
 };
 
 export default async function AdvancedAiPage() {
+  const gate = await customPageGate("smart-proposal");
+  if (gate) return gate;
   try {
     await requireOrg();
   } catch (err) {

@@ -20,6 +20,7 @@ import { checkPlanLimit } from "@/lib/limitsEngine";
 import { PLAN_LIMIT_MESSAGE } from "@/lib/planLimits";
 import { rateLimitShared, HOUR } from "@/lib/rateLimit";
 import { takeTrialCap } from "@/lib/trialMeter";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,6 +91,8 @@ export async function POST(req: Request) {
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Unauthorized" }, { status: 403 });
   }
+  const pageLocked = await pageLockedResponse(organizationId, ["video-estimator", "hvac-estimator"]);
+  if (pageLocked) return pageLocked;
   const locked = await trialEndedResponse(organizationId);
   if (locked) return locked;
   const quota = await checkPlanLimit(organizationId, "estimatorUses");

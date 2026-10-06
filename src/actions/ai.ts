@@ -8,6 +8,7 @@ import { PLAN_LIMIT_MESSAGE, type LimitKey } from "@/lib/planLimits";
 import { enforceRateLimit, HOUR } from "@/lib/rateLimit";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { takeTrialCap } from "@/lib/trialMeter";
+import { requirePage } from "@/lib/customPageAccess";
 
 const aiDraftSchema = z.object({
   title: z.string(),
@@ -61,6 +62,7 @@ export async function generateAiProposal(prompt: string): Promise<
   | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
   const { organizationId, user } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "smart-proposal");
   await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
 
   // Plan gate

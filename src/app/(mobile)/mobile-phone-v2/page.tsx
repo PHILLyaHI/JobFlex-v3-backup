@@ -20,6 +20,7 @@
 import type { Metadata, Viewport } from "next";
 import { loadPhoneProps } from "@/app/dashboard/phone/load-phone";
 import { MobilePhone } from "./mobile-phone";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,8 @@ export const viewport: Viewport = {
 };
 
 export default async function MobilePhoneV2Page() {
+  const gate = await customPageGate("phone");
+  if (gate) return gate;
   const props = await loadPhoneProps("/mobile-phone-v2");
   return <MobilePhone {...props} />;
 }

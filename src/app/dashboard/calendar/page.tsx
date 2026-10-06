@@ -21,6 +21,7 @@ import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { CalendarContent } from "@/components/v3/calendar-blueprint/calendar-content";
 import type { CalendarSeed } from "@/components/v3/calendar-blueprint/calendar-data";
 import { buildCalendarSeed } from "./calendar-query";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,8 @@ export const metadata: Metadata = {
 };
 
 export default async function CalendarPage() {
+  const gate = await customPageGate("calendar");
+  if (gate) return gate;
   let seed: CalendarSeed;
   try {
     seed = await buildCalendarSeed();

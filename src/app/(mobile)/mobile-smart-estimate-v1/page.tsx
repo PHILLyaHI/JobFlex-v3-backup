@@ -15,6 +15,7 @@ import { redirect } from "next/navigation";
 import type { Metadata, Viewport } from "next";
 import { requireOrg, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { MobileSmartEstimate } from "@/components/v3/mobile-smart-estimate/mobile-smart-estimate";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,8 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileSmartEstimateV1Page() {
+  const gate = await customPageGate("smart-proposal");
+  if (gate) return gate;
   try {
     await requireOrg();
   } catch (err) {

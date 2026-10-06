@@ -4,6 +4,7 @@ import { requireSalesOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
 import { logActivity } from "@/lib/activityLog";
+import { requirePage } from "@/lib/customPageAccess";
 
 // The Twilio-webhook internals (startInboundCall / attachRecording /
 // attachTranscript / summarizeAndMaybeCreateLead) used to live here as "use
@@ -15,6 +16,7 @@ import { logActivity } from "@/lib/activityLog";
 
 export async function createLeadFromCall(callId: string) {
   const { organizationId, user } = await requireSalesOrManager();
+  await requirePage(organizationId, "phone");
   const call = await db.aiPhoneCall.findUnique({ where: { id: callId } });
   if (!call || call.organizationId !== organizationId) throw new Error("Not found");
   if (call.leadId) return { leadId: call.leadId };

@@ -2,8 +2,11 @@ import Link from "next/link";
 import { ArrowRight, Boxes } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { FenceEstimatorForm } from "@/components/estimator/fence/FenceEstimatorForm";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
-export default function FenceEstimatorPage() {
+export default async function FenceEstimatorPage() {
+  const gate = await customPageGate("fence-estimator");
+  if (gate) return gate;
   return (
     <>
       <PageHeader

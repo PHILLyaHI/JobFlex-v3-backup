@@ -14,6 +14,7 @@ import { readEstimateSeed } from "@/lib/estimateSeed";
 import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
 import { looksLikeStreetAddress } from "@/lib/leadRules";
 import { requireOrg } from "@/lib/orgContext";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 /** The hand-off seed for this company's fence estimator, or null — never an error. */
 async function readFenceSeed() {
@@ -39,6 +40,8 @@ export const metadata: Metadata = {
 };
 
 export default async function FenceEstimatorPage() {
+  const gate = await customPageGate("fence-estimator");
+  if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/auth/login?next=%2Fdashboard%2Ffence-estimator");

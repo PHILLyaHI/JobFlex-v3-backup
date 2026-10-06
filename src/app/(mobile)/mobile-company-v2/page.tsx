@@ -24,6 +24,7 @@ import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { MobileCompany } from "./mobile-company";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,8 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileCompanyV2Page() {
+  const gate = await customPageGate("company");
+  if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {
     redirect(`/auth/login?next=${encodeURIComponent("/mobile-company-v2")}`);

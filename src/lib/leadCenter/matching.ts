@@ -117,6 +117,30 @@ export async function loadRankingInputs(): Promise<RankingInputs> {
       createdAt: true,
     },
   });
+  // A custom-plan shop that did not buy Leads cannot open an offer (the page,
+  // its actions and the pop-up all refuse — lib/customPageAccess), so it is
+  // not a candidate either.
+  const customIds = (
+    await db.subscription.findMany({
+      where: { organizationId: { in: orgs.map((o) => o.id) }, plan: { in: ["CUSTOM", "custom"] } },
+      select: { organizationId: true },
+    })
+  ).map((r) => r.organizationId);
+  const withoutLeads = new Set<string>();
+  if (customIds.length) {
+    const rows = await db.syncState.findMany({ where: { key: { in: customIds.map((id) => `orgPages:${id}`) } } });
+    const has = new Map(rows.map((r) => [r.key.slice("orgPages:".length), r.cursor]));
+    for (const id of customIds) {
+      let pages: unknown = [];
+      try {
+        pages = JSON.parse(has.get(id) ?? "[]");
+      } catch {
+        pages = [];
+      }
+      if (!Array.isArray(pages) || !pages.includes("leads")) withoutLeads.add(id);
+    }
+  }
+  if (withoutLeads.size) orgs.splice(0, orgs.length, ...orgs.filter((o) => !withoutLeads.has(o.id)));
   const ids = orgs.map((o) => o.id);
   if (!ids.length) {
     return { orgs, ratingByOrg: new Map(), openByOrg: new Map(), resolvedByOrg: new Map() };

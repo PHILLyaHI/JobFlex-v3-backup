@@ -22,6 +22,7 @@ import { trackActivation, trackProposalCreated } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
 import { takeTrialCap } from "@/lib/trialMeter";
+import { requirePage } from "@/lib/customPageAccess";
 
 /**
  * The sample shown when no OpenAI key is set. Scaled from the REAL squares
@@ -89,6 +90,7 @@ export async function estimateRoof(input: {
   | { ok: false; error: string; code?: "PLAN_LIMIT_REACHED"; resource?: LimitKey }
 > {
   const { organizationId, user } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "roof-estimator");
 await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
   // Union failure (not a throw): thrown messages are redacted in prod, and
   // this action's callers already branch on { ok }.
@@ -211,6 +213,7 @@ const convertSchema = z.object({
 
 export async function convertRoofEstimateToProposal(raw: unknown) {
   const { organizationId, user, role } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "roof-estimator");
   await enforcePlanLimit(organizationId, "proposalsCreated");
   const data = convertSchema.parse(raw);
 

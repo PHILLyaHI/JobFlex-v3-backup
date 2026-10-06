@@ -9,6 +9,7 @@
 // length either way, and says so in the proposal's assumptions.
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { elevationForPoints, type ElevationProfileResult } from "@/lib/elevationProfile";
+import { requirePage } from "@/lib/customPageAccess";
 
 export type { ElevationProfileResult, ElevationSource } from "@/lib/elevationProfile";
 
@@ -16,5 +17,6 @@ export async function fetchElevationProfile(
   points: Array<{ lat: number; lng: number }>,
 ): Promise<ElevationProfileResult> {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "fence-estimator");
   return elevationForPoints(points, organizationId);
 }

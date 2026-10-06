@@ -29,6 +29,7 @@ import { parseWkt } from "@/lib/parcels";
 import { rateLimitShared, HOUR } from "@/lib/rateLimit";
 import { requireOrg } from "@/lib/orgContext";
 import { takeTrialCap, trialPointKey } from "@/lib/trialMeter";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 
@@ -111,6 +112,10 @@ export async function GET(req: Request) {
   // requireOrg also files this request's paid calls under the organization.
   const organizationId = await requireOrg().then((c) => c.organizationId).catch(() => null);
   if (organizationId) {
+    // The lot lookup is the fence estimator's map (the roof and HVAC
+    // estimators read lots through it too).
+    const pageLocked = await pageLockedResponse(organizationId, ["fence-estimator", "roof-estimator", "hvac-estimator"]);
+    if (pageLocked) return pageLocked;
     const lat = Number(latStr);
     const lon = Number(lonStr);
     const dedupe = byPoint && Number.isFinite(lat) && Number.isFinite(lon) ? trialPointKey(lat, lon) : `addr:${(address ?? "").toLowerCase()}|${(region ?? "").toLowerCase()}`;

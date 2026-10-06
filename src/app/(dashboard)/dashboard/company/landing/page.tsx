@@ -3,12 +3,15 @@ import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { LandingBuilder } from "@/components/company/LandingBuilder";
 import { ComingSoon } from "@/components/ui/ComingSoon";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 // Flip to true to re-enable the (already-built) landing builder. Typed as `boolean`
 // so the builder code path below stays type-checked while the flag is off.
 const LANDING_BUILDER_ENABLED: boolean = false;
 
 export default async function CompanyLandingPage() {
+  const gate = await customPageGate("company");
+  if (gate) return gate;
   if (!LANDING_BUILDER_ENABLED) {
     return (
       <ComingSoon

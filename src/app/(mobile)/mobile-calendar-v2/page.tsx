@@ -33,6 +33,7 @@ import { NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { buildCalendarSeed } from "@/app/dashboard/calendar/calendar-query";
 import type { CalendarSeed } from "@/components/v3/calendar-blueprint/calendar-data";
 import { MobileCalendar } from "./mobile-calendar";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +53,8 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileCalendarV2Page() {
+  const gate = await customPageGate("calendar");
+  if (gate) return gate;
   let seed: CalendarSeed;
   try {
     seed = await buildCalendarSeed();

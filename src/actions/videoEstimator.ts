@@ -43,6 +43,7 @@ import {
 import { trackActivation } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
 import { takeTrialCap } from "@/lib/trialMeter";
+import { requirePage } from "@/lib/customPageAccess";
 
 /** Vision quality matters more here than on the text-only planner: reading a
  *  fence run off a frame against a door for scale is spatial reasoning, which
@@ -81,6 +82,7 @@ export async function analyzeWalkthrough(
   let organizationId: string;
   try {
     ({ organizationId } = await requireEstimatorOrManager());
+    await requirePage(organizationId, ["video-estimator", "hvac-estimator"]);
     await enforceRateLimit(`ai-video:${organizationId}`, 20, HOUR, "video analyses");
     const { requireFeatureOrThrow } = await import("@/lib/entitlements");
     const { getOrgPlanById } = await import("@/lib/orgPlan");

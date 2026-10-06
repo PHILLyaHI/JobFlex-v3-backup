@@ -6,6 +6,7 @@ import { instantAddressKey, type InstantRoofData } from "@/lib/eagleview";
 import { readEntitlements } from "@/lib/eagleviewEntitlements";
 import { packsFromContent } from "@/lib/eagleviewOrder";
 import { mainStructureOf } from "@/lib/roofDiagram/instantTotals";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,8 @@ export async function GET(req: NextRequest) {
   } catch {
     return new Response("Unauthorized", { status: 401 });
   }
+  const pageLocked = await pageLockedResponse(organizationId, "roof-estimator");
+  if (pageLocked) return pageLocked;
   const url = new URL(req.url);
   const address = (url.searchParams.get("address") ?? "").trim();
   if (address.length < 3) return NextResponse.json({ error: "address (at least 3 characters) is required" }, { status: 400 });

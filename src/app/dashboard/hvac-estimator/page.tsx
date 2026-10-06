@@ -17,6 +17,7 @@ import { HvacEstimatorContent } from "@/components/v3/hvac-estimator-blueprint/h
 import { readEstimateSeed } from "@/lib/estimateSeed";
 import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
 import { leadsWaitingFor } from "@/lib/leadQueue";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 /** The hand-off seed for the signed-in company's HVAC estimator, or null — never an error. */
 async function readHvacSeed(userId: string) {
@@ -45,6 +46,8 @@ export default async function HvacEstimatorPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const gate = await customPageGate("hvac-estimator");
+  if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/auth/login?next=%2Fdashboard%2Fhvac-estimator");

@@ -8,6 +8,7 @@ import { afterResponse } from "@/lib/server-events";
 import { textAppointmentBooked, textAppointmentCancelled, textAppointmentMoved as textVisitMoved, visitFacts } from "@/lib/sms/schedule";
 import { crewOfAppointment, textAppointmentMoved, textCrewCancelled } from "@/lib/sms/crew";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+import { requirePage } from "@/lib/customPageAccess";
 
 const when = (d: Date) =>
   d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -142,6 +143,7 @@ async function notifyNewlyStaffed(appointmentId: string, added: string[]) {
 
 export async function createAppointment(raw: unknown) {
   const { organizationId, user, role } = await requireSalesOrManager();
+  await requirePage(organizationId, "calendar");
   await enforcePlanLimit(organizationId, "calendarCards");
   const data = input.parse(raw);
   await assertLinksInOrg(organizationId, data);
@@ -182,6 +184,7 @@ export async function createAppointment(raw: unknown) {
 
 export async function updateAppointment(id: string, rawInput: Partial<z.infer<typeof baseInput>>) {
   const { organizationId, user, role } = await requireSalesOrManager();
+  await requirePage(organizationId, "calendar");
   // Server actions are network-invokable — parse at runtime, don't trust the
   // TypeScript signature.
   const raw = baseInput.partial().parse(rawInput);
@@ -254,6 +257,7 @@ export async function updateAppointment(id: string, rawInput: Partial<z.infer<ty
 
 export async function deleteAppointment(id: string) {
   const { organizationId, user, role } = await requireSalesOrManager();
+  await requirePage(organizationId, "calendar");
   const apt = await db.appointment.findUnique({ where: { id } });
   if (!apt || apt.organizationId !== organizationId) throw new Error("Not found");
   if (isSalesRole(role)) await assertSalesCanTouchAppointment(id, user.id);
@@ -278,6 +282,7 @@ export async function deleteAppointment(id: string) {
 
 export async function rescheduleAppointment(id: string, newStartISO: string) {
   const { organizationId, user, role } = await requireSalesOrManager();
+  await requirePage(organizationId, "calendar");
   const apt = await db.appointment.findUnique({ where: { id } });
   if (!apt || apt.organizationId !== organizationId) throw new Error("Not found");
   if (isSalesRole(role)) await assertSalesCanTouchAppointment(id, user.id);

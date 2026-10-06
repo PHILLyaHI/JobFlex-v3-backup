@@ -1,60 +1,118 @@
 // THE CUSTOM PLAN'S PAGE GATE — the server half.
 //
 // A custom-plan org paid for the base workspace plus the add-on pages it
-// ticked at signup (lib/customPlan). Until 2026-08-29 that selection was
-// recorded (`orgPages:<orgId>` in SyncState, written by completePendingSignup)
-// and then read by nothing: an org that bought two pages could open all nine.
+// picked (lib/customPlan). The selection lives in SyncState
+// `orgPages:<orgId>` and is the source of truth: Stripe's page quantity and
+// metadata follow it (lib/customBilling), never the other way round.
 //
-// This module is the one DB read. What the selection MEANS — which hrefs are
-// blocked, whether a path falls under one — is customPlan's pure helpers, so
-// the client-side nav filters and this gate can never disagree.
-//
-// WHO ENFORCES. Both dashboard layouts (src/app/dashboard/layout.tsx for the
-// blueprint tree, src/app/(dashboard)/layout.tsx for the classic tree) call
-// getBlockedCustomPages and redirect a blocked path to /dashboard — the same
-// fail-closed, DB-backed, x-pathname-driven arrangement the role gate uses one
-// line above. The middleware deliberately takes no part: it is edge-runtime
-// and fail-open, and a plan read needs the DB.
-//
-// WHO DRAWS. The layouts hand the same list to the nav provider, and every
-// chrome filter (sidebar, drawer, palette, estimator picker, classic sidebar,
-// tab bar) drops what it names. The nav is a courtesy; the layouts are the
-// boundary.
+// THREE DOORS, ONE ANSWER (owner, 2026-10-06 — the audit found the layouts
+// were the only door that asked):
+//   · the layouts (src/app/dashboard/layout.tsx, src/app/(dashboard)/layout.tsx,
+//     src/app/(mobile)/layout.tsx) draw the offer at a blocked URL and hand
+//     the list to the nav (getBlockedCustomPages — courtesy, fail-open once);
+//   · every page server component of an add-on calls customPageGate
+//     (components/v3/upgrade-gate/custom-page-gate) BEFORE it loads anything,
+//     so a client-side navigation, which skips the layout, still loads no data;
+//   · every server action and API route of an add-on calls requirePage — the
+//     boundary. It fails CLOSED: an unreadable plan is a refusal.
+// The middleware takes no part: it is edge-runtime and cannot read the DB.
 
 import { db } from "@/lib/db";
-import { blockedCustomHrefs, normalizeCustomPages } from "@/lib/customPlan";
+import {
+  CUSTOM_PAGES,
+  blockedCustomHrefs,
+  normalizeCustomPages,
+  type CustomPageId,
+} from "@/lib/customPlan";
+
+/** The error an add-on's server code throws for an org that did not buy it. */
+export class CustomPageLockedError extends Error {
+  readonly code = "CUSTOM_PAGE_LOCKED";
+  constructor(readonly page: CustomPageId) {
+    const label = CUSTOM_PAGES.find((p) => p.id === page)?.label ?? "This page";
+    super(`${label} isn't in your plan.`);
+    this.name = "CustomPageLockedError";
+  }
+}
+
+export function isCustomPageLockedError(err: unknown): err is CustomPageLockedError {
+  return err instanceof Error && (err as { code?: string }).code === "CUSTOM_PAGE_LOCKED";
+}
+
+/** The org's pages: null when the org is not on the custom plan, else the
+ *  pages it holds. Throws when the plan cannot be read — callers that must
+ *  fail closed (requirePage) let it propagate. */
+export async function readCustomPages(organizationId: string): Promise<string[] | null> {
+  const sub = await db.subscription.findUnique({ where: { organizationId }, select: { plan: true } });
+  if ((sub?.plan ?? "").toUpperCase() !== "CUSTOM") return null;
+  const row = await db.syncState.findUnique({ where: { key: `orgPages:${organizationId}` } });
+  if (!row) return [];
+  try {
+    return normalizeCustomPages(JSON.parse(row.cursor) as string[]);
+  } catch {
+    return [];
+  }
+}
 
 /**
  * The hrefs this org may NOT open, or null when the org is not on the custom
  * plan — null, not [], so callers can tell "unrestricted" from "bought
- * everything" without a second read.
+ * everything" without a second read. For the layouts and the nav.
  *
- * A missing or unreadable selection row reads as ZERO pages bought — which is
- * exactly what completePendingSignup writes for a custom signup with no
- * add-ons, so an absent row and an empty purchase are the same state on
- * purpose. The base workspace is never in the blocked list, so a custom org is
- * never locked out of what every custom plan includes.
+ * One retry: dev SQLite throws transient "database is locked" under a
+ * dashboard's burst of parallel reads. Two misses in a row read as
+ * unrestricted HERE — a layout that bricks every org on a flaky DB is worse —
+ * because the page gate and requirePage below fail closed behind it.
  */
 export async function getBlockedCustomPages(
   organizationId: string | null | undefined,
 ): Promise<string[] | null> {
   if (!organizationId) return null;
-  // One retry: dev SQLite throws transient "database is locked" under a
-  // dashboard's burst of parallel reads, and a swallowed error here is the
-  // gate failing OPEN. Two misses in a row we accept — a plan gate that can
-  // brick every org on a flaky DB is worse than one skipped render.
-  const readPlan = () =>
-    db.subscription.findUnique({ where: { organizationId }, select: { plan: true } });
-  const sub = await readPlan().catch(() => readPlan().catch(() => null));
-  if ((sub?.plan ?? "").toUpperCase() !== "CUSTOM") return null;
+  const pages = await readCustomPages(organizationId).catch(() =>
+    readCustomPages(organizationId).catch(() => null),
+  );
+  return pages === null ? null : blockedCustomHrefs(pages);
+}
 
-  const row = await db.syncState
-    .findUnique({ where: { key: `orgPages:${organizationId}` } })
-    .catch(() => null);
-  if (!row) return blockedCustomHrefs([]);
+/** True when the org is on the custom plan and holds NONE of `pages`.
+ *  Fails closed: an unreadable plan counts as locked (one retry first). */
+export async function isPageLocked(
+  organizationId: string,
+  pages: CustomPageId | readonly CustomPageId[],
+): Promise<boolean> {
+  const wanted = typeof pages === "string" ? [pages] : pages;
+  let owned: string[] | null;
   try {
-    return blockedCustomHrefs(normalizeCustomPages(JSON.parse(row.cursor) as string[]));
+    owned = await readCustomPages(organizationId).catch(() => readCustomPages(organizationId));
   } catch {
-    return blockedCustomHrefs([]);
+    return true;
   }
+  if (owned === null) return false;
+  return !wanted.some((p) => owned!.includes(p));
+}
+
+/**
+ * THE SERVER BOUNDARY. Throws CustomPageLockedError when the org is on the
+ * custom plan and holds none of `pages` (an array is "any of" — the HVAC
+ * estimator reads the fence's lot lookup, the video estimator runs Smart
+ * Proposal's engine). Every server action and API route of an add-on calls
+ * this right after it resolves the org.
+ */
+export async function requirePage(
+  organizationId: string,
+  pages: CustomPageId | readonly CustomPageId[],
+): Promise<void> {
+  if (await isPageLocked(organizationId, pages)) {
+    throw new CustomPageLockedError(typeof pages === "string" ? pages : pages[0]);
+  }
+}
+
+/** For API routes: the 403 a locked add-on answers with, or null to go on. */
+export async function pageLockedResponse(
+  organizationId: string,
+  pages: CustomPageId | readonly CustomPageId[],
+): Promise<Response | null> {
+  if (!(await isPageLocked(organizationId, pages))) return null;
+  const err = new CustomPageLockedError(typeof pages === "string" ? pages : pages[0]);
+  return Response.json({ ok: false, error: err.message, code: err.code }, { status: 403 });
 }

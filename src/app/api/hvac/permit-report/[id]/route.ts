@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { coolCalcConfig, coolCalcFetchReport } from "@/lib/hvac/coolcalc";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,8 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   } catch {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
+  const pageLocked = await pageLockedResponse(organizationId, "hvac-estimator");
+  if (pageLocked) return pageLocked;
   const { id } = await ctx.params;
   const cfg = coolCalcConfig();
   if (!cfg) return NextResponse.json({ ok: false, error: "Cool Calc isn't connected on this server." }, { status: 503 });

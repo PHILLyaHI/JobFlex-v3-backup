@@ -23,6 +23,7 @@ import type { Metadata, Viewport } from "next";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { MobileSmartProposal } from "./mobile-advanced-ai";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 // A server action runs under the segment config of the page that calls it,
@@ -48,6 +49,8 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileAdvancedAiV2Page() {
+  const gate = await customPageGate("smart-proposal");
+  if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {
     // Literal, not V3_PORTED_ROUTES: the registry key for this surface is added

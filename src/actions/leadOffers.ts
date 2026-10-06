@@ -5,6 +5,7 @@ import { requireSalesOrManager } from "@/lib/orgContext";
 import { advanceCascade } from "@/lib/leadCenter/cascade";
 import { unmatchAndAdvance } from "@/lib/leadCenter/unmatch";
 import { acceptOfferTx, afterOfferAccepted } from "@/lib/leadCenter/accept";
+import { isPageLocked, requirePage } from "@/lib/customPageAccess";
 
 // Contractor responses to Lead Center offers. Guard parity with claimLead
 // (sales + managers). Every terminal transition is a CONDITIONAL updateMany on
@@ -31,6 +32,9 @@ export async function pendingLeadOffers(): Promise<
   }[]
 > {
   const ctx = await requireSalesOrManager();
+  // The pop-up asks on every page; a shop that did not buy Leads is simply
+  // offered nothing (lib/customPageAccess) rather than answered with an error.
+  if (await isPageLocked(ctx.organizationId, "leads")) return [];
   const offers = await db.leadOffer.findMany({
     where: { organizationId: ctx.organizationId, status: "OFFERED", expiresAt: { gt: new Date() } },
     orderBy: { createdAt: "desc" },
@@ -68,6 +72,7 @@ export async function pendingLeadOffers(): Promise<
 
 async function loadOwnOffer(offerId: string) {
   const ctx = await requireSalesOrManager();
+  await requirePage(ctx.organizationId, "leads");
   const offer = await db.leadOffer.findUnique({
     where: { id: offerId },
     include: { platformLead: true },
@@ -153,6 +158,7 @@ export async function pendingRoutedLeads(): Promise<
   }[]
 > {
   const ctx = await requireSalesOrManager();
+  if (await isPageLocked(ctx.organizationId, "leads")) return [];
   const rows = await db.lead.findMany({
     where: { organizationId: ctx.organizationId, source: "LEAD_CENTER", status: "ROUTED" },
     orderBy: { createdAt: "desc" },
@@ -199,6 +205,7 @@ export async function pendingRoutedLeads(): Promise<
  */
 export async function declineRoutedLead(leadId: string): Promise<{ ok: true; rerouted: boolean }> {
   const ctx = await requireSalesOrManager();
+  await requirePage(ctx.organizationId, "leads");
   const lead = await db.lead.findUnique({ where: { id: leadId } });
   if (!lead || lead.organizationId !== ctx.organizationId) throw new Error("Lead not found");
 

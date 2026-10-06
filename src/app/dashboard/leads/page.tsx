@@ -22,6 +22,7 @@ import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { LeadProfileNudge } from "@/components/dashboard/LeadProfileNudge";
 import { LeadsContent } from "@/components/v3/leads-blueprint/leads-content";
 import type { Lead, Offer } from "@/components/v3/leads-blueprint/leads-data";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,8 @@ function placeLabel(city: string | null, state: string | null): string {
 }
 
 export default async function LeadsPage() {
+  const gate = await customPageGate("leads");
+  if (gate) return gate;
   let organizationId: string;
   let role: string;
   let userId: string;

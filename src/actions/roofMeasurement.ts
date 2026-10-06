@@ -71,6 +71,7 @@ import { foreignIndices, footprintRead, pickMainStructure, rowFigures } from "@/
 import { toDTO, toSummary, type StoredProvenance } from "@/lib/roofDiagram/dto";
 import type { MeasurementProvenance, MeasurementSource, RoofMeasurementDTO, RoofMeasurementSummary } from "@/lib/roofDiagram/types";
 import { takeTrialCap } from "@/lib/trialMeter";
+import { requirePage } from "@/lib/customPageAccess";
 
 type MeasureResult =
   | {
@@ -695,6 +696,7 @@ export async function collectPendingInstant(measurementId: string): Promise<
   let organizationId: string;
   try {
     organizationId = (await requireEstimatorOrManager()).organizationId;
+    await requirePage(organizationId, "roof-estimator");
   } catch (err) {
     return { ok: false, error: errorMessage(err, "Not authorised") };
   }
@@ -897,6 +899,7 @@ export async function measureRoofInstant(
   let userId: string;
   try {
     const ctx = await requireEstimatorOrManager();
+    await requirePage(ctx.organizationId, "roof-estimator");
     organizationId = ctx.organizationId;
     userId = ctx.user.id;
   } catch (err) {
@@ -1006,6 +1009,7 @@ function solarRoofData(estimate: SolarRoofEstimate, input: EvOrderInput): Instan
 /** Google-only preliminary estimate. No EagleView orders, schema changes or AI dimensions. */
 export async function measureRoofSolar(input: EvOrderInput): Promise<MeasureResult> {
   const { organizationId, user } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "roof-estimator");
   const userId = user.id;
   if (!isSolarEnabled()) return { ok: false, error: "Google aerial measurement is not configured for this account." };
   if (!input || typeof input.address !== "string" || input.address.length > 500 ||
@@ -1077,7 +1081,7 @@ export async function measureRoofSolar(input: EvOrderInput): Promise<MeasureResu
 /** One UI action; the active engine is controlled on the server. */
 export async function measureRoof(input: EvOrderInput): Promise<MeasureResult> {
   // Authenticate before deciding on any provider, including fallback paths.
-  await requireEstimatorOrManager();
+  await requirePage((await requireEstimatorOrManager()).organizationId, "roof-estimator");
   if (roofMeasurementProvider() === "google" || !isEagleViewEnabled()) {
     return measureRoofSolar(input);
   }
@@ -1096,6 +1100,7 @@ export async function measureRoofFree(): Promise<MeasureResult> {
 
 export async function listRoofMeasurements(limit = 20): Promise<RoofMeasurementSummary[]> {
   const ctx = await requireEstimatorOrManager();
+  await requirePage(ctx.organizationId, "roof-estimator");
   const rows = await db.roofMeasurement.findMany({
     where: { organizationId: ctx.organizationId },
     orderBy: { createdAt: "desc" },
@@ -1129,6 +1134,7 @@ export async function listRoofMeasurements(limit = 20): Promise<RoofMeasurementS
 
 export async function getRoofMeasurement(id: string): Promise<RoofMeasurementDTO | null> {
   const ctx = await requireEstimatorOrManager();
+  await requirePage(ctx.organizationId, "roof-estimator");
   const row = await db.roofMeasurement.findFirst({ where: { id, organizationId: ctx.organizationId } });
   return row ? toDTO(row) : null;
 }
@@ -1151,6 +1157,7 @@ export async function getMeasurementPhoto(
   id: string,
 ): Promise<{ ok: true; dataUrl: string; zoom: number } | { ok: false; error: string }> {
   const ctx = await requireEstimatorOrManager();
+  await requirePage(ctx.organizationId, "roof-estimator");
   const row = await db.roofMeasurement.findFirst({
     where: { id, organizationId: ctx.organizationId },
     select: { source: true, address: true, city: true, state: true, zip: true, lat: true, lng: true, instantJson: true },
@@ -1180,6 +1187,7 @@ export async function getMeasurementOrtho(id: string): Promise<
   | { ok: false; error: string }
 > {
   const ctx = await requireEstimatorOrManager();
+  await requirePage(ctx.organizationId, "roof-estimator");
   const row = await db.roofMeasurement.findFirst({ where: { id, organizationId: ctx.organizationId }, select: { instantJson: true } });
   if (!row?.instantJson) return { ok: false, error: "No Instant data on this measurement" };
   let instant: InstantRoofData;

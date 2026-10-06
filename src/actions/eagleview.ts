@@ -19,13 +19,14 @@ import {
   type EvLineType,
 } from "@/lib/eagleview";
 import { takeTrialCap } from "@/lib/trialMeter";
+import { requirePage } from "@/lib/customPageAccess";
 
 // NOTE: EV_SAMPLES (sample report ids) lives in ./roofViz (a client-safe module)
 // — a "use server" file may only export async functions, so a const array here
 // becomes a server-action reference on the client and breaks (.map is not a fn).
 
 export async function evEnabled(): Promise<boolean> {
-  await requireEstimatorOrManager();
+  await requirePage((await requireEstimatorOrManager()).organizationId, "roof-estimator");
   return isEagleViewEnabled();
 }
 
@@ -34,7 +35,7 @@ export async function evEnabled(): Promise<boolean> {
 export async function evDiagnostics(): Promise<
   { ok: true; diag: EvDiagnostics } | { ok: false; error: string }
 > {
-  await requireEstimatorOrManager();
+  await requirePage((await requireEstimatorOrManager()).organizationId, "roof-estimator");
   try {
     return { ok: true, diag: await runEagleViewDiagnostics() };
   } catch (err: unknown) {
@@ -45,7 +46,7 @@ export async function evDiagnostics(): Promise<
 export async function evProducts(): Promise<
   { ok: true; products: EvProduct[] } | { ok: false; error: string }
 > {
-  await requireEstimatorOrManager();
+  await requirePage((await requireEstimatorOrManager()).organizationId, "roof-estimator");
   if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   try {
     return { ok: true, products: await getAvailableProducts() };
@@ -60,6 +61,7 @@ export async function evRoofModel(
   reportId: number,
 ): Promise<{ ok: true; model: RoofModel; cached: boolean; totalCost: number | null } | { ok: false; error: string }> {
   const { organizationId, user } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "roof-estimator");
   if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   if (!Number.isFinite(reportId)) return { ok: false, error: "Invalid report id" };
   try {
@@ -125,7 +127,7 @@ export async function evRoofModel(
 export async function evPriceRoof(
   input: EvOrderInput,
 ): Promise<{ ok: true; price: unknown } | { ok: false; error: string }> {
-  await requireEstimatorOrManager();
+  await requirePage((await requireEstimatorOrManager()).organizationId, "roof-estimator");
   if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   try {
     return { ok: true, price: await priceOrder(input) };
@@ -140,6 +142,7 @@ export async function evOrderRoof(
   input: EvOrderInput,
 ): Promise<{ ok: true; reportId: number } | { ok: false; error: string }> {
   const { organizationId, user } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "roof-estimator");
 await enforceRateLimit(`ev-order:${organizationId}`, 5, DAY, "roof report orders");
   if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   // A billed report: the card-less trial's own ceiling (lib/trialMeter).
@@ -179,6 +182,7 @@ export async function evReportStatus(
   | { ok: false; error: string }
 > {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "roof-estimator");
   if (!isEagleViewEnabled()) return { ok: false, error: "Aerial data is not configured" };
   try {
     const s = await getReportSummary(reportId);
@@ -221,6 +225,7 @@ export async function evReportFootages(input: {
   | { ok: false; error: string }
 > {
   const { organizationId } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "roof-estimator");
   const want = norm(input.address);
   if (!want) return { ok: true, state: "none" };
   const rows = await db.eagleViewReport.findMany({

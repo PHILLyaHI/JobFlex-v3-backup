@@ -17,16 +17,13 @@
 
 import Link from "next/link";
 import type { Route } from "next";
-import { CUSTOM_PAGES } from "@/lib/customPlan";
+import { pageForPath } from "@/lib/customPlan";
 import "./upgrade-gate.css";
 
-/** The catalog row that owns this pathname, for the headline. */
-function pageFor(pathname: string) {
-  return CUSTOM_PAGES.find((p) => pathname === p.href || pathname.startsWith(p.href + "/"));
-}
 
 export function UpgradeGate({ pathname }: { pathname: string }) {
-  const page = pageFor(pathname);
+  // The page the path OPENS — aliases and handheld URLs included.
+  const page = pageForPath(pathname);
   const label = page?.label ?? "This page";
   return (
     <div className="jf-upgate" data-nest="">

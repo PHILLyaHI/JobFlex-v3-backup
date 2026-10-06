@@ -21,6 +21,7 @@ import { readEstimateSeed } from "@/lib/estimateSeed";
 import { EstimateSeedStrip } from "@/components/v3/estimate-seed-strip";
 import { looksLikeStreetAddress } from "@/lib/leadRules";
 import { requireOrg } from "@/lib/orgContext";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 /** The hand-off seed for this company's roof estimator, or null — never an error. */
 async function readRoofSeed() {
@@ -47,6 +48,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RoofEstimatorPage() {
+  const gate = await customPageGate("roof-estimator");
+  if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {
     redirect("/auth/login?next=%2Fdashboard%2Froof-estimator");

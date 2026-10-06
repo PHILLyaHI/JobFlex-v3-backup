@@ -8,6 +8,7 @@ import { geocodeOrgAddress } from "@/lib/leadCenter/eligibility";
 import { loadTeamActivity } from "@/lib/teamActivity";
 import { toActivityEntries } from "@/components/v3/company-blueprint/company-data";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+import { isPageLocked, requirePage } from "@/lib/customPageAccess";
 
 const brandingInput = z.object({
   name: z.string().min(1).optional(),
@@ -21,6 +22,7 @@ const brandingInput = z.object({
 
 export async function updateBranding(raw: unknown) {
   const { organizationId, user } = await requireManager();
+  await requirePage(organizationId, "company");
   const data = brandingInput.parse(raw);
 
   // Keep the Lead Center pin in sync — branding is the other surface that can
@@ -85,6 +87,7 @@ export async function updateLeadProfile(
   raw: unknown,
 ): Promise<{ geocoded: boolean; reason: string | null }> {
   const { organizationId, user } = await requireManager();
+  await requirePage(organizationId, "company");
   const data = leadProfileInput.parse(raw);
 
   const current = await db.organization.findUnique({
@@ -170,6 +173,9 @@ export async function leadProfileGaps(): Promise<{
   reason: string | null;
 }> {
   const { organizationId } = await requireOrg();
+  // The nudge points at the Company page; a shop that did not buy it is not
+  // sent there (lib/customPageAccess).
+  if (await isPageLocked(organizationId, "company")) return { needsAddress: false, needsTrades: false, paused: false, reason: null };
   const org = await db.organization.findUnique({
     where: { id: organizationId },
     select: { lat: true, lng: true, tradeTypesJson: true, leadOffersEnabled: true },
@@ -189,6 +195,7 @@ export async function leadProfileGaps(): Promise<{
 
 export async function getCompanySeed() {
   const { organizationId } = await requireOrg();
+  await requirePage(organizationId, "company");
   const [org, activity] = await Promise.all([
     db.organization.findUnique({ where: { id: organizationId } }),
     loadTeamActivity(organizationId),
@@ -231,6 +238,7 @@ const landingInput = z.object({
 
 export async function updateLanding(raw: unknown) {
   const { organizationId, user } = await requireManager();
+  await requirePage(organizationId, "company");
   const data = landingInput.parse(raw);
   await db.organization.update({
     where: { id: organizationId },

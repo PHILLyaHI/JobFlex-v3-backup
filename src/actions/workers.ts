@@ -14,6 +14,7 @@ import { afterResponse } from "@/lib/server-events";
 import { sendText } from "@/lib/sms/send";
 import { welcomeText } from "@/lib/sms/format";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
+import { requirePage } from "@/lib/customPageAccess";
 
 const inviteInput = z.object({
   name: z.string().min(1),
@@ -64,6 +65,7 @@ export async function createWorkerInvite(raw: unknown): Promise<WorkerInviteResu
 
 async function inviteWorker(raw: unknown) {
   const { organizationId, user: inviter } = await requireManager();
+  await requirePage(organizationId, "workers");
   const data = inviteInput.parse(raw);
 
   // Manager seats are plan-metered (owner's call, 2026-08-31): the crew flow
@@ -392,6 +394,7 @@ const updateWorkerInput = z.object({
 // the worker's login identity and is intentionally not editable here.
 export async function updateWorker(raw: unknown) {
   const { organizationId, user, role: actorRole } = await requireManager();
+  await requirePage(organizationId, "workers");
   let previousRole: string | null | undefined;
   const data = updateWorkerInput.parse(raw);
   const w = await db.workerProfile.findUnique({ where: { id: data.id } });
@@ -461,6 +464,7 @@ export async function updateWorker(raw: unknown) {
 
 export async function revokeWorker(workerId: string) {
   const { organizationId, user } = await requireManager();
+  await requirePage(organizationId, "workers");
   const w = await db.workerProfile.findUnique({ where: { id: workerId } });
   if (!w || w.organizationId !== organizationId) throw new Error("Not found");
 
@@ -487,6 +491,7 @@ export async function revokeWorker(workerId: string) {
 // record is left intact — they may belong to other organizations.
 export async function removeWorker(workerId: string) {
   const { organizationId, user, role: actorRole } = await requireManager();
+  await requirePage(organizationId, "workers");
   const w = await db.workerProfile.findUnique({ where: { id: workerId } });
   if (!w || w.organizationId !== organizationId) throw new Error("Not found");
 

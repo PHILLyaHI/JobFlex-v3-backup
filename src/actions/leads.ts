@@ -10,6 +10,7 @@ import {
 import { db } from "@/lib/db";
 import { LeadStatus } from "@/lib/prismaEnums";
 import { enforcePlanLimit } from "@/lib/limitsEngine";
+import { requirePage } from "@/lib/customPageAccess";
 
 // Sales reps may only act on leads inside their visibility slice: assigned to
 // them, claimed by them, or still NEW in the shared pool. Managers see it all.
@@ -118,6 +119,7 @@ const importLeadsInput = z.array(importLeadInput).min(1).max(500);
 // Sales reps may import too — rows land as NEW, which is inside their slice.
 export async function importLeads(raw: unknown) {
   const { organizationId, user } = await requireSalesOrManager();
+  await requirePage(organizationId, "leads");
   const rows = importLeadsInput.parse(raw);
 
   // Bulk headroom: the whole batch must fit within the remaining lead quota.

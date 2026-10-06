@@ -7,6 +7,7 @@ import { contactsLocked } from "@/lib/leadCenter/contacts";
 import { LeadDetailContent } from "@/components/v3/lead-detail-blueprint/lead-detail-content";
 import { contractorFolder, listFolder } from "@/lib/home/files";
 import { findClientForLead } from "@/lib/leadClient";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 // ONE LEAD (2026-09-22) — under the blueprint shell, the same design as the
 // Leads list it opens from. Session-scoped, never static.
@@ -24,6 +25,8 @@ export default async function LeadDetailPage({
   params: Promise<{ id: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  const gate = await customPageGate("leads");
+  if (gate) return gate;
   const { id } = await params;
   const scopeFailed = (await searchParams)?.scope === "failed";
   let organizationId: string;

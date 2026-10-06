@@ -20,6 +20,7 @@ import { db } from "@/lib/db";
 import { MarkNavSeen } from "@/components/layout/MarkNavSeen";
 import { WorkersContent } from "@/components/v3/workers-blueprint/workers-content";
 import { lastActiveLabel, laterOf, type InviteStatus, type WorkerEntry } from "@/components/v3/workers-blueprint/workers-data";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,8 @@ function joinedLabel(d: Date): string {
 }
 
 export default async function WorkersPage() {
+  const gate = await customPageGate("workers");
+  if (gate) return gate;
   let organizationId: string;
   try {
     const ctx = await requireOrg();

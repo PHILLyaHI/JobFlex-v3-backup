@@ -1,4 +1,5 @@
 "use client";
+import { isCustomBlockedPath } from "@/lib/customPlan";
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -202,10 +203,10 @@ export function Sidebar({
   const navGroups = React.useMemo(() => {
     const base = navGroupsFor(role);
     if (!lockedHrefs?.length) return base;
-    // Prefix match, so the legacy estimator paths under /dashboard/advanced-ai
-    // fall with their parent when Smart Proposal is not in the bought set.
-    const blocked = (href: string) =>
-      lockedHrefs.some((p) => href === p || href.startsWith(p + "/"));
+    // Resolved to the page each href opens (lib/customPlan): the legacy
+    // estimator paths under /dashboard/advanced-ai are the roof and fence
+    // estimators, not Smart Proposal.
+    const blocked = (href: string) => isCustomBlockedPath(lockedHrefs, href.split("?")[0]);
     return base
       .map((g) => ({ ...g, items: g.items.filter((i) => !blocked(i.href)) }))
       .filter((g) => g.items.length > 0);

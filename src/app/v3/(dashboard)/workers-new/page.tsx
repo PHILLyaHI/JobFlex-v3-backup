@@ -9,6 +9,7 @@ import {
   WorkersLedger,
   type LedgerEntry,
 } from "@/components/v3/workers-new/workers-ledger";
+import { customPageGate } from "@/components/v3/upgrade-gate/custom-page-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,8 @@ function parseSpec(raw: string | null): string[] {
 }
 
 export default async function WorkersNewPage() {
+  const gate = await customPageGate("workers");
+  if (gate) return gate;
   let organizationId: string | null = null;
   try {
     const ctx = await requireOrg();

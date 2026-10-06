@@ -4,11 +4,14 @@ import { db } from "@/lib/db";
 import { requireFeatureOrThrow } from "@/lib/entitlements";
 import { getOrgPlanById } from "@/lib/orgPlan";
 import { toCsv } from "@/lib/csv";
+import { pageLockedResponse } from "@/lib/customPageAccess";
 
 export const runtime = "nodejs";
 
 export async function GET() {
   const { organizationId } = await requireManager();
+  const pageLocked = await pageLockedResponse(organizationId, "leads");
+  if (pageLocked) return pageLocked;
   const plan = await getOrgPlanById(organizationId);
   try {
     requireFeatureOrThrow(plan, "csv_export");
