@@ -6,6 +6,8 @@ The roof estimator keeps one **Measure this roof** action. The server uses Googl
 
 The source is saved as `solar`, separate from EagleView and retired reconstruction records. The existing numeric takeoff contract is reused, but no EagleView order ID, facet count, measured linear footage, or classification is invented. Valid estimates can be priced and converted immediately, without a review checkbox. Estimated labels and preliminary assumptions remain; missing pitch/area and pending paid-report checks still apply. The result can be reopened from Recent. Same-address/same-pin results are reused within 24 hours.
 
+The report displays **Roof facets ≈N · estimated planes** from the accepted model's positive integer `segmentCount`, including previously saved Solar estimates. This is a display estimate, not a verified architectural count: the stored measured `facetCount` and pricing fact remain null for Solar. Missing or malformed counts display unavailable. No additional lookup, AI call, migration, or measurement charge is needed to reopen the counter.
+
 ## Calculation and limits
 
 Google's roof surface area already includes slope. The estimator uses `wholeRoofStats.areaMeters2 × buildingStats.groundAreaMeters2 / wholeRoofStats.groundAreaMeters2`, following the [Solar schema guidance](https://developers.google.com/maps/documentation/solar/reference/rest/v1/buildingInsights/findClosest). This extrapolates the modeled average slope into unmodeled areas. It is not an independent elevation measurement or an accuracy guarantee.
@@ -67,3 +69,11 @@ These are **same-source consistency checks**, not independent accuracy validatio
 At the owner's request, removed provider naming from Measurement details and removed the Solar-only confirmation checkbox and pricing/conversion gate. Stored source metadata, map attribution, estimated quantity labels, preliminary assumptions, and existing missing-data/pending-report checks remain.
 
 Verified at 390×844 that a saved Solar result immediately prices, builds 25 lines, and converts to a development QA draft without confirmation. Measurement details contains no provider name; no horizontal overflow. At 1440px, package pricing and Smart Estimate generation are enabled. Focused ESLint, full TypeScript, and diff checks passed.
+
+## Facet counter comparison — 2026-10-06
+
+Matched the selected main structure (including nonzero main-structure indices) to the existing 24 accepted, outline-matched benchmark roofs. Two lacked an EagleView facet value, leaving 22 comparable counts. Google's detected segment count matched EagleView on 4/22 roofs; 13/22 differed by at most one and 16/22 by at most two. Mean absolute difference was 1.77 facets; the largest difference was six. These are agreement statistics, not measured accuracy. The stored EagleView Property Data facet confidence scores ranged from 0.2312 to 0.6205; these references are not independently verified architectural reports.
+
+Also ran the existing DSM plane reconstruction against the four cached, isolated building rasters, using minimum plane areas of 6, 12, and 24 sq ft. Counts changed from 11/6/4 for Nashville (Google 5, no EagleView reference), 11/10/8 for benchmark A (Google 8, EagleView 8), 15/12/9 for B (Google 8, EagleView 9), and 16/11/8 for C (Google 10, EagleView 10). The reconstructed mask areas agreed with the previously isolated building masks, but the facet counts were sensitive to the noise threshold. No reconstruction threshold was fitted to those targets or shipped as an accuracy improvement.
+
+The counter therefore uses the existing validated segment count with an approximation sign and explicit estimated label. A visual AI recount was not deployed: there is no independently labeled evaluation proving it improves these counts, and imagery can obscure small surfaces. Details explain the limitations without adding a pricing gate or provider branding. Customer-level comparison and diagnostic results remain in ignored `.cache/roof-fallback/`.

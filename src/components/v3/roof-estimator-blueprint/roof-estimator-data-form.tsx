@@ -265,6 +265,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
   const [measurementBusy, setMeasurementBusy] = React.useState(false);
   const isSolar = measurement?.source === "solar";
   const solar = isSolar ? measurement.provenance.solar : null;
+  // Only display the accepted model's real plane count. Missing/invalid saved
+  // values stay unknown; this estimate must not become a measured takeoff fact.
+  const solarFacetCount = solar && Number.isSafeInteger(solar.segmentCount) && solar.segmentCount > 0
+    ? solar.segmentCount
+    : null;
   // Pricing allocates sloped roofing squares, so weight families by surface
   // area rather than footprint; otherwise steep facets are underpriced.
   const solarSurfaceTotal = solar?.pitchFamilies.reduce((sum, family) => sum + family.surfaceSqft, 0) ?? 0;
@@ -1799,7 +1804,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
               <HeroCell l="Total area" v={totals?.areaSqft != null ? num(totals.areaSqft) : "—"} h={isSolar ? "sq ft · estimated" : "sq ft"} />
               <HeroCell l="Roofing squares" v={totals?.squares != null ? num(totals.squares, 1) : "—"} h="× 100 sq ft" accent />
               <HeroCell l="Predominant pitch" v={pitchLabelShown} h={pitchHint} />
-              {!isSolar && <HeroCell l="Roof facets" v={totals?.facetCount != null ? String(totals.facetCount) : "—"} h="planes" />}
+              <HeroCell
+                l="Roof facets"
+                v={isSolar ? (solarFacetCount != null ? `≈${solarFacetCount}` : "—") : (totals?.facetCount != null ? String(totals.facetCount) : "—")}
+                h={isSolar ? (solarFacetCount != null ? "estimated planes" : "unavailable") : "planes"}
+              />
               <HeroCell l="Eaves + rakes" v={edgeTiles.edges} h={isSolar ? "linear ft · estimated" : "linear ft"} />
               <HeroCell l="Ridge + hips" v={edgeTiles.ridge} h={isSolar ? "linear ft · estimated" : "linear ft"} />
               <HeroCell l="Valleys" v={edgeTiles.valley} h={isSolar ? "not measured" : "linear ft"} />
@@ -1899,10 +1908,10 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                         <div className="rf-details-row"><dt>Imagery date</dt><dd>{solar?.imageryDate ?? "Unavailable"}</dd></div>
                         <div className="rf-details-row"><dt>Imagery quality</dt><dd>{solar?.imageryQuality ?? "Unavailable"}</dd></div>
                         <div className="rf-details-row"><dt>Building footprint</dt><dd>{footprint.sqft != null ? `${num(footprint.sqft)} sq ft` : "Unavailable"}</dd></div>
-                        <div className="rf-details-row"><dt>Modeled segments</dt><dd>{solar?.segmentCount ?? "Unavailable"}</dd></div>
+                        <div className="rf-details-row"><dt>Roof facets (estimated)</dt><dd>{solarFacetCount != null ? `≈${solarFacetCount}` : "Unavailable"}</dd></div>
                         {solar && <div className="rf-details-row"><dt>Area method</dt><dd>{solar.areaMethod === "google-ground-area-ratio" ? "Adjusted for building footprint" : "Modeled roof area"}</dd></div>}
                       </dl>
-                      <p className="rf-details-note">Modeled segments are not verified roof facets. Roof condition, eave height and measured edge lengths are unavailable.</p>
+                      <p className="rf-details-note">The facet count estimates roof surfaces from detected planes. Small dormers, obscured sections and separate surfaces may be missed or combined. It is not a verified facet count. Roof condition, eave height and measured edge lengths are unavailable.</p>
                       <p className="rf-details-note">The satellite view may show imagery from a different date.</p>
                       {solar?.warnings.map((warning, index) => (
                         <p className="rf-details-note" key={index}>
