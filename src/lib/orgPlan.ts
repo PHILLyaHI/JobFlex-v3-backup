@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
+import { CUSTOM_PLAN_TIER } from "@/lib/customPlan";
 
 /**
  * Resolve an org's effective feature tier.
@@ -21,6 +22,8 @@ export async function getOrgPlanById(organizationId: string): Promise<Plan> {
   const upper = sub.plan.toUpperCase();
   // Built-in tier name → use it as-is.
   if ((PLAN_TIERS as readonly string[]).includes(upper)) return upper as Plan;
+  // The custom plan rides on Professional (lib/customPlan CUSTOM_PLAN_TIER).
+  if (upper === "CUSTOM") return CUSTOM_PLAN_TIER;
 
   // Custom assigned plan: confirm it maps to a real PricingPlan (case-insensitive),
   // then grant full feature access. Quotas come from that plan's limits, not here.

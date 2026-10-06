@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
 import { parsePlanLimits } from "@/lib/planLimits";
 import { planDisplayName, type PlanDTO } from "@/lib/planCatalog";
+import { CUSTOM_PLAN_TIER } from "@/lib/customPlan";
 
 /** Canonical parser for the PricingPlan.features JSON column. */
 export function parseFeatures(raw: string | null | undefined): string[] {
@@ -147,7 +148,9 @@ export async function getOrgPlanContext(organizationId: string): Promise<{
   const upper = rawPlan.toUpperCase();
   const tier: Plan = (PLAN_TIERS as readonly string[]).includes(upper)
     ? (upper as Plan)
-    : plan
+    : upper === "CUSTOM"
+      ? CUSTOM_PLAN_TIER
+      : plan
       ? "ENTERPRISE"
       : "FREE";
   return { tier, plan, rawPlan };

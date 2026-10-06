@@ -142,6 +142,15 @@ export function customPriceCents(
 /** The slug the rest of the app recognises for this plan. */
 export const CUSTOM_PLAN_SLUG = "custom";
 
+/** WHAT A CUSTOM PLAN IS ENTITLED TO, beyond its pages (owner, 2026-10-06):
+ *  Professional's limits (the "professional" catalog row's limitsJson —
+ *  workers, seats, proposals…) and Professional's feature tier (SMS
+ *  allowance, the company's own texting number), whatever pages it holds.
+ *  Before this the custom plan had no catalog row, so every limit read as
+ *  unlimited and its tier as FREE. */
+export const CUSTOM_PLAN_TIER = "PROFESSIONAL" as const;
+export const CUSTOM_PLAN_LIMITS_SLUG = "professional";
+
 /** Trial length when nothing has been set in /admin/plans. The admin value
  *  lives in SyncState (lib/customPlanConfig) because the custom plan has no
  *  PricingPlan row to hold a trialDays column; this is the client-safe floor

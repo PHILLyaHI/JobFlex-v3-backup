@@ -55,6 +55,7 @@ export function planCtaLabel(trialDays: number): string {
  */
 export function featureTierForSlug(slug: string): Plan {
   const upper = slug.toUpperCase();
+  if (upper === "CUSTOM") return "PROFESSIONAL"; // lib/customPlan CUSTOM_PLAN_TIER
   return (PLAN_TIERS as readonly string[]).includes(upper) ? (upper as Plan) : "ENTERPRISE";
 }
 

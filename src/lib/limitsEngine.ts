@@ -66,6 +66,7 @@ import {
   type LimitScope,
   type PlanLimits,
 } from "@/lib/planLimits";
+import { CUSTOM_PLAN_LIMITS_SLUG, CUSTOM_PLAN_SLUG } from "@/lib/customPlan";
 
 export type LimitResource = LimitKey;
 
@@ -283,7 +284,10 @@ async function resolvePlan(
   );
 
   const lapsed = isLapsed(sub, now);
-  const planKey = lapsed ? "free" : (sub?.plan ?? "FREE").toLowerCase();
+  // The custom plan has no catalog row of its own: it is metered by
+  // Professional's limits (lib/customPlan CUSTOM_PLAN_LIMITS_SLUG).
+  const storedKey = (sub?.plan ?? "FREE").toLowerCase();
+  const planKey = lapsed ? "free" : storedKey === CUSTOM_PLAN_SLUG ? CUSTOM_PLAN_LIMITS_SLUG : storedKey;
   // Subscription.plan casing (e.g. "PROFESSIONAL") may differ from the
   // admin-entered PricingPlan.slug, and SQLite has no case-insensitive `mode`.
   // There are few plans, so match case-insensitively in JS to avoid a

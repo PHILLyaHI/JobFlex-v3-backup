@@ -62,7 +62,11 @@ export const SMS_ALLOWANCE: Record<Plan, number> = {
 };
 export const SMS_OVERAGE_CENTS = 3;
 export function smsAllowanceFor(plan: Plan | string | null | undefined): number {
-  return SMS_ALLOWANCE[(plan as Plan) ?? "FREE"] ?? SMS_ALLOWANCE.FREE;
+  // Subscription.plan as stored may be lower-case or "CUSTOM"; the custom plan
+  // rides on Professional (lib/customPlan CUSTOM_PLAN_TIER).
+  const upper = (plan ?? "FREE").toUpperCase();
+  const tier = upper === "CUSTOM" ? "PROFESSIONAL" : upper;
+  return SMS_ALLOWANCE[tier as Plan] ?? SMS_ALLOWANCE.FREE;
 }
 
 const RANK: Record<Plan, number> = {
