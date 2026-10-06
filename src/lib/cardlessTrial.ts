@@ -30,6 +30,7 @@ import { cardlessTrialState, patchCardlessRecord, readCardlessRecord, type Cardl
 import { isCardlessTrialLapse, syncSubscriptionFromStripe } from "@/lib/stripeSync";
 import { db } from "@/lib/db";
 import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
+import { readOrgPages } from "@/lib/customBilling";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 
 export type CardlessStart =
@@ -154,11 +155,15 @@ export async function nameOrgOnSubscription(subId: string, orgId: string): Promi
   }
 }
 
-/** The plan the trial runs on, as the screens print it. */
-export async function trialPlanSummary(rec: CardlessRecord): Promise<{ name: string; cents: number; per: string }> {
+/** The plan the trial runs on, as the screens print it. A custom plan is
+ *  priced from the pages the org holds NOW (lib/customBilling), not the ones
+ *  it picked at signup — pages added or removed during the trial move the
+ *  price the ribbon, the reminders and the card checkout name. */
+export async function trialPlanSummary(rec: CardlessRecord, orgId?: string): Promise<{ name: string; cents: number; per: string }> {
   const per = rec.interval === "YEAR" ? "/yr" : "/mo";
   if (rec.planSlug === CUSTOM_PLAN_SLUG) {
-    return { name: "Custom", cents: customPriceCents(rec.customPages, rec.interval), per };
+    const pages = orgId ? await readOrgPages(orgId).catch(() => rec.customPages) : rec.customPages;
+    return { name: "Custom", cents: customPriceCents(pages, rec.interval), per };
   }
   const plan = await getPlanBySlug(rec.planSlug);
   const cents = rec.interval === "YEAR" ? (plan?.yearlyPriceCents ?? plan?.priceCents ?? 0) : (plan?.priceCents ?? 0);
@@ -190,7 +195,9 @@ export async function openCardCheckout(orgId: string, origin: string): Promise<{
     if (!session.url) return null;
     return { url: session.url, purpose: "trial-card" };
   }
-  const priced = await resolveSignupPrice({ stripe, mode, planSlug: rec.planSlug, interval: rec.interval, customPages: rec.customPages });
+  // The custom plan restarts on the pages the org holds now, not its signup pick.
+  const pages = rec.planSlug === CUSTOM_PLAN_SLUG ? await readOrgPages(orgId) : [];
+  const priced = await resolveSignupPrice({ stripe, mode, planSlug: rec.planSlug, interval: rec.interval, customPages: pages });
   if (!priced.ok) throw new Error(priced.error);
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
@@ -203,7 +210,7 @@ export async function openCardCheckout(orgId: string, origin: string): Promise<{
         planSlug: priced.planLabel,
         interval: rec.interval,
         jf_after_trial: "1",
-        ...(priced.isCustom ? { customPages: rec.customPages.join(",") } : {}),
+        ...(priced.isCustom ? { customPages: pages.join(",") } : {}),
       },
     },
     metadata: { organizationId: orgId, jf_purpose: "trial-restart", planSlug: priced.planLabel },
@@ -276,7 +283,7 @@ export type TrialView = {
 export async function trialView(orgId: string): Promise<TrialView | null> {
   const state = await cardlessTrialState(orgId);
   if (!state) return null;
-  const plan = await trialPlanSummary(state.record);
+  const plan = await trialPlanSummary(state.record, orgId);
   const dollars = plan.cents / 100;
   const price = `$${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}${plan.per}`;
   if (state.kind === "ended") {
@@ -330,7 +337,7 @@ export async function runCardlessTrialSweep(now = new Date()): Promise<{ scanned
       if (when === "today" ? state.record.mailedTodayAt : state.record.mailedSoonAt) continue;
       const to = await ownerContact(orgId);
       if (!to) continue;
-      const plan = await trialPlanSummary(state.record);
+      const plan = await trialPlanSummary(state.record, orgId);
       const dollars = plan.cents / 100;
       const { subject, html } = renderEmail(
         buildTrialReminder({
