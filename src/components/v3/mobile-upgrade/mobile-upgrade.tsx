@@ -42,7 +42,8 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { expandPlanFeatures } from "@/lib/planCatalog";
-import { changePlan, removeCustomPages } from "@/actions/billing";
+import { changePlan, updateCustomPages } from "@/actions/billing";
+import { CustomChangeNote } from "@/components/v3/upgrade-blueprint/custom-change-note";
 import { toast } from "@/components/ui/Toast";
 import {
   CUSTOM_BASE_CENTS,
@@ -66,7 +67,7 @@ type Confirm =
   | { kind: "up"; plan: UpgradePlan; from?: UpgradePlan }
   | { kind: "down"; plan: UpgradePlan; from?: UpgradePlan }
   | { kind: "custom"; pages: string[] }
-  | { kind: "remove"; pages: string[]; removing: string[] };
+  | { kind: "pages"; pages: string[]; removing: string[]; adding: string[] };
 
 export type MobileUpgradeProps = {
   plans: UpgradePlan[];
@@ -257,22 +258,34 @@ export function MobileUpgradeContent({
   const removes = onCustom ? owned.filter((id) => !picked.includes(id)) : [];
   const nextMonthlyCents = customPriceCents(picked);
 
-  async function removePages(removing: string[]) {
-    if (busy || removing.length === 0) return;
+  /* A change to the pages of a Custom plan — added, removed or both — is made
+     on the subscription the shop already has (actions/billing.updateCustomPages,
+     lib/customBilling): added pages are charged now, prorated (nothing in a
+     trial); removed pages close now and the price drops from the next bill. */
+  async function changePages(pages: string[]) {
+    if (busy) return;
     setErr(null);
     setBusy("custom-remove");
     try {
-      const res = await removeCustomPages(removing);
+      const res = await updateCustomPages(pages);
       if (!res.ok) throw new Error(res.error);
       setOwned(res.pages);
       closeConfirm();
+      const what = [
+        res.added.length ? `${res.added.length} page${res.added.length === 1 ? "" : "s"} added` : "",
+        res.removed.length ? `${res.removed.length} removed` : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
       toast.success(
-        `${res.removed} page${res.removed === 1 ? "" : "s"} removed`,
-        `Your plan is ${dollars(res.monthlyCents)}/mo from the next bill.`,
+        what || "Plan updated",
+        res.chargedCents > 0
+          ? `${dollars(res.chargedCents)} charged today. Your plan is ${dollars(res.monthlyCents)}/mo from the next bill.`
+          : `Your plan is ${dollars(res.monthlyCents)}/mo from the next bill.`,
       );
       router.refresh();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Couldn't remove the pages.");
+      setErr(e instanceof Error ? e.message : "Couldn't change the pages.");
       closeConfirm();
     } finally {
       setBusy(null);
@@ -538,8 +551,12 @@ export function MobileUpgradeContent({
       ? `Downgrade to ${confirm.plan.name}?`
       : confirm?.kind === "up"
         ? `Upgrade to ${confirm.plan.name}?`
-        : confirm?.kind === "remove"
-          ? `Remove ${confirm.removing.length} page${confirm.removing.length === 1 ? "" : "s"}?`
+        : confirm?.kind === "pages"
+          ? confirm.adding.length && confirm.removing.length
+            ? "Change your pages?"
+            : confirm.adding.length
+              ? `Add ${confirm.adding.length} page${confirm.adding.length === 1 ? "" : "s"}?`
+              : `Remove ${confirm.removing.length} page${confirm.removing.length === 1 ? "" : "s"}?`
           : onCustom
             ? "Change your Custom plan?"
             : "Switch to a Custom plan?";
@@ -547,8 +564,12 @@ export function MobileUpgradeContent({
   const confirmLabel =
     confirm?.kind === "down"
       ? `Downgrade to ${confirm.plan.name}`
-      : confirm?.kind === "remove"
-        ? "Remove pages"
+      : confirm?.kind === "pages"
+        ? confirm.adding.length
+          ? confirm.removing.length
+            ? "Confirm change"
+            : `Add ${confirm.adding.length} page${confirm.adding.length === 1 ? "" : "s"}`
+          : "Remove pages"
         : "Continue to payment";
 
   const confirmSheet =
@@ -577,7 +598,7 @@ export function MobileUpgradeContent({
                   <div className="mu-kick">
                     {confirm.kind === "down"
                       ? "Downgrade"
-                      : confirm.kind === "remove"
+                      : confirm.kind === "pages"
                         ? "Custom plan"
                         : "Upgrade"}
                   </div>
@@ -605,17 +626,8 @@ export function MobileUpgradeContent({
                       for <b>{confirm.plan.name}</b>. Your current plan is replaced the moment the
                       payment goes through.
                     </>
-                  ) : confirm.kind === "remove" ? (
-                    <>
-                      <b>
-                        {confirm.removing
-                          .map((id) => CUSTOM_PAGES.find((pg) => pg.id === id)?.label ?? id)
-                          .join(", ")}
-                      </b>{" "}
-                      close{confirm.removing.length === 1 ? "s" : ""} as soon as you confirm. Your
-                      plan is <b>{dollars(customPriceCents(confirm.pages))}/mo</b> from the next
-                      bill; nothing is refunded for the rest of this cycle.
-                    </>
+                  ) : confirm.kind === "pages" ? (
+                    <CustomChangeNote pages={confirm.pages} adding={confirm.adding} removing={confirm.removing} />
                   ) : (
                     <>
                       You&rsquo;ll be taken to Stripe to pay{" "}
@@ -646,7 +658,7 @@ export function MobileUpgradeContent({
                     onClick={() => {
                       if (confirm.kind === "down") void switchDown(confirm.plan);
                       else if (confirm.kind === "up") void payFor(confirm.plan.slug);
-                      else if (confirm.kind === "remove") void removePages(confirm.removing);
+                      else if (confirm.kind === "pages") void changePages(confirm.pages);
                       else void payFor(CUSTOM_PLAN_SLUG, confirm.pages);
                     }}
                   >
@@ -776,7 +788,7 @@ export function MobileUpgradeContent({
                     <i>
                       {onCustom
                         ? adds.length > 0
-                          ? "per month · paid on Stripe"
+                          ? "per month · added pages prorated today"
                           : removes.length > 0
                             ? "per month from the next bill"
                             : "per month · your plan today"
@@ -790,12 +802,11 @@ export function MobileUpgradeContent({
                       disabled={(adds.length === 0 && removes.length === 0) || busy !== null}
                       onClick={() => {
                         closePicker();
-                        if (adds.length > 0) setConfirm({ kind: "custom", pages: picked });
-                        else setConfirm({ kind: "remove", pages: picked, removing: removes });
+                        setConfirm({ kind: "pages", pages: picked, removing: removes, adding: adds });
                       }}
                     >
                       {adds.length > 0
-                        ? `Continue to payment · ${dollars(nextMonthlyCents)}/mo`
+                        ? `Review · ${dollars(nextMonthlyCents)}/mo`
                         : removes.length > 0
                           ? `Remove ${removes.length} page${removes.length === 1 ? "" : "s"}`
                           : "No changes"}
@@ -927,7 +938,7 @@ export function MobileUpgradeContent({
         {!isOwner ? (
           <p className="mu-fine">Plan changes are owner-only — ask the account owner.</p>
         ) : null}
-        {confirm?.kind === "custom" || confirm?.kind === "remove" ? confirmSheet : planDialog}
+        {confirm?.kind === "custom" || confirm?.kind === "pages" ? confirmSheet : planDialog}
         {pickerSheet}
       </div>
     );
@@ -1021,7 +1032,7 @@ export function MobileUpgradeContent({
         </div>
       </main>
 
-      {confirm?.kind === "custom" || confirm?.kind === "remove" ? confirmSheet : planDialog}
+      {confirm?.kind === "custom" || confirm?.kind === "pages" ? confirmSheet : planDialog}
       {pickerSheet}
     </div>
   );

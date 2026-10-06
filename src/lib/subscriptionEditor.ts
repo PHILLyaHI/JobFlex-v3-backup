@@ -365,7 +365,8 @@ async function planChange(raw: unknown, forApply: boolean): Promise<Plan | { err
           customer: typeof sub.customer === "string" ? sub.customer : sub.customer.id,
           subscription: sub.id,
           subscription_details: {
-            items: [{ id: item.id, price: priceId }],
+            // Any other line (a custom plan's page quantity) goes with the change.
+            items: [{ id: item.id, price: priceId }, ...sub.items.data.slice(1).map((i) => ({ id: i.id, deleted: true as const }))],
             proration_behavior: data.proration,
             ...(endsTrial ? { trial_end: "now" as const } : {}),
           },
@@ -506,10 +507,11 @@ export async function applySubscriptionChange(raw: unknown, admin: EditorActor):
     let updated: Stripe.Subscription;
     try {
       updated = await s.stripe!.subscriptions.update(sub.id, {
-        items: [{ id: item.id, price: p.priceId! }],
+        // A custom plan's page line must not keep billing under a catalog plan.
+        items: [{ id: item.id, price: p.priceId! }, ...sub.items.data.slice(1).map((i) => ({ id: i.id, deleted: true as const }))],
         proration_behavior: data.proration,
         ...(endsTrial ? { trial_end: "now" } : {}),
-        metadata: { ...(sub.metadata ?? {}), organizationId, planSlug: plan.slug, interval: p.interval },
+        metadata: { ...(sub.metadata ?? {}), organizationId, planSlug: plan.slug, interval: p.interval, customPages: "" },
       });
     } catch (err) {
       return { ok: false, error: stripeError(err) };

@@ -37,6 +37,7 @@ import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
+import { stampCustomSubscription } from "@/lib/customBilling";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
 import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
 import { mintSigninTicket } from "@/lib/signinTicket";
@@ -872,6 +873,11 @@ async function createAccountFromPending(
         create: { key: `orgPages:${orgId}`, cursor: JSON.stringify(chosen) },
       })
       .catch((err) => console.warn("[signup] page selection not recorded:", err));
+  }
+  // Name the workspace on the custom subscription made before it existed
+  // (lib/customBilling): organizationId + the pages, in Stripe metadata.
+  if (planSlug === CUSTOM_PLAN_SLUG && stripeSubscriptionId) {
+    await stampCustomSubscription(stripeSubscriptionId, orgId, chosen);
   }
 
   if (rec.attribution) {

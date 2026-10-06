@@ -101,7 +101,7 @@ export async function createCardlessSubscription(opts: {
     const subscription = await stripe.subscriptions.create(
       {
         customer: customer.id,
-        items: [{ price: priced.price }],
+        items: priced.lineItems,
         trial_period_days: CARDLESS_TRIAL_DAYS,
         trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
         // A card added later through Checkout becomes the subscription's own.
@@ -196,7 +196,7 @@ export async function openCardCheckout(orgId: string, origin: string): Promise<{
     mode: "subscription",
     customer: rec.customerId,
     client_reference_id: orgId,
-    line_items: [{ price: priced.price, quantity: 1 }],
+    line_items: priced.lineItems,
     subscription_data: {
       metadata: {
         organizationId: orgId,

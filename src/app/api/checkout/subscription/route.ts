@@ -12,6 +12,7 @@ import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { ensureReferralCoupon } from "@/lib/referralDiscount";
 import { CUSTOM_PLAN_SLUG, customPriceCents, normalizeCustomPages } from "@/lib/customPlan";
 import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
+import { customLineItems, customMetadata } from "@/lib/customBilling";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
 
 // Real SaaS subscription checkout. A captured influencer promo (the org's
@@ -38,19 +39,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "interval must be MONTH or YEAR." }, { status: 400 });
   }
 
-  /* THE CUSTOM PLAN can be bought here too (owner, 2026-09-02) — it has no
-     catalog row: $20 base plus the pages picked, priced by lib/customPlan and
-     sold as a reused Stripe price (lib/stripePriceCache), exactly as the
-     signup route does. The picked pages ride the session metadata; the
-     return leg records them for the page gate. */
+  /* THE CUSTOM PLAN can be bought here by a shop on a catalog plan (or none)
+     — base + page × quantity on one subscription (lib/customBilling). A shop
+     ALREADY on the custom plan never comes here: its pages change in place on
+     the subscription it has (actions/billing.updateCustomPages), so a second
+     Checkout can no longer replace it and bill the base twice. */
   const isCustom = String(planSlug) === CUSTOM_PLAN_SLUG;
-  // Off sale (lib/customPlanFlag): a shop not already on the custom plan
-  // cannot switch to it. One on it keeps managing its pages.
-  if (isCustom && !customPlanOffered()) {
+  if (isCustom) {
     const current = await db.subscription.findUnique({ where: { organizationId }, select: { plan: true } });
-    if ((current?.plan ?? "").toUpperCase() !== "CUSTOM") {
-      return NextResponse.json({ error: CUSTOM_PLAN_OFF_SALE }, { status: 410 });
+    if ((current?.plan ?? "").toUpperCase() === "CUSTOM") {
+      return NextResponse.json(
+        { error: "Your pages change from Add or remove pages — nothing new to check out." },
+        { status: 409 },
+      );
     }
+    // Off sale (lib/customPlanFlag): no switch to the custom plan.
+    if (!customPlanOffered()) return NextResponse.json({ error: CUSTOM_PLAN_OFF_SALE }, { status: 410 });
   }
   const pages = isCustom
     ? normalizeCustomPages(Array.isArray(customPages) ? customPages.map(String) : [])
@@ -225,19 +229,23 @@ export async function POST(req: Request) {
   // Sandbox path: a REUSED test-account price (lib/stripePriceCache), never
   // inline price_data — inline mints a fresh Product per checkout and would
   // litter the dashboard.
-  const lineItem = livePriceId
-    ? { price: livePriceId, quantity: 1 }
-    : {
-        price: await ensureRecurringPrice({
-          stripe,
-          mode,
-          kind: plan.slug,
-          name: `JobFlex ${plan.name}`,
-          interval,
-          cents,
-        }),
-        quantity: 1,
-      };
+  const lineItems = isCustom
+    ? await customLineItems(stripe, mode, interval, pages)
+    : [
+        livePriceId
+          ? { price: livePriceId, quantity: 1 }
+          : {
+              price: await ensureRecurringPrice({
+                stripe,
+                mode,
+                kind: plan.slug,
+                name: `JobFlex ${plan.name}`,
+                interval,
+                cents,
+              }),
+              quantity: 1,
+            },
+      ];
   /* REPLACING, NOT ADDING. A shop that already holds a live subscription is
      buying its successor: the new one is paid for on Stripe's page (the
      owner's rule for upgrades, 2026-09-02) and the return leg cancels the old
@@ -249,12 +257,14 @@ export async function POST(req: Request) {
       : null;
   const baseParams = {
     mode: "subscription" as const,
-    line_items: [lineItem],
+    line_items: lineItems,
     ...(sub?.externalCustomerId && mode === "live"
       ? { customer: sub.externalCustomerId }
       : { customer_email: user.email ?? undefined }),
     subscription_data: {
-      metadata: { organizationId },
+      // The custom plan's pages ride the SUBSCRIPTION (lib/customBilling):
+      // the return leg reads them from there, matched to its page quantity.
+      metadata: isCustom ? customMetadata(organizationId, pages) : { organizationId },
       ...(plan.trialDays && !replacesSubId ? { trial_period_days: plan.trialDays } : {}),
     },
     // planSlug/interval ride the session so the upgrade page can verify the

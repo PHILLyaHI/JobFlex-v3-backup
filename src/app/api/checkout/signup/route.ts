@@ -17,6 +17,7 @@ import type Stripe from "stripe";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { readPendingSignup } from "@/actions/signupCheckout";
 import { resolveSignupDiscount, resolveSignupPrice } from "@/lib/signupPricing";
+import { customMetadata } from "@/lib/customBilling";
 import { trialRequiresCard } from "@/lib/trialPolicy";
 import { cardlessTrialsPaused } from "@/lib/trialDailyCap";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
@@ -72,7 +73,7 @@ export async function POST(req: Request) {
   });
   if (!priced.ok) return NextResponse.json({ error: priced.error }, { status: priced.status });
   const { trialDays, planLabel, isCustom } = priced;
-  const lineItem: Stripe.Checkout.SessionCreateParams.LineItem = { price: priced.price, quantity: 1 };
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = priced.lineItems;
   const discount = await resolveSignupDiscount({ stripe, mode, attribution: pending.attribution, trialDays, where: "checkout/signup" });
   // `discounts` and `allow_promotion_codes` are mutually exclusive at Stripe,
   // so a session with a discount attached has no promo field.
@@ -84,8 +85,16 @@ export async function POST(req: Request) {
       mode: "subscription",
       customer_email: pending.email,
       client_reference_id: String(token),
-      line_items: [lineItem],
-      subscription_data: trialDays > 0 ? { trial_period_days: trialDays } : undefined,
+      line_items: lineItems,
+      // The custom plan's pages ride the subscription too (lib/customBilling);
+      // the organization is named on it once the account exists.
+      subscription_data:
+        trialDays > 0 || isCustom
+          ? {
+              ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
+              ...(isCustom ? { metadata: customMetadata(null, pending.customPages) } : {}),
+            }
+          : undefined,
       ...(discounts ? { discounts } : { allow_promotion_codes: true }),
       metadata: {
         signupToken: String(token),

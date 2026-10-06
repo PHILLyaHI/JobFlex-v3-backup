@@ -7,14 +7,13 @@ import { getPlanBySlug, getOrgPlanContext, revalidatePlanSurfaces } from "@/lib/
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
 import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
+import { normalizeCustomPages } from "@/lib/customPlan";
 import {
-  CUSTOM_PAGES,
-  CUSTOM_PAGE_CENTS,
-  CUSTOM_PLAN_SLUG,
-  CUSTOM_YEAR_MULTIPLIER,
-  customPriceCents,
-  normalizeCustomPages,
-} from "@/lib/customPlan";
+  changeCustomPages,
+  previewCustomPages,
+  readOrgPages,
+  type CustomPagesChange,
+} from "@/lib/customBilling";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { logServerError } from "@/lib/server-events";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
@@ -342,11 +341,13 @@ export async function changePlan(
 
   try {
     const updated = await stripe.subscriptions.update(current.id, {
-      items: [{ id: item.id, price: priceId }],
+      // Any other line goes: a custom plan's page quantity (lib/customBilling)
+      // must not keep billing under a catalog plan.
+      items: [{ id: item.id, price: priceId }, ...current.items.data.slice(1).map((i) => ({ id: i.id, deleted: true as const }))],
       proration_behavior: direction === "up" ? "always_invoice" : "none",
       // A trial in progress keeps its end date either way.
       ...(current.status === "trialing" ? { trial_end: current.trial_end ?? undefined } : {}),
-      metadata: { ...(current.metadata ?? {}), organizationId, planSlug: plan.slug, interval },
+      metadata: { ...(current.metadata ?? {}), organizationId, planSlug: plan.slug, interval, customPages: "" },
     });
     const trialEnd = updated.trial_end ? new Date(updated.trial_end * 1000) : null;
     const periodEnd = subscriptionPeriodEndDate(updated);
@@ -378,207 +379,68 @@ export async function changePlan(
   return { ok: true, mode: "switched", direction, planName: plan.name };
 }
 
-/* ── ADD PAGES TO A CUSTOM PLAN ─────────────────────────────────────────
-   (owner's rule, 2026-09-02) An org on the custom plan adds a page and:
-     1. pays for the new page(s) ONCE, now — $10 each, a one-off invoice
-        charged to the card on the subscription;
-     2. the subscription's price steps up with NO proration, so the next
-        regular bill is simply the new total (e.g. $40 → $50) and the base is
-        never charged twice.
-   During a trial nothing is charged now — the new price is what the trial
-   rolls into. Pages are recorded in the same SyncState row the signup wrote
-   (`orgPages:<orgId>`), which is what the page gate and the sidebar read. */
-export type AddCustomPagesResult =
-  | { ok: true; pages: string[]; added: number; chargedCents: number; monthlyCents: number }
-  | { ok: false; error: string };
+/* ── CHANGE A CUSTOM PLAN'S PAGES (owner, 2026-10-06) ─────────────────
+   One subscription, base + page × quantity (lib/customBilling). Adding a
+   page charges the prorated difference now on the subscription the shop
+   already has — no new Checkout, no cancelled subscription, a running trial
+   keeps running (nothing is charged in it). Removing a page closes it now and
+   lowers the price from the next bill, with no refund (the owner's rule).
+   Our page record is the truth; Stripe's quantity and metadata follow. */
+export type CustomPagesResult = CustomPagesChange;
 
-export async function addCustomPages(rawIds: unknown): Promise<AddCustomPagesResult> {
+async function applyPages(next: string[], verb: string): Promise<CustomPagesResult> {
   const { organizationId, user } = await requireOwner();
-  const sub = await db.subscription.findUnique({ where: { organizationId } });
-  if ((sub?.plan ?? "").toUpperCase() !== CUSTOM_PLAN_SLUG.toUpperCase()) {
-    return { ok: false, error: "Pages can only be added to the Custom plan." };
-  }
-  const key = `orgPages:${organizationId}`;
-  const row = await db.syncState.findUnique({ where: { key } }).catch(() => null);
-  let owned: string[] = [];
-  try {
-    owned = normalizeCustomPages(row ? (JSON.parse(row.cursor) as string[]) : []);
-  } catch {
-    owned = [];
-  }
-  const wanted = normalizeCustomPages(Array.isArray(rawIds) ? rawIds.map(String) : []);
-  const added = wanted.filter((id) => !owned.includes(id));
-  if (added.length === 0) return { ok: false, error: "Pick a page you don't have yet." };
-  const next = [...owned, ...added];
-  const labels = added.map((id) => CUSTOM_PAGES.find((p) => p.id === id)?.label ?? id);
-
-  let chargedCents = 0;
-  if (sub?.externalSubId && isStripeEnabled()) {
-    const { stripe, mode } = await getStripeClient();
-    let current;
-    try {
-      current = await stripe.subscriptions.retrieve(sub.externalSubId);
-    } catch {
-      return { ok: false, error: "Couldn't reach your subscription. Try again." };
-    }
-    const item = current.items.data[0];
-    if (!item) return { ok: false, error: "Your subscription has no plan line to update." };
-    const interval: "MONTH" | "YEAR" = item.price.recurring?.interval === "year" ? "YEAR" : "MONTH";
-    const monthlyMultiplier = interval === "YEAR" ? CUSTOM_YEAR_MULTIPLIER : 1;
-    const priceId = await ensureRecurringPrice({
-      stripe,
-      mode,
-      kind: "custom",
-      name: "JobFlex Custom plan",
-      interval,
-      cents: customPriceCents(next, interval),
-    });
-    try {
-      await stripe.subscriptions.update(current.id, {
-        items: [{ id: item.id, price: priceId }],
-        // No proration: the base was paid for this cycle; the step-up starts
-        // on the next bill. The pages themselves are charged just below.
-        proration_behavior: "none",
-        metadata: { ...(current.metadata ?? {}), customPages: next.join(",") },
-      });
-    } catch (err) {
-      console.warn("[billing] addCustomPages price update failed:", err);
-      return { ok: false, error: "Couldn't update your plan. Try again." };
-    }
-    if (current.status !== "trialing") {
-      const customer = typeof current.customer === "string" ? current.customer : current.customer.id;
-      const amount = added.length * CUSTOM_PAGE_CENTS * monthlyMultiplier;
-      try {
-        await stripe.invoiceItems.create({
-          customer,
-          amount,
-          currency: "usd",
-          description: `JobFlex Custom plan — ${labels.join(", ")} added`,
-        });
-        const invoice = await stripe.invoices.create({
-          customer,
-          collection_method: "charge_automatically",
-          auto_advance: false,
-          description: "Pages added to your Custom plan",
-        });
-        await stripe.invoices.finalizeInvoice(invoice.id);
-        const pm =
-          typeof current.default_payment_method === "string"
-            ? current.default_payment_method
-            : current.default_payment_method?.id;
-        await stripe.invoices.pay(invoice.id, pm ? { payment_method: pm } : {});
-        chargedCents = amount;
-      } catch (err) {
-        // The card was refused for the add-on: put the price back so the
-        // next bill does not include pages that were not paid for.
-        console.warn("[billing] addCustomPages charge failed:", err);
-        await stripe.subscriptions
-          .update(current.id, {
-            items: [{ id: item.id, price: item.price.id }],
-            proration_behavior: "none",
-          })
-          .catch(() => {});
-        return {
-          ok: false,
-          error: "The card on file was declined for the new pages. Nothing was changed.",
-        };
-      }
-    }
-    await db.subscription.update({ where: { organizationId }, data: { stripePriceId: priceId } });
-  }
-
-  await db.syncState.upsert({
-    where: { key },
-    update: { cursor: JSON.stringify(next) },
-    create: { key, cursor: JSON.stringify(next) },
-  });
-  revalidatePlanSurfaces();
-  revalidatePath("/dashboard/upgrade");
-  revalidatePath("/dashboard", "layout");
-  await billingSaved(organizationId, user.id, `Updated billing settings — added ${added.length} page${added.length === 1 ? "" : "s"} to the custom plan`, { pages: next, added });
-  return {
-    ok: true,
-    pages: next,
-    added: added.length,
-    chargedCents,
-    monthlyCents: customPriceCents(next),
-  };
-}
-
-/* ── REMOVE PAGES FROM A CUSTOM PLAN ────────────────────────────────────
-   (owner, 2026-09-04) The mirror of adding: the pages leave the plan now,
-   the subscription's price steps DOWN with no proration, and the next
-   regular bill is simply the new total. Nothing is refunded for the rest of
-   the cycle — the same rule as a downgrade. Adding pages is a paid checkout
-   (the new selection replaces the subscription on Stripe's page), so this is
-   the only in-place edit a custom plan has. */
-export type RemoveCustomPagesResult =
-  | { ok: true; pages: string[]; removed: number; monthlyCents: number }
-  | { ok: false; error: string };
-
-export async function removeCustomPages(rawIds: unknown): Promise<RemoveCustomPagesResult> {
-  const { organizationId, user } = await requireOwner();
-  const sub = await db.subscription.findUnique({ where: { organizationId } });
-  if ((sub?.plan ?? "").toUpperCase() !== CUSTOM_PLAN_SLUG.toUpperCase()) {
-    return { ok: false, error: "Pages can only be removed from the Custom plan." };
-  }
-  const key = `orgPages:${organizationId}`;
-  const row = await db.syncState.findUnique({ where: { key } }).catch(() => null);
-  let owned: string[] = [];
-  try {
-    owned = normalizeCustomPages(row ? (JSON.parse(row.cursor) as string[]) : []);
-  } catch {
-    owned = [];
-  }
-  const dropping = normalizeCustomPages(Array.isArray(rawIds) ? rawIds.map(String) : []).filter(
-    (id) => owned.includes(id),
-  );
-  if (dropping.length === 0) return { ok: false, error: "Pick a page you have." };
-  const next = owned.filter((id) => !dropping.includes(id));
-
-  if (sub?.externalSubId && isStripeEnabled()) {
-    const { stripe, mode } = await getStripeClient();
-    let current;
-    try {
-      current = await stripe.subscriptions.retrieve(sub.externalSubId);
-    } catch {
-      return { ok: false, error: "Couldn't reach your subscription. Try again." };
-    }
-    const item = current.items.data[0];
-    if (!item) return { ok: false, error: "Your subscription has no plan line to update." };
-    const interval: "MONTH" | "YEAR" = item.price.recurring?.interval === "year" ? "YEAR" : "MONTH";
-    const priceId = await ensureRecurringPrice({
-      stripe,
-      mode,
-      kind: "custom",
-      name: "JobFlex Custom plan",
-      interval,
-      cents: customPriceCents(next, interval),
-    });
-    try {
-      await stripe.subscriptions.update(current.id, {
-        items: [{ id: item.id, price: priceId }],
-        // No proration and no credit: this cycle was paid; the lower price
-        // is what the next bill charges.
-        proration_behavior: "none",
-        metadata: { ...(current.metadata ?? {}), customPages: next.join(",") },
-      });
-    } catch (err) {
-      console.warn("[billing] removeCustomPages price update failed:", err);
-      return { ok: false, error: "Couldn't update your plan. Try again." };
-    }
-    await db.subscription.update({ where: { organizationId }, data: { stripePriceId: priceId } });
-  }
-
-  await db.syncState.upsert({
-    where: { key },
-    update: { cursor: JSON.stringify(next) },
-    create: { key, cursor: JSON.stringify(next) },
-  });
+  const res = await changeCustomPages({ organizationId, next });
+  if (!res.ok) return res;
   revalidatePlanSurfaces();
   revalidatePath("/dashboard/upgrade");
   revalidatePath("/dashboard/subscription");
   revalidatePath("/dashboard", "layout");
-  await billingSaved(organizationId, user.id, `Updated billing settings — removed ${dropping.length} page${dropping.length === 1 ? "" : "s"} from the custom plan`, { pages: next, removed: dropping });
-  return { ok: true, pages: next, removed: dropping.length, monthlyCents: customPriceCents(next) };
+  const parts = [
+    res.added.length ? `added ${res.added.length} page${res.added.length === 1 ? "" : "s"}` : "",
+    res.removed.length ? `removed ${res.removed.length} page${res.removed.length === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  await billingSaved(organizationId, user.id, `Updated billing settings — ${parts.join(" and ") || verb} on the custom plan`, {
+    pages: res.pages,
+    added: res.added,
+    removed: res.removed,
+    chargedCents: res.chargedCents,
+  });
+  return res;
+}
+
+async function ownedPages(): Promise<string[]> {
+  const { organizationId } = await requireOwner();
+  return readOrgPages(organizationId);
+}
+
+/** The picker's "done": the whole selection the owner wants. */
+export async function updateCustomPages(rawIds: unknown): Promise<CustomPagesResult> {
+  const next = normalizeCustomPages(Array.isArray(rawIds) ? rawIds.map(String) : []);
+  return applyPages(next, "changed pages");
+}
+
+/** Add pages (the upgrade gate's one-click "Add Calendar for $10/mo"). */
+export async function addCustomPages(rawIds: unknown): Promise<CustomPagesResult> {
+  const adding = normalizeCustomPages(Array.isArray(rawIds) ? rawIds.map(String) : []);
+  const owned = await ownedPages();
+  if (adding.every((id) => owned.includes(id))) return { ok: false, error: "Pick a page you don't have yet." };
+  return applyPages([...owned, ...adding.filter((id) => !owned.includes(id))], "added pages");
+}
+
+/** Remove pages: closed now, cheaper from the next bill, nothing refunded. */
+export async function removeCustomPages(rawIds: unknown): Promise<CustomPagesResult> {
+  const dropping = normalizeCustomPages(Array.isArray(rawIds) ? rawIds.map(String) : []);
+  const owned = await ownedPages();
+  if (!dropping.some((id) => owned.includes(id))) return { ok: false, error: "Pick a page you have." };
+  return applyPages(owned.filter((id) => !dropping.includes(id)), "removed pages");
+}
+
+/** What a selection would charge now (prorated) and per month after. */
+export async function previewCustomPagesChange(
+  rawIds: unknown,
+): Promise<{ dueNowCents: number | null; monthlyCents: number; trialing: boolean }> {
+  const { organizationId } = await requireOwner();
+  const next = normalizeCustomPages(Array.isArray(rawIds) ? rawIds.map(String) : []);
+  return previewCustomPages(organizationId, next);
 }
