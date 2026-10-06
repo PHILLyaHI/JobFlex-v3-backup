@@ -12,6 +12,7 @@ import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { ensureReferralCoupon } from "@/lib/referralDiscount";
 import { CUSTOM_PLAN_SLUG, customPriceCents, normalizeCustomPages } from "@/lib/customPlan";
 import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
+import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
 
 // Real SaaS subscription checkout. A captured influencer promo (the org's
 // permanent signup stamp, falling back to the 30-day capture cookie) is
@@ -43,6 +44,14 @@ export async function POST(req: Request) {
      signup route does. The picked pages ride the session metadata; the
      return leg records them for the page gate. */
   const isCustom = String(planSlug) === CUSTOM_PLAN_SLUG;
+  // Off sale (lib/customPlanFlag): a shop not already on the custom plan
+  // cannot switch to it. One on it keeps managing its pages.
+  if (isCustom && !customPlanOffered()) {
+    const current = await db.subscription.findUnique({ where: { organizationId }, select: { plan: true } });
+    if ((current?.plan ?? "").toUpperCase() !== "CUSTOM") {
+      return NextResponse.json({ error: CUSTOM_PLAN_OFF_SALE }, { status: 410 });
+    }
+  }
   const pages = isCustom
     ? normalizeCustomPages(Array.isArray(customPages) ? customPages.map(String) : [])
     : [];

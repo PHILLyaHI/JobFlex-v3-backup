@@ -31,6 +31,7 @@ import { detectInAppBrowser } from "@/lib/inAppBrowser";
 import { trialRequiresCard } from "@/lib/trialPolicy";
 import { cardlessTrialsPaused } from "@/lib/trialDailyCap";
 import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/disposableEmail";
+import { customPlanOffered } from "@/lib/customPlanFlag";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
 import {
   INDUSTRY_COOKIE,
@@ -156,6 +157,7 @@ export default async function RegisterPage({
       <script dangerouslySetInnerHTML={{ __html: STEP1_PRELUDE }} />
       <RegisterResponsive
         requiresCard={trialRequiresCard() || (await cardlessTrialsPaused())}
+        offerCustom={customPlanOffered()}
         initialError={googleError}
         setup={setup}
         google={google}

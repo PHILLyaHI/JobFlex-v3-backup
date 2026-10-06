@@ -28,6 +28,7 @@ import { getStripeMode } from "@/lib/stripeMode";
 import { isOwnerRole } from "@/lib/orgContext";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
 import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
+import { customPlanOffered } from "@/lib/customPlanFlag";
 import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
 // One URL, two designs: the desktop build above 768px, the handheld build in
 // components/v3/mobile-upgrade at or below it. Same props, one loader — see
@@ -163,6 +164,7 @@ export default async function UpgradePage({
       customPages={customPages}
       isOwner={isOwnerRole(ctx.role)}
       checkoutReady={isStripeEnabled()}
+      customOffered={customPlanOffered()}
       sandbox={mode === "test"}
       upgradedTo={upgradedTo}
       upgradedDirection={upgradedDirection}

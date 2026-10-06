@@ -20,6 +20,7 @@ import { getStripeMode } from "@/lib/stripeMode";
 
 import { db } from "@/lib/db";
 import { customPriceCents, normalizeCustomPages } from "@/lib/customPlan";
+import { customPlanOffered } from "@/lib/customPlanFlag";
 import { REFERRAL_REWARD_PCT, settleReferralsForCode } from "@/lib/referralRewards";
 import { getOrCreateMyReferralCode } from "@/actions/referrals";
 import { listSubscriptionInvoices, type UpcomingInvoice } from "@/actions/billing";
@@ -76,6 +77,8 @@ export interface SubscriptionViewProps {
   customPages?: string[];
   /** What the embedded plan cards need to offer checkout (owner-only page). */
   checkoutReady: boolean;
+  /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): "Build your plan" on sale. */
+  customOffered: boolean;
   sandbox: boolean;
   referral: {
     code: string;
@@ -298,6 +301,7 @@ export async function loadSubscriptionData(
     nextCharge,
     customPages,
     checkoutReady: isStripeEnabled(),
+    customOffered: customPlanOffered(),
     sandbox: stripeMode === "test",
     referral: {
       code: code.code,

@@ -175,6 +175,7 @@ export function MobileSubscription({
   referral,
   customPages,
   checkoutReady,
+  customOffered,
   sandbox,
 }: MobileSubscriptionProps) {
 
@@ -488,6 +489,7 @@ export function MobileSubscription({
               customPages={customPages ?? []}
               isOwner
               checkoutReady={checkoutReady}
+              customOffered={customOffered}
               sandbox={sandbox}
               upgradedTo={null}
               cancelled={false}

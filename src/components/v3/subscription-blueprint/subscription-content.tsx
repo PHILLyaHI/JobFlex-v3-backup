@@ -121,7 +121,9 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
         dir: (p.priceCents > curCents ? "up" : "down") as "up" | "down",
         features: p.features,
       })),
-      {
+      // Off sale (lib/customPlanFlag): no "Build your plan" column for a shop
+      // not already on it.
+      ...(props.currentSlug !== "custom" && !props.customOffered ? [] : [{
         slug: "custom",
         name: props.currentSlug === "custom" ? "Custom" : "Build your plan",
         // Priced when it is THIS org's plan: base plus the pages it owns.
@@ -132,9 +134,9 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
         cur: props.currentSlug === "custom",
         dir: "down" as "up" | "down",
         features: [] as string[],
-      },
+      }]),
     ];
-  }, [props.plans, props.currentSlug, props.customPages]);
+  }, [props.plans, props.currentSlug, props.customPages, props.customOffered]);
 
   /* THE CUSTOM COLUMN TICKS (owner, 2026-09-02). On the custom plan the column
      shows what the org actually has — base rows plus the pages it bought —
@@ -304,6 +306,7 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
           customPages={props.customPages ?? []}
           isOwner
           checkoutReady={props.checkoutReady}
+          customOffered={props.customOffered}
           sandbox={props.sandbox}
           upgradedTo={null}
           cancelled={false}

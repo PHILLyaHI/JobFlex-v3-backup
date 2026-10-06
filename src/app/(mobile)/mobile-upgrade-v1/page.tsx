@@ -27,6 +27,7 @@ import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
 import { getStripeMode } from "@/lib/stripeMode";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
 import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
+import { customPlanOffered } from "@/lib/customPlanFlag";
 import { MobileUpgradeContent } from "@/components/v3/mobile-upgrade/mobile-upgrade";
 import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
 
@@ -180,6 +181,7 @@ export default async function MobileUpgradeV1Page({
       customPages={customPages}
       isOwner={isOwnerRole(ctx.role)}
       checkoutReady={isStripeEnabled()}
+      customOffered={customPlanOffered()}
       sandbox={mode === "test"}
       upgradedTo={upgradedTo}
       cancelled={params.checkout === "cancelled"}

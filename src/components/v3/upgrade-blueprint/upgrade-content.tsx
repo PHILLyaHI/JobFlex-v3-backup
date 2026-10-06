@@ -63,7 +63,11 @@ export function UpgradeContent({
   cancelled,
   embedded = false,
   devTools,
+  customOffered = false,
 }: {
+  /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): off, a shop not already on the
+   *  custom plan is not offered it. One on it always manages its pages. */
+  customOffered?: boolean;
   plans: UpgradePlan[];
   /** Subscription.plan as stored ("PROFESSIONAL", "CUSTOM", …), or null. */
   currentPlan: string | null;
@@ -238,7 +242,9 @@ export function UpgradeContent({
   const searchParams = useSearchParams();
   // /dashboard/upgrade?custom=1 (the subscription page's "Build it") lands
   // straight in the page picker.
-  const [pickerOpen, setPickerOpen] = useState(() => searchParams?.get("custom") === "1");
+  const [pickerOpen, setPickerOpen] = useState(
+    () => searchParams?.get("custom") === "1" && (onCustom || customOffered),
+  );
   // The same two-flag entrance as the signup step's picker: mounted first,
   // `is-on` a frame later so the box has a start state to leave from.
   const [pickerOn, setPickerOn] = useState(false);
@@ -433,7 +439,7 @@ export function UpgradeContent({
           );
         })}
 
-        {(
+        {onCustom || customOffered ? (
           <div className={"jf-up-plan custom" + (onCustom ? " cur" : "")}>
             <span className="jf-up-n">{onCustom ? "Custom" : "Build your plan"}</span>
             <span className="jf-up-price">
@@ -485,13 +491,13 @@ export function UpgradeContent({
                   : "Choose pages"}
             </button>
           </div>
-        )}
+        ) : null}
       </div>
 
       {!isOwner ? (
         <p className="jf-up-note">Plan changes are owner-only — ask the account owner.</p>
       ) : null}
-      {!onCustom ? (
+      {!onCustom && customOffered ? (
         <p className="jf-up-note">
           Build your plan: ${(CUSTOM_BASE_CENTS / 100).toFixed(0)} base covers proposals, clients,
           projects, jobs, invoices and financials; each extra page is $

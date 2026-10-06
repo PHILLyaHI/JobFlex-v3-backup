@@ -101,15 +101,11 @@ function stItem(index: 0 | 1 | 2, step: Step): string {
   return "st-item" + (step === 3 ? " on" : step > 3 ? " done" : "");
 }
 
-/* THE CUSTOM PLAN IS OFFERED AT SIGNUP AGAIN (owner, 2026-09-26: "the custom
-   plan disappeared"). It was taken off the plan step on 2026-09-17 so a
-   first-time visitor saw the catalogue only; the owner wants it back beside
-   the catalogue cards, with its page picker. Nothing server-side changed in
-   either direction — completePendingSignup and the checkout route always
-   accepted the custom slug. /dashboard/subscription still offers it too.
-   Typed `boolean` on purpose, so flipping it never turns a branch below into
-   a constant condition. */
-const OFFER_CUSTOM_AT_SIGNUP: boolean = true;
+/* THE CUSTOM PLAN AT SIGNUP is offered beside the catalogue cards only while
+   CUSTOM_PLAN_ENABLED is on (lib/customPlanFlag, owner 2026-10-06: off sale
+   until the custom plan's billing and page gate are rebuilt). The page reads
+   the flag on the server and hands it in as `offerCustom`; the checkout
+   routes refuse a custom purchase on their own when it is off. */
 
 // Donor `#tradeNote`, verbatim.
 function tradeNote(n: number): string {
@@ -126,7 +122,11 @@ export function RegisterContent({
   inAppBrowser: inAppInitial = null,
   requiresCard: requiresCardInitial = true,
   initialError = null,
+  offerCustom = false,
 }: {
+  /* CUSTOM_PLAN_ENABLED (lib/customPlanFlag), read on the server: the custom
+     plan's card and page picker on the plan step. */
+  offerCustom?: boolean;
   /* TRIAL_REQUIRES_CARD (lib/trialPolicy), read on the server. True: the plan
      step opens Stripe Checkout and the card is taken there, as it always was.
      False: the plan step starts a 7-day trial with no card (onStartCardless). */
@@ -1754,12 +1754,12 @@ export function RegisterContent({
               })}
               {/* THE CUSTOM PLAN — the same card shape, priced by what is
                   ticked rather than by a tier somebody else drew. Drawn only
-                  when OFFER_CUSTOM_AT_SIGNUP says so (see the flag), and only
+                  when offerCustom says so (see the flag), and only
                   once the catalogue has answered: drawn alone before it, it
                   was the card the phone carousel snapped to, and on a desk it
                   jumped from the first column to the last when the rest
                   arrived. */}
-              {OFFER_CUSTOM_AT_SIGNUP && plans.length > 0 ? (
+              {offerCustom && plans.length > 0 ? (
               <div
                 role="button"
                 tabIndex={0}
@@ -1965,7 +1965,7 @@ export function RegisterContent({
             {/* THE PAGE PICKER. Hand-rolled (no Radix here, same as every other
                 dialog in this fleet): a scrim, one panel, Escape closes it. The
                 price in its foot is the same function the server charges by. */}
-            {OFFER_CUSTOM_AT_SIGNUP && pickerOpen && isClient ? createPortal(
+            {offerCustom && pickerOpen && isClient ? createPortal(
               <div className={styles.bp + " pwp-host"}>
               <div
                 className={"pwp" + (pickerOn ? " is-on" : "")}

@@ -41,7 +41,10 @@ export function PricingPage({
   plans,
   customTrialDays,
   requiresCard = true,
+  customOffered = false,
 }: {
+  /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): false hides "Build your plan". */
+  customOffered?: boolean;
   /** TRIAL_REQUIRES_CARD (lib/trialPolicy): false — the card-less trial's line under the heading and on every start button. */
   requiresCard?: boolean;
   plans: PlanDTO[];
@@ -91,62 +94,65 @@ export function PricingPage({
           </div>
         </section>
 
-        {/* Build your own — the page that prices itself */}
-        <section className="px-5 sm:px-6">
-          <div className="mx-auto lp-wrap py-[8vmin]">
-            <Reveal>
-              <div className="pr-custom p-7 sm:p-10">
-                <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
-                  <div>
-                    <p className="lp-eyebrow text-lp-blue">Build your plan</p>
-                    <h2 className="mt-5 text-[clamp(26px,3vw,40px)] font-bold leading-[1.12] tracking-[-0.02em]">
-                      Start at {price(CUSTOM_BASE_CENTS)}. Add only the machines you use.
-                    </h2>
-                    <p className="mt-4 max-w-[56ch] text-[15px] leading-[1.65] text-slate-500">
-                      The everyday workspace is included — dashboard, proposals with the manual
-                      builder, clients, projects, CRM, jobs, messages and financials. Each page
-                      below is {price(CUSTOM_PAGE_CENTS)} a month on top, and you can drop one the
-                      month you stop using it.
-                    </p>
-
-                    <div className="mt-7 flex flex-wrap gap-2">
-                      {CUSTOM_PAGES.map((p) => (
-                        <span key={p.id} className="pr-page">
-                          {p.label}
-                          <b>+{price(CUSTOM_PAGE_CENTS)}</b>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col justify-between border-slate-900/10 lg:border-l lg:pl-10">
+        {/* Build your own — the page that prices itself. Off sale unless
+            CUSTOM_PLAN_ENABLED (lib/customPlanFlag). */}
+        {customOffered ? (
+          <section className="px-5 sm:px-6">
+            <div className="mx-auto lp-wrap py-[8vmin]">
+              <Reveal>
+                <div className="pr-custom p-7 sm:p-10">
+                  <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
                     <div>
-                      <p className="lp-pw-price">
-                        {price(CUSTOM_BASE_CENTS)}
-                        <i>{priceCadence(true)} base</i>
+                      <p className="lp-eyebrow text-lp-blue">Build your plan</p>
+                      <h2 className="mt-5 text-[clamp(26px,3vw,40px)] font-bold leading-[1.12] tracking-[-0.02em]">
+                        Start at {price(CUSTOM_BASE_CENTS)}. Add only the machines you use.
+                      </h2>
+                      <p className="mt-4 max-w-[56ch] text-[15px] leading-[1.65] text-slate-500">
+                        The everyday workspace is included — dashboard, proposals with the manual
+                        builder, clients, projects, CRM, jobs, messages and financials. Each page
+                        below is {price(CUSTOM_PAGE_CENTS)} a month on top, and you can drop one the
+                        month you stop using it.
                       </p>
-                      <div className="mt-2.5">
-                        {!requiresCard ? (
-                          <span className="pr-trial">7-day free trial · no card</span>
-                        ) : customTrialDays > 0 ? (
-                          <span className="pr-trial">{customTrialDays}-day free trial</span>
-                        ) : null}
+
+                      <div className="mt-7 flex flex-wrap gap-2">
+                        {CUSTOM_PAGES.map((p) => (
+                          <span key={p.id} className="pr-page">
+                            {p.label}
+                            <b>+{price(CUSTOM_PAGE_CENTS)}</b>
+                          </span>
+                        ))}
                       </div>
-                      <p className="pr-desc mt-5">
-                        A full build with all {CUSTOM_PAGES.length} pages comes to{" "}
-                        {price(customTop)} a month — still less than the seats most shops pay for
-                        twice over.
-                      </p>
                     </div>
-                    <a href={REGISTER} className="lp-pw-go mt-8" data-cta="pricing-custom">
-                      {!requiresCard ? "Start free trial" : customTrialDays > 0 ? `Start ${customTrialDays}-day trial` : "Build your plan"}
-                    </a>
+
+                    <div className="flex flex-col justify-between border-slate-900/10 lg:border-l lg:pl-10">
+                      <div>
+                        <p className="lp-pw-price">
+                          {price(CUSTOM_BASE_CENTS)}
+                          <i>{priceCadence(true)} base</i>
+                        </p>
+                        <div className="mt-2.5">
+                          {!requiresCard ? (
+                            <span className="pr-trial">7-day free trial · no card</span>
+                          ) : customTrialDays > 0 ? (
+                            <span className="pr-trial">{customTrialDays}-day free trial</span>
+                          ) : null}
+                        </div>
+                        <p className="pr-desc mt-5">
+                          A full build with all {CUSTOM_PAGES.length} pages comes to{" "}
+                          {price(customTop)} a month — still less than the seats most shops pay for
+                          twice over.
+                        </p>
+                      </div>
+                      <a href={REGISTER} className="lp-pw-go mt-8" data-cta="pricing-custom">
+                        {!requiresCard ? "Start free trial" : customTrialDays > 0 ? `Start ${customTrialDays}-day trial` : "Build your plan"}
+                      </a>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Reveal>
-          </div>
-        </section>
+              </Reveal>
+            </div>
+          </section>
+        ) : null}
 
         <CtaFooter requiresCard={requiresCard} />
       </main>

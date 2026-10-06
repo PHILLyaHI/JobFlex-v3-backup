@@ -36,6 +36,7 @@ import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
+import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
 import { enforceRateLimit, clientIp, HOUR } from "@/lib/rateLimit";
 import { mintSigninTicket } from "@/lib/signinTicket";
@@ -503,6 +504,7 @@ export async function requestCardlessTrial(
   planSlug: string,
 ): Promise<{ ok: true; email: string; resendAt: number } | { ok: false; error: string; resendAt?: number; requiresCard?: true }> {
   if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account.", requiresCard: true };
+  if (planSlug === CUSTOM_PLAN_SLUG && !customPlanOffered()) return { ok: false, error: CUSTOM_PLAN_OFF_SALE };
   const rec = await loadPending(token);
   if (!rec) return { ok: false, error: "That signup expired. Start again." };
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });

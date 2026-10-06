@@ -19,6 +19,8 @@ import { readPendingSignup } from "@/actions/signupCheckout";
 import { resolveSignupDiscount, resolveSignupPrice } from "@/lib/signupPricing";
 import { trialRequiresCard } from "@/lib/trialPolicy";
 import { cardlessTrialsPaused } from "@/lib/trialDailyCap";
+import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
+import { CUSTOM_PLAN_SLUG } from "@/lib/customPlan";
 
 export const runtime = "nodejs";
 
@@ -45,6 +47,11 @@ export async function POST(req: Request) {
   }
   if (interval !== "MONTH" && interval !== "YEAR") {
     return NextResponse.json({ error: "interval must be MONTH or YEAR." }, { status: 400 });
+  }
+
+  // Off sale (CUSTOM_PLAN_ENABLED unset): a new shop cannot start on it.
+  if (String(planSlug) === CUSTOM_PLAN_SLUG && !customPlanOffered()) {
+    return NextResponse.json({ error: CUSTOM_PLAN_OFF_SALE }, { status: 410 });
   }
 
   const pending = await readPendingSignup(String(token));

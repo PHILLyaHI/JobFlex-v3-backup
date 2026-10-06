@@ -90,6 +90,9 @@ export type MobileUpgradeProps = {
   /** TEMP (2026-09-19): the DEV ONLY block, handed in by the page behind the
    *  server gate; undefined everywhere else. */
   devTools?: React.ReactNode;
+  /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): off, a shop not already on the
+   *  custom plan is not offered it. One on it always manages its pages. */
+  customOffered?: boolean;
 };
 
 function Tick({ on }: { on: boolean }) {
@@ -112,6 +115,7 @@ export function MobileUpgradeContent({
   cancelled,
   embedded = false,
   devTools,
+  customOffered = false,
 }: MobileUpgradeProps) {
   const router = useRouter();
   /* MONTHLY ONLY for now (owner, 2026-09-04): the yearly tier is unreviewed,
@@ -226,7 +230,9 @@ export function MobileUpgradeContent({
   const searchParams = useSearchParams();
   // /dashboard/upgrade?custom=1 (the subscription page's "Build it", and the
   // custom-plan gate) lands straight in the page picker.
-  const [pickerOpen, setPickerOpen] = useState(() => searchParams?.get("custom") === "1");
+  const [pickerOpen, setPickerOpen] = useState(
+    () => searchParams?.get("custom") === "1" && (onCustom || customOffered),
+  );
   const [pickerOn, setPickerOn] = useState(false);
   useEffect(() => {
     if (!pickerOpen) return;
@@ -916,7 +922,7 @@ export function MobileUpgradeContent({
         ) : null}
         <div className="mu-rail" ref={contentRef}>
           {plans.map(planCard)}
-          {customCard}
+          {onCustom || customOffered ? customCard : null}
         </div>
         {!isOwner ? (
           <p className="mu-fine">Plan changes are owner-only — ask the account owner.</p>
@@ -996,7 +1002,7 @@ export function MobileUpgradeContent({
               subscription page embeds, instead of a tall stack of cards. */}
           <div className="mu-rail">
             {plans.map(planCard)}
-            {customCard}
+            {onCustom || customOffered ? customCard : null}
           </div>
 
           {!isOwner ? (
@@ -1005,7 +1011,7 @@ export function MobileUpgradeContent({
           {!checkoutReady ? (
             <p className="mu-fine">Checkout is not configured on this deployment yet.</p>
           ) : null}
-          {!onCustom ? (
+          {!onCustom && customOffered ? (
             <p className="mu-fine">
               Build your plan: {dollars(CUSTOM_BASE_CENTS)} base covers proposals, clients,
               projects, jobs, invoices and financials; each extra page is{" "}
