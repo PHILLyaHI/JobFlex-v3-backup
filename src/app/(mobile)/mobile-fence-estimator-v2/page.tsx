@@ -42,7 +42,7 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileFenceEstimatorV2Page() {
-  const gate = await customPageGate("fence-estimator");
+  const gate = await customPageGate("fence-estimator", { handheld: true });
   if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {

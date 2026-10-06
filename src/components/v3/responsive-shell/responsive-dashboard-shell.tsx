@@ -368,7 +368,7 @@ export function ResponsiveDashboardShell({
         {seenSurface && <MarkNavSeen key={seenSurface} surface={seenSurface} />}
         {handheldBanner}
         <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
-          <CustomGateSwap>
+          <CustomGateSwap handheld>
             {pathname === "/dashboard" ? <MobileDashboard notice={overviewNotice} /> : <Handheld />}
           </CustomGateSwap>
         </ChunkRecoveryBoundary>
@@ -422,14 +422,14 @@ export function ResponsiveDashboardShell({
   if (isHandheld && PAGE_OWNED_HANDHELD.test(pathname ?? "")) {
     return (
       <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits} limitsExempt={limitsExempt}>
-        <CustomGateSwap>{children}</CustomGateSwap>
+        <CustomGateSwap handheld>{children}</CustomGateSwap>
       </NavRoleProvider>
     );
   }
   if (isHandheld && PAGE_OWNED_STATIC.has(pathname ?? "")) {
     return (
       <NavRoleProvider identity={identity} badges={badges} locked={locked} limits={limits} limitsExempt={limitsExempt}>
-        <CustomGateSwap>{children}</CustomGateSwap>
+        <CustomGateSwap handheld>{children}</CustomGateSwap>
       </NavRoleProvider>
     );
   }

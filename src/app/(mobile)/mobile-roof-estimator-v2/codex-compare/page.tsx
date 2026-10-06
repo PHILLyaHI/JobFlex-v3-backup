@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Roof card comparison · Codex · JobFlex" };
 
 export default async function RoofCardComparisonPage() {
-  const gate = await customPageGate("roof-estimator");
+  const gate = await customPageGate("roof-estimator", { handheld: true });
   if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {

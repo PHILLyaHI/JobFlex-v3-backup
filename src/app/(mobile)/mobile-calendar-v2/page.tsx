@@ -53,7 +53,7 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileCalendarV2Page() {
-  const gate = await customPageGate("calendar");
+  const gate = await customPageGate("calendar", { handheld: true });
   if (gate) return gate;
   let seed: CalendarSeed;
   try {

@@ -117,3 +117,32 @@
 .jf-upgate.jf-upgate .jf-upgate-back:hover {
   color: var(--ink, #101010);
 }
+
+/* The one-click add (2026-10-06): the go plate is a <button> when the owner
+   can add the page here, a link otherwise. */
+.jf-upgate.jf-upgate button.jf-upgate-go {
+  font-family: inherit;
+  cursor: pointer;
+}
+.jf-upgate.jf-upgate button.jf-upgate-go:disabled {
+  cursor: progress;
+  opacity: 0.6;
+  transform: none;
+}
+
+/* What adding it costs, from Stripe's own preview. */
+.jf-upgate.jf-upgate .jf-upgate-note {
+  margin-top: 10px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  color: var(--muted, #57534b);
+}
+
+.jf-upgate.jf-upgate .jf-upgate-err {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--danger, #b42318);
+}

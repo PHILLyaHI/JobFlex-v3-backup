@@ -23,7 +23,7 @@ import { requireOrg } from "@/lib/orgContext";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { getBlockedCustomPages } from "@/lib/customPageAccess";
 import { isCustomBlockedPath, pageForPath } from "@/lib/customPlan";
-import { UpgradeGate } from "@/components/v3/upgrade-gate/upgrade-gate";
+import { HandheldGate } from "@/components/v3/upgrade-gate/handheld-gate";
 import { TrialWatchMount } from "@/components/v3/trial-watch/trial-watch-mount";
 import "@/components/v3/who/who.css";
 
@@ -78,11 +78,13 @@ export default async function MobileGroupLayout({ children }: { children: ReactN
   let role: string | null = null;
   let organizationId: string | null = null;
   let email: string | null = null;
+  let name: string | null = null;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
     organizationId = ctx.organizationId;
     email = ctx.user.email ?? null;
+    name = ctx.user.name ?? null;
   } catch {
     // Signed out, or no membership yet — the page redirects to login itself.
     return children;
@@ -100,7 +102,14 @@ export default async function MobileGroupLayout({ children }: { children: ReactN
   // Resolved from the handheld URL itself: every add-on lists its handheld
   // addresses among its aliases (lib/customPlan), so the gate needs no twin.
   if (lockedPages?.length && isCustomBlockedPath(lockedPages, pathname)) {
-    return <UpgradeGate pathname={pageForPath(pathname)?.href ?? twin} />;
+    return (
+      <HandheldGate
+        pathname={pageForPath(pathname)?.href ?? twin}
+        locked={lockedPages}
+        isOwner={role === "OWNER"}
+        identity={{ role, name: name ?? email ?? "Account", hidden: [] }}
+      />
+    );
   }
 
   // The handheld twins render the same org data as /dashboard: same beacon,

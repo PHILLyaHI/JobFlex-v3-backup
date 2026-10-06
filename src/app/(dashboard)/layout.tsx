@@ -112,7 +112,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (lockedPages?.length) {
     const pathname = (await headers()).get("x-pathname") ?? "";
     if (pathname && isCustomBlockedPath(lockedPages, pathname)) {
-      customGate = <UpgradeGate pathname={pathname} />;
+      customGate = <UpgradeGate pathname={pathname} locked={lockedPages} isOwner={activeRole === "OWNER"} />;
     }
   }
 
@@ -165,7 +165,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
               (lockedPages?.length ? (
                 // Client half of the gate: a layout only re-renders on a hard
                 // load, so soft navigation needs the swap — see its header.
-                <CustomGateSwap locked={lockedPages}>{children}</CustomGateSwap>
+                <CustomGateSwap locked={lockedPages} isOwner={activeRole === "OWNER"}>
+                  {children}
+                </CustomGateSwap>
               ) : (
                 children
               ))}

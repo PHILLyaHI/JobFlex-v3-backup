@@ -17,18 +17,36 @@
 // redirect-to-login handles them, as before. Fails closed (lib/customPageAccess).
 
 import { requireOrg } from "@/lib/orgContext";
-import { isPageLocked } from "@/lib/customPageAccess";
+import { getBlockedCustomPages, isPageLocked } from "@/lib/customPageAccess";
 import { CUSTOM_PAGES, type CustomPageId } from "@/lib/customPlan";
 import { UpgradeGate } from "./upgrade-gate";
+import { HandheldGate } from "./handheld-gate";
 
-export async function customPageGate(page: CustomPageId): Promise<React.ReactElement | null> {
-  let organizationId: string;
+export async function customPageGate(
+  page: CustomPageId,
+  opts: { handheld?: boolean } = {},
+): Promise<React.ReactElement | null> {
+  let ctx: Awaited<ReturnType<typeof requireOrg>>;
   try {
-    ({ organizationId } = await requireOrg());
+    ctx = await requireOrg();
   } catch {
     return null;
   }
-  if (!(await isPageLocked(organizationId, page))) return null;
+  if (!(await isPageLocked(ctx.organizationId, page))) return null;
   const href = CUSTOM_PAGES.find((p) => p.id === page)?.href ?? "/dashboard";
-  return <UpgradeGate pathname={href} />;
+  const locked = (await getBlockedCustomPages(ctx.organizationId)) ?? [];
+  const isOwner = ctx.role === "OWNER";
+  // The standalone handheld URLs (/mobile-*) have no shell above them: the
+  // gate brings the handheld frame and its navigation.
+  if (opts.handheld) {
+    return (
+      <HandheldGate
+        pathname={href}
+        locked={locked}
+        isOwner={isOwner}
+        identity={{ role: ctx.role, name: ctx.user.name ?? ctx.user.email ?? "Account", hidden: [] }}
+      />
+    );
+  }
+  return <UpgradeGate pathname={href} locked={locked} isOwner={isOwner} />;
 }

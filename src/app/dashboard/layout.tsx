@@ -193,7 +193,7 @@ export default async function DashboardBlueprintLayout({
   if (lockedPages?.length) {
     const pathname = (await headers()).get("x-pathname") ?? "";
     if (pathname && isCustomBlockedPath(lockedPages, pathname)) {
-      customGate = <UpgradeGate pathname={pathname} />;
+      customGate = <UpgradeGate pathname={pathname} locked={lockedPages} isOwner={role === "OWNER"} />;
     }
   }
 

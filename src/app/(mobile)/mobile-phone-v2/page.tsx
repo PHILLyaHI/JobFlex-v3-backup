@@ -41,7 +41,7 @@ export const viewport: Viewport = {
 };
 
 export default async function MobilePhoneV2Page() {
-  const gate = await customPageGate("phone");
+  const gate = await customPageGate("phone", { handheld: true });
   if (gate) return gate;
   const props = await loadPhoneProps("/mobile-phone-v2");
   return <MobilePhone {...props} />;

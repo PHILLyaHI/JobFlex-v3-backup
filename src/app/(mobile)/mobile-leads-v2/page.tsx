@@ -54,7 +54,7 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileLeadsV2Page() {
-  const gate = await customPageGate("leads");
+  const gate = await customPageGate("leads", { handheld: true });
   if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {

@@ -47,7 +47,7 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileVideoEstimatorV1Page() {
-  const gate = await customPageGate("video-estimator");
+  const gate = await customPageGate("video-estimator", { handheld: true });
   if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {

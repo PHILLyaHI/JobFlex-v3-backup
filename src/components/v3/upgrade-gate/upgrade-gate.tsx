@@ -1,3 +1,5 @@
+"use client";
+
 // THE UPGRADE GATE — what a custom-plan org sees at the URL of a page its
 // plan does not include.
 //
@@ -5,26 +7,92 @@
 // 2026-08-31): the nav keeps drawing the locked page as a dimmed, padlocked
 // row, clicking it lands here, and pasting the URL lands here too — one
 // answer for both doors, and the address bar still says where you are. The
-// layouts (src/app/dashboard/layout.tsx and src/app/(dashboard)/layout.tsx)
-// render this INSTEAD of the page component, so the page's own server code
-// never runs for an org that has not bought it — the gate is the boundary,
-// not a curtain in front of the page.
+// layouts and the page-level gate (custom-page-gate) render this INSTEAD of
+// the page, so the page's own server code never runs for an org that has not
+// bought it.
+//
+// ONE BUTTON ADDS THE PAGE (owner, 2026-10-06): "Add Calendar for $10/mo" on
+// the custom plan's own subscription (actions/billing.addCustomPages →
+// lib/customBilling) — the prorated difference is charged now, nothing during
+// a trial — and the page opens on the refresh. Only the owner can; anyone
+// else is told who can. What it costs today is Stripe's own preview.
 //
 // A PLAIN STYLESHEET, self-scoped under .jf-upgate, for the same reason the
 // support widget's is: this renders inside whichever shell owns the URL —
 // blueprint desktop, classic, or a handheld frame — so it can lean on none of
 // their hash spaces. Tokens are read with fallbacks, never re-declared.
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import { pageForPath } from "@/lib/customPlan";
+import { useRouter } from "next/navigation";
+import { addCustomPages, previewCustomPagesChange } from "@/actions/billing";
+import { toast } from "@/components/ui/Toast";
+import { CUSTOM_PAGE_CENTS, CUSTOM_PAGES, pageForPath } from "@/lib/customPlan";
 import "./upgrade-gate.css";
 
+function money(cents: number): string {
+  const d = cents / 100;
+  return Number.isInteger(d) ? `$${d}` : `$${d.toFixed(2)}`;
+}
 
-export function UpgradeGate({ pathname }: { pathname: string }) {
-  // The page the path OPENS — aliases and handheld URLs included.
+type Preview = { dueNowCents: number | null; monthlyCents: number; trialing: boolean };
+
+export function UpgradeGate({
+  pathname,
+  locked,
+  isOwner = false,
+}: {
+  pathname: string;
+  /** The org's blocked hrefs (lib/customPageAccess) — what it holds is the
+   *  rest, which prices the plan after this page is added. */
+  locked?: readonly string[];
+  /** Only the owner changes the plan (actions/billing requireOwner). */
+  isOwner?: boolean;
+}) {
+  const router = useRouter();
   const page = pageForPath(pathname);
   const label = page?.label ?? "This page";
+  const owned = CUSTOM_PAGES.filter((p) => !(locked ?? []).includes(p.href)).map((p) => p.id as string);
+  const canAdd = Boolean(page && isOwner && locked);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const key = page && canAdd ? [...owned, page.id].join(",") : "";
+
+  useEffect(() => {
+    if (!key) return;
+    let live = true;
+    previewCustomPagesChange(key.split(","))
+      .then((p) => {
+        if (live) setPreview(p);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [key]);
+
+  async function add() {
+    if (!page || busy) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await addCustomPages([page.id]);
+      if (!res.ok) throw new Error(res.error);
+      toast.success(
+        `${page.label} added`,
+        res.chargedCents > 0
+          ? `${money(res.chargedCents)} charged today. Your plan is ${money(res.monthlyCents)}/mo from the next bill.`
+          : `Your plan is ${money(res.monthlyCents)}/mo from the next bill.`,
+      );
+      router.refresh();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't add the page.");
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="jf-upgate" data-nest="">
       <div className="jf-upgate-card">
@@ -35,23 +103,41 @@ export function UpgradeGate({ pathname }: { pathname: string }) {
         </svg>
         <h1 className="jf-upgate-h">{label} isn&apos;t in your plan.</h1>
         <p className="jf-upgate-p">
-          Your custom plan covers the pages you picked at signup
           {page ? (
             <>
-              {" "}
-              — <b>{page.label}</b> ({page.note.toLowerCase()}) wasn&apos;t one of them.
+              <b>{page.label}</b> ({page.note.toLowerCase()}) is a {money(CUSTOM_PAGE_CENTS)}/mo add-on to your custom plan.
             </>
           ) : (
-            "."
+            "Your custom plan doesn't include this page."
           )}{" "}
-          Upgrade to a full plan to open everything, no page picking.
+          {page && !isOwner ? "Ask the account owner to add it." : null}
         </p>
+        {canAdd ? (
+          <p className="jf-upgate-note" aria-live="polite">
+            {preview?.trialing
+              ? `Nothing is charged during your trial; your plan becomes ${money(preview.monthlyCents)}/mo.`
+              : preview && preview.dueNowCents !== null
+                ? `${money(preview.dueNowCents)} today for the rest of this billing period, then ${money(preview.monthlyCents)}/mo.`
+                : "Charged today for the rest of this billing period, prorated."}
+          </p>
+        ) : null}
+        {err ? (
+          <p className="jf-upgate-err" role="alert">
+            {err}
+          </p>
+        ) : null}
         <div className="jf-upgate-row">
-          <Link className="jf-upgate-go" href={"/dashboard/upgrade" as Route}>
-            See plans &amp; upgrade
-          </Link>
-          <Link className="jf-upgate-back" href={"/dashboard" as Route}>
-            Back to overview
+          {canAdd ? (
+            <button type="button" className="jf-upgate-go" disabled={busy} aria-busy={busy} onClick={() => void add()}>
+              {busy ? "Adding…" : `Add ${label} for ${money(CUSTOM_PAGE_CENTS)}/mo`}
+            </button>
+          ) : (
+            <Link className="jf-upgate-go" href={"/dashboard/upgrade" as Route}>
+              See plans
+            </Link>
+          )}
+          <Link className="jf-upgate-back" href={(canAdd ? "/dashboard/upgrade" : "/dashboard") as Route}>
+            {canAdd ? "Compare plans" : "Back to overview"}
           </Link>
         </div>
       </div>

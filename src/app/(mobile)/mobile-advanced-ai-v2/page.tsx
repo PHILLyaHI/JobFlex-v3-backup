@@ -49,7 +49,7 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileAdvancedAiV2Page() {
-  const gate = await customPageGate("smart-proposal");
+  const gate = await customPageGate("smart-proposal", { handheld: true });
   if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {

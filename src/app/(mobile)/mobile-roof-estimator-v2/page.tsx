@@ -43,7 +43,7 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileRoofEstimatorV2Page() {
-  const gate = await customPageGate("roof-estimator");
+  const gate = await customPageGate("roof-estimator", { handheld: true });
   if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {

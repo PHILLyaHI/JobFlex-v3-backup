@@ -36,7 +36,7 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileSmartEstimateV1Page() {
-  const gate = await customPageGate("smart-proposal");
+  const gate = await customPageGate("smart-proposal", { handheld: true });
   if (gate) return gate;
   try {
     await requireOrg();

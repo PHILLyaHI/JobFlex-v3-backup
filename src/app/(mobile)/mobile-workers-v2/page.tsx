@@ -46,7 +46,7 @@ export const viewport: Viewport = {
 };
 
 export default async function MobileWorkersV2Page() {
-  const gate = await customPageGate("workers");
+  const gate = await customPageGate("workers", { handheld: true });
   if (gate) return gate;
   const session = await auth();
   if (!session?.user?.id) {
