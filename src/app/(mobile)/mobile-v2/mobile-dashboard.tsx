@@ -237,7 +237,7 @@ function quotaTip(q: NavLimit): string {
   return `${q.remaining} of ${q.limit} ${q.label} left${cycle}.`;
 }
 
-export function MobileDashboard({ data: seed }: { data?: DashboardData }) {
+export function MobileDashboard({ data: seed, notice }: { data?: DashboardData; notice?: React.ReactNode }) {
   const [data, setData] = useState<DashboardData | null>(seed ?? null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -267,7 +267,7 @@ export function MobileDashboard({ data: seed }: { data?: DashboardData }) {
     };
   }, [seed]);
 
-  if (data) return <DashboardView data={data} />;
+  if (data) return <DashboardView data={data} notice={notice} />;
   return <BootScreen error={loadError} />;
 }
 
@@ -304,7 +304,7 @@ function BootScreen({ error }: { error: string | null }) {
   );
 }
 
-function DashboardView({ data }: { data: DashboardData }) {
+function DashboardView({ data, notice }: { data: DashboardData; notice?: React.ReactNode }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -908,6 +908,7 @@ function DashboardView({ data }: { data: DashboardData }) {
       {/* ============ SCROLLER ============ */}
       <main className={styles.scroll} ref={scrollRef}>
         <div className={styles.content} ref={contentRef}>
+          {notice}
           {/* LEAD CENTER BANNER — only for an org that cannot receive platform
               leads yet, and only until it is snoozed for a week. */}
           {gap && banner !== "hidden" ? (

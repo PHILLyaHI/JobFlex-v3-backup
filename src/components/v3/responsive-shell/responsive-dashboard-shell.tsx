@@ -318,12 +318,15 @@ export function ResponsiveDashboardShell({
   limits,
   limitsExempt,
   handheldBanner,
+  overviewNotice,
 }: {
   children: React.ReactNode;
   /** A banner the layout passes inside `children` (the card-less trial's
    *  ribbon) — repeated here for the mapped handheld surfaces, which render
    *  their own component INSTEAD of children and would drop it. */
   handheldBanner?: React.ReactNode;
+  /** The mobile Overview replaces children; keep announcements in its scroller. */
+  overviewNotice?: React.ReactNode;
   /** Signed-in identity, read in the server layout and handed to the desktop
    *  sidebar. The handheld shell draws its own account row. */
   user?: { name: string; role: string };
@@ -366,7 +369,7 @@ export function ResponsiveDashboardShell({
         {handheldBanner}
         <ChunkRecoveryBoundary resetKey={pathname ?? ""}>
           <CustomGateSwap>
-            <Handheld />
+            {pathname === "/dashboard" ? <MobileDashboard notice={overviewNotice} /> : <Handheld />}
           </CustomGateSwap>
         </ChunkRecoveryBoundary>
         {/* The support composer. Every other handheld surface gets it from

@@ -2,8 +2,7 @@
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Megaphone } from "lucide-react";
-import { cn } from "@/lib/cn";
-import { relative } from "@/lib/format";
+import styles from "./AnnouncementBanner.module.css";
 
 export interface Announcement {
   id: string;
@@ -19,12 +18,6 @@ interface AnnouncementBannerProps {
   onDismiss?: (id: string) => Promise<void> | void;
 }
 
-function accentFor(priority: number) {
-  if (priority >= 2) return "#E11D48"; // rose for high
-  if (priority === 1) return "#D97706"; // amber for warn
-  return "var(--accent)";
-}
-
 export function AnnouncementBanner({ announcements, onDismiss }: AnnouncementBannerProps) {
   const [expanded, setExpanded] = React.useState(false);
   const sorted = React.useMemo(
@@ -35,20 +28,15 @@ export function AnnouncementBanner({ announcements, onDismiss }: AnnouncementBan
   const [primary, ...rest] = sorted;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-      className="mb-5"
-      onMouseLeave={() => setExpanded(false)}
-    >
+    <div className={styles.root} data-nest>
       <AnnouncementRow a={primary} onDismiss={onDismiss} />
       {rest.length > 0 && (
         <div className="relative">
           <button
-            onMouseEnter={() => setExpanded(true)}
             onClick={() => setExpanded((x) => !x)}
-            className="mt-1.5 text-[11px] text-[color:var(--ink-muted)] hover:text-[color:var(--ink)] tabular inline-flex items-center gap-1.5 pl-4"
+            type="button"
+            aria-expanded={expanded}
+            className={styles.more}
           >
             <span className="h-1 w-1 rounded-full bg-[color:var(--ink-faint)]" />
             +{rest.length} more announcement{rest.length === 1 ? "" : "s"}
@@ -70,7 +58,7 @@ export function AnnouncementBanner({ announcements, onDismiss }: AnnouncementBan
           </AnimatePresence>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 }
 
@@ -84,22 +72,17 @@ function AnnouncementRow({
   const [busy, setBusy] = React.useState(false);
   return (
     <div
-      className="paper-card flex items-center gap-3 py-2.5 px-4 border-l-[3px]"
-      style={{ borderLeftColor: accentFor(a.priority) }}
+      className={styles.card}
+      data-priority={a.priority >= 2 ? "high" : a.priority === 1 ? "warn" : "normal"}
     >
       <Megaphone
-        className="h-3.5 w-3.5 shrink-0"
-        style={{ color: accentFor(a.priority) }}
+        className={styles.icon}
+        aria-hidden="true"
       />
-      <div className="flex items-baseline gap-2 min-w-0 flex-1">
-        <span className="text-[12.5px] font-medium text-[color:var(--ink)] truncate">
-          {a.title}
-        </span>
-        <span className="text-[12px] text-[color:var(--ink-muted)] truncate">{a.body}</span>
+      <div className={styles.copy}>
+        <p className={styles.title}>{a.title}</p>
+        <p className={styles.body}>{a.body}</p>
       </div>
-      <span className="text-[10px] text-[color:var(--ink-faint)] tabular shrink-0">
-        {relative(a.createdAt)}
-      </span>
       {onDismiss && (
         <button
           disabled={busy}
@@ -111,10 +94,11 @@ function AnnouncementRow({
               setBusy(false);
             }
           }}
-          className="h-6 w-6 grid place-items-center rounded-[var(--r-sm)] text-[color:var(--ink-muted)] hover:bg-black/[0.05]"
-          aria-label="Dismiss"
+          type="button"
+          className={styles.dismiss}
+          aria-label={`Dismiss ${a.title}`}
         >
-          <X className="h-3 w-3" />
+          <X size={18} aria-hidden="true" />
         </button>
       )}
     </div>

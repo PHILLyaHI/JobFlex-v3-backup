@@ -226,6 +226,7 @@ export default async function DashboardBlueprintLayout({
       limits={navLimits}
       limitsExempt={navLimitsExempt}
       handheldBanner={trial && !onTrialPage ? <TrialRibbon view={trial} isOwner={role === "OWNER"} only="dock" /> : null}
+      overviewNotice={announcements.length > 0 ? <DashboardAnnouncementDismiss announcements={announcements} /> : null}
     >
       <TrafficContext role={role} plan={plan} organizationId={organizationId} userId={userId} />
       {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
