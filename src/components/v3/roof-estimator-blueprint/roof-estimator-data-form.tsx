@@ -11,7 +11,7 @@
 //   · everything derived from the drawn MODEL is honestly absent, not zeroed:
 //     the layer toggles, PNG/PDF export, LINEAR FOOTAGE and the pitch-mix
 //     panel are gone with the drawing. EagleView totals retain their details;
-//     Google aerial estimates show their own source and review requirements.
+//     Aerial estimates retain estimated labels and can be priced directly.
 //
 // Actions: measureRoof / measureRoofInstant / listRoofMeasurements / getRoofMeasurement
 // (src/actions/roofMeasurement.ts, data-only) + getMeasurementPhoto (Google
@@ -263,7 +263,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
   const [unsaved, setUnsaved] = React.useState(false);
   const [instantBusy, setInstantBusy] = React.useState(false);
   const [measurementBusy, setMeasurementBusy] = React.useState(false);
-  const [solarReviewed, setSolarReviewed] = React.useState(false);
   const isSolar = measurement?.source === "solar";
   const solar = isSolar ? measurement.provenance.solar : null;
   // Pricing allocates sloped roofing squares, so weight families by surface
@@ -272,7 +271,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
   const solarPitchShares = solarSurfaceTotal > 0
     ? solar!.pitchFamilies.map(family => ({ pitch12: family.pitch12, share: family.surfaceSqft / solarSurfaceTotal }))
     : [];
-  const solarNeedsReview = isSolar && !solarReviewed;
   // Set when the shown measurement reused an already-paid EagleView answer —
   // the explicit paid re-measure button renders only then.
   const [reusedInstant, setReusedInstant] = React.useState<"stored" | "recovered" | null>(null);
@@ -584,7 +582,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
 
   function resetResult() {
     setMeasurement(null);
-    setSolarReviewed(false);
     setReport({ state: "none" });
     setManual(null);
     setExtra(new Set());
@@ -741,7 +738,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
     setMeasurement(m);
     latestRef.current = m;
     setReport({ state: m.source === "solar" || m.source === "recon" ? "none" : "loading" });
-    setSolarReviewed(false);
     setExtra(new Set());
     setPitchEntered(null);
     setUnsaved(wasUnsaved);
@@ -982,10 +978,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
   async function generate() {
     const t = totals;
     if (t?.squares == null) return;
-    if (solarNeedsReview) {
-      toast.info("Check the roof and measurements first", "Confirm the roof below the satellite view before pricing.");
-      return;
-    }
     if (isRecon) {
       toast.error(
         "Estimated measurements can’t be priced",
@@ -1121,10 +1113,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
     });
   }
   function applyPackage(pkg: RoofPackage, spec: RoofPackageSpec, quiet = false) {
-    if (solarNeedsReview) {
-      toast.info("Check the roof and measurements first", "Confirm the roof before pricing.");
-      return null;
-    }
     if (!pitchForEstimate) {
       toast.error("Enter the roof pitch first");
       return null;
@@ -1241,10 +1229,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
   // React would not have committed to state yet ("convert as is").
   async function convertWith(input: { title: string; materials: EditableLine[]; labor: EditableLine[]; assumptions: string[]; scope: string }) {
     if (!measurement && !manual) return;
-    if (solarNeedsReview) {
-      toast.info("Check the roof and measurements first", "Confirm the roof before creating a proposal.");
-      return;
-    }
     if (isRecon) {
       toast.error("Estimated measurements can’t become a proposal", "Use Measure this roof on this address first.");
       return;
@@ -1912,7 +1896,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                     <summary className="rf-head"><span className="card-title">Measurement details</span></summary>
                     <div className="rf-details">
                       <dl>
-                        <div className="rf-details-row"><dt>Source</dt><dd>Google aerial estimate</dd></div>
                         <div className="rf-details-row"><dt>Imagery date</dt><dd>{solar?.imageryDate ?? "Unavailable"}</dd></div>
                         <div className="rf-details-row"><dt>Imagery quality</dt><dd>{solar?.imageryQuality ?? "Unavailable"}</dd></div>
                         <div className="rf-details-row"><dt>Building footprint</dt><dd>{footprint.sqft != null ? `${num(footprint.sqft)} sq ft` : "Unavailable"}</dd></div>
@@ -1921,7 +1904,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                       </dl>
                       <p className="rf-details-note">Modeled segments are not verified roof facets. Roof condition, eave height and measured edge lengths are unavailable.</p>
                       <p className="rf-details-note">The satellite view may show imagery from a different date.</p>
-                      {solar?.warnings.map((warning, index) => <p className="rf-details-note" key={index}>{warning}</p>)}
+                      {solar?.warnings.map((warning, index) => (
+                        <p className="rf-details-note" key={index}>
+                          {warning.replace(/^Google's\b/, "The model's").replace(/^Google\b/, "The").replace(/\bGoogle\b/g, "the model")}
+                        </p>
+                      ))}
                     </div>
                   </details>
                 )}
@@ -2035,16 +2022,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
             </div>
             )}
 
-            {isSolar && (
-              <div className="rf-notice">
-                <label className="rf-attach rf-solar-review">
-                  <input type="checkbox" checked={solarReviewed} onChange={(event) => setSolarReviewed(event.target.checked)} disabled={genBusy || convertBusy} />
-                  <span>I checked the roof and measurements.</span>
-                </label>
-                <p className="rf-details-note">Verify on site before ordering materials.</p>
-              </div>
-            )}
-
             <BuildEstimateCardSwitch
               isRecon={isRecon}
               squares={totals?.squares ?? null}
@@ -2055,7 +2032,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
               onWaste={setWaste}
               wasteOptions={WASTE_OPTIONS}
               aiEnabled={aiEnabled}
-              waiting={solarNeedsReview ? "Check the roof and measurements above before pricing." : packsPending ? "Still reading the pitch and details — the estimate prices once they land." : null}
+              waiting={packsPending ? "Still reading the pitch and details — the estimate prices once they land." : null}
               pitchEntry={
                 /* EagleView supplied no pitch (pack 002 not bought): the
                    contractor states one, and the estimate says so. Not while
@@ -2066,8 +2043,8 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
               }
               generate={{
                 busy: genBusy,
-                disabled: isRecon || solarNeedsReview || genBusy || totals?.squares == null || !pitchForEstimate || packsPending,
-                reason: solarNeedsReview ? "Check the roof and measurements first." : packsPending
+                disabled: isRecon || genBusy || totals?.squares == null || !pitchForEstimate || packsPending,
+                reason: packsPending
                   ? "Still reading the pitch and details."
                   : !pitchForEstimate
                     ? "Enter the pitch first — the measurement has none for this roof."
@@ -2106,7 +2083,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                   ? { state: report.state, reportId: report.reportId ?? null, status: report.status ?? null, busy: reportBusy, onOrder: () => void orderFullReport(), onCheck: () => void checkReport() }
                   : null
               }
-              builderDisabled={convertBusy || solarNeedsReview}
+              builderDisabled={convertBusy}
               converting={convertBusy}
               onBuild={applyPackage}
               onConvert={convertPackage}
@@ -2141,7 +2118,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                             className="btn btn-primary btn--sm"
                             type="button"
                             id="convertBtn"
-                            disabled={convertBusy || isRecon || solarNeedsReview || sampleEstimate}
+                            disabled={convertBusy || isRecon || sampleEstimate}
                             title={sampleEstimate ? "Sample lines (AI is off) can’t become a proposal — build the package instead." : "Create a draft proposal from these lines"}
                             onClick={() => void convert()}
                           >

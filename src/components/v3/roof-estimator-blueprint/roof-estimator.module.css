@@ -1918,8 +1918,6 @@
 .bp :global(.content .rf-attach input) { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; cursor: pointer; }
 .bp :global(.content .rf-attach input:checked) { background: var(--ink); box-shadow: inset 0 0 0 2.5px #fff; }
 .bp :global(.content .rf-attach input:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
-.bp :global(.content .rf-solar-review) { min-height: var(--roof-touch-h); height: auto; padding-block: 10px; white-space: normal; line-height: 1.5; }
-.bp :global(.content .rf-solar-review input) { flex-shrink: 0; }
 .bp :global(.content .rf-measurement-details > summary) { display: list-item; min-height: var(--roof-touch-h); cursor: pointer; }
 .bp :global(.content .rf-measurement-details:not([open]) > summary) { border-bottom: 0; }
 .bp :global(.content .rf-measurement-details > summary:focus-visible) { outline: var(--border-thin); outline-color: var(--blueprint); outline-offset: calc(-1 * var(--radius)); }

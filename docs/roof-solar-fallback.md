@@ -2,9 +2,9 @@
 
 The roof estimator keeps one **Measure this roof** action. The server uses Google while EagleView is unavailable. It uses the existing `GOOGLE_MAPS_API_KEY`; Google Solar must be enabled for that key. Usage is metered by Google and the existing JobFlex trial/rate limits. No database migration or new dependency is required.
 
-`ROOF_MEASUREMENT_PROVIDER` defaults to `google`. After EagleView confirms roof-area entitlement, set it to `eagleview` and redeploy; the same action uses EagleView with Google as a fallback for explicit access/entitlement failures. Pending orders, trial limits, and database errors do not trigger another provider purchase. Source and imagery details remain available under Measurement details instead of a provider-selection UI.
+`ROOF_MEASUREMENT_PROVIDER` defaults to `google`. After EagleView confirms roof-area entitlement, set it to `eagleview` and redeploy; the same action uses EagleView with Google as a fallback for explicit access/entitlement failures. Pending orders, trial limits, and database errors do not trigger another provider purchase. Imagery and measurement details remain available under Measurement details; provider naming is omitted from that panel while stored provenance remains intact.
 
-The source is saved as `solar`, separate from EagleView and retired reconstruction records. The existing numeric takeoff contract is reused, but no EagleView order ID, facet count, measured linear footage, or classification is invented. The contractor must review the selected building and preliminary measurements before pricing. The result can be reopened from Recent. Same-address/same-pin results are reused within 24 hours.
+The source is saved as `solar`, separate from EagleView and retired reconstruction records. The existing numeric takeoff contract is reused, but no EagleView order ID, facet count, measured linear footage, or classification is invented. Valid estimates can be priced and converted immediately, without a review checkbox. Estimated labels and preliminary assumptions remain; missing pitch/area and pending paid-report checks still apply. The result can be reopened from Recent. Same-address/same-pin results are reused within 24 hours.
 
 ## Calculation and limits
 
@@ -61,3 +61,9 @@ These are **same-source consistency checks**, not independent accuracy validatio
 - The restored single-button UI was checked at 390×844 and 1440px. The Nashville example produced 2,932 sq ft and 4/12 through the generic action. Measurement details start collapsed, expand correctly, and the mobile review/disclosure targets are at least 44px with no horizontal overflow.
 - Typed provider-access fallback/refund checks passed nine cases, including pending order IDs containing 401/403, polling failures and ambiguous errors. These cannot trigger a second provider lookup.
 - No schema migration is required. Benchmark database reads were read-only; local interaction checks used the development QA organization. Production compilation and release status are recorded in the Vercel deployment for this commit.
+
+## Direct-pricing follow-up — 2026-10-06
+
+At the owner's request, removed provider naming from Measurement details and removed the Solar-only confirmation checkbox and pricing/conversion gate. Stored source metadata, map attribution, estimated quantity labels, preliminary assumptions, and existing missing-data/pending-report checks remain.
+
+Verified at 390×844 that a saved Solar result immediately prices, builds 25 lines, and converts to a development QA draft without confirmation. Measurement details contains no provider name; no horizontal overflow. At 1440px, package pricing and Smart Estimate generation are enabled. Focused ESLint, full TypeScript, and diff checks passed.
