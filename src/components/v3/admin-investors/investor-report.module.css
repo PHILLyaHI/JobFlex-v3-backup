@@ -1,0 +1,84 @@
+/* THE INVESTOR REPORT (2026-10-06). Scoped by its own root class, not the
+   admin shell's, because the same markup stands on the shared link's page
+   with no shell around it. Tokens from globals.css, each with its value as
+   the fallback, so the sheet reads the same on either page. Blueprint: paper,
+   ink frames, mono labels, money in blueprint blue, paying in green. */
+.rep { --rep-ink: var(--ink, #0a0a0a); --rep-soft: var(--ink-soft, #2a2a2a); --rep-muted: var(--ink-muted, #555); --rep-line: var(--ink-line, rgba(10,10,10,.12)); --rep-blue: var(--accent, #1854a0); --rep-green: var(--emerald, #3a7d44); --rep-amber: var(--amber, #b88420); --rep-paper: var(--paper, #f2f0eb); --rep-sans: var(--font-sans, Inter, system-ui, sans-serif); --rep-mono: var(--font-mono, ui-monospace, monospace);
+  display: grid; gap: 16px; min-width: 0; color: var(--rep-ink); font-family: var(--rep-sans); }
+
+.lead { padding: 22px 24px 20px; background: #fff; border: 2px solid var(--rep-ink); border-radius: 2px; box-shadow: inset 4px 0 0 var(--rep-blue); }
+.lead[data-tone="late"] { box-shadow: inset 4px 0 0 var(--rep-amber); }
+.lead[data-tone="none"] { box-shadow: inset 4px 0 0 var(--rep-muted); }
+.leadLabel { font: 700 11px var(--rep-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--rep-muted); }
+.leadText { margin: 10px 0 0; max-width: 78ch; font-size: 20px; line-height: 1.4; font-weight: 600; letter-spacing: -.01em; text-wrap: pretty; }
+.leadFacts { display: flex; flex-wrap: wrap; gap: 12px 40px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--rep-line); }
+.leadFacts > div { display: grid; gap: 3px; }
+.leadFacts b { font-size: 30px; font-weight: 900; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; color: var(--rep-blue); }
+.lead[data-tone="late"] .leadFacts b { color: var(--rep-amber); }
+.leadFacts span { font: 600 11px var(--rep-mono); letter-spacing: .04em; color: var(--rep-muted); }
+
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border: 2px solid var(--rep-ink); border-radius: 2px; background: #fff; }
+.kpi { display: grid; gap: 6px; align-content: start; padding: 14px 16px 15px; border-right: 1px solid var(--rep-line); min-width: 0; }
+.kpi:last-child { border-right: 0; }
+.kpiLabel { font: 700 10.5px var(--rep-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--rep-muted); }
+.kpiValue { font-size: 28px; font-weight: 900; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.kpi[data-tone="blue"] .kpiValue { color: var(--rep-blue); }
+.kpi[data-tone="good"] .kpiValue { color: var(--rep-green); }
+.kpi[data-tone="trial"] .kpiValue { color: var(--rep-amber); }
+.kpiNote { font: 600 11px/1.45 var(--rep-mono); color: var(--rep-muted); overflow-wrap: anywhere; }
+
+.card { padding: 18px 20px 20px; background: #fff; border: 2px solid var(--rep-ink); border-radius: 2px; min-width: 0; }
+.h2 { margin: 0 0 12px; font-size: 14px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.twoUp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tbl td { padding: 9px 8px 9px 0; border-bottom: 1px solid var(--rep-line); vertical-align: baseline; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl td:first-child { font-weight: 700; white-space: nowrap; }
+.num { text-align: right; font-weight: 900; font-variant-numeric: tabular-nums; white-space: nowrap; padding-right: 14px !important; }
+.sub { font: 600 11px/1.45 var(--rep-mono); color: var(--rep-muted); }
+.strong td { background: var(--rep-paper); }
+.strong .num { color: var(--rep-blue); }
+
+/* The curve */
+.chart { margin: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.chart svg { display: block; width: 100%; height: auto; }
+.rule { stroke: var(--rep-line); stroke-width: 1; }
+.base { stroke: var(--rep-ink); stroke-width: 1.5; }
+.axis { font: 600 11px var(--rep-mono); fill: var(--rep-muted); }
+.axisStrong { font: 700 11px var(--rep-mono); fill: var(--rep-ink); }
+.future { fill: var(--rep-paper); }
+.today { stroke: var(--rep-ink); stroke-width: 1; stroke-dasharray: 4 4; }
+.lineSpend { fill: none; stroke: var(--rep-ink); stroke-width: 2.5; stroke-linejoin: round; }
+.lineReal { fill: none; stroke: var(--rep-blue); stroke-width: 2.5; stroke-linejoin: round; }
+.lineAll { fill: none; stroke: var(--rep-blue); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .55; stroke-linejoin: round; }
+.mark { fill: #fff; stroke: var(--rep-blue); stroke-width: 3; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font: 600 11px var(--rep-mono); color: var(--rep-soft); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
+.swSpend { border-color: var(--rep-ink); }
+.swReal { border-color: var(--rep-blue); }
+.swAll { border-top-style: dashed !important; border-color: var(--rep-blue); opacity: .6; }
+.legendNote { color: var(--rep-muted); }
+
+.method { padding: 16px 20px; border: 1px solid var(--rep-line); border-radius: 2px; background: #fff; }
+.method ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 12.5px; line-height: 1.5; color: var(--rep-soft); max-width: 90ch; }
+
+@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpi:nth-child(3n) { border-right: 0; } .kpi:nth-child(-n + 3) { border-bottom: 1px solid var(--rep-line); } }
+@media (max-width: 760px) {
+  .rep { gap: 12px; }
+  .lead { padding: 16px 16px 14px; }
+  .leadText { font-size: 17px; }
+  .leadFacts { gap: 10px 24px; }
+  .leadFacts b { font-size: 24px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi { padding: 12px 14px; }
+  .kpi:nth-child(3n) { border-right: 1px solid var(--rep-line); }
+  .kpi:nth-child(2n) { border-right: 0; }
+  .kpi:nth-child(-n + 4) { border-bottom: 1px solid var(--rep-line); }
+  .kpiValue { font-size: 22px; }
+  .twoUp { grid-template-columns: minmax(0, 1fr); }
+  .card { padding: 14px; }
+  .chart svg { min-width: 640px; }
+  .tbl td:first-child { white-space: normal; }
+  .sub { display: block; }
+}

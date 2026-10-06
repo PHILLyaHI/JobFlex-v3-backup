@@ -1,0 +1,85 @@
+// The investor figures (lib/investorModel, 2026-10-06): spend, trials, the
+// realistic share, the payback curve and its break-even — on fixtures with
+// hand-checked answers.
+//   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/investor-model.check.ts
+import { addDays, daysBetween, dollars, investorFigures, paybackSentence, perDay, type ModelInput } from "../../src/lib/investorModel";
+
+let bad = 0;
+const check = (name: string, ok: boolean, detail = "") => {
+  if (!ok) bad++;
+  console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
+};
+const near = (a: number, b: number, tol = 1) => Math.abs(a - b) <= tol;
+
+const base: ModelInput = {
+  since: "2026-09-30",
+  today: "2026-10-06",
+  spend: [
+    { date: "2026-09-30", cents: 10000 }, { date: "2026-10-01", cents: 10000 }, { date: "2026-10-02", cents: 10000 },
+    { date: "2026-10-03", cents: 10000 }, { date: "2026-10-04", cents: 10000 }, { date: "2026-10-05", cents: 10000 }, { date: "2026-10-06", cents: 10000 },
+    { date: "2026-09-01", cents: 99999 }, // before the launch: not counted
+  ],
+  paying: [{ startedAt: "2026-10-02", monthlyCents: 7900 }, { startedAt: "2026-10-06", monthlyCents: 7900 }],
+  trials: [
+    { createdAt: "2026-10-04", endsAt: "2026-10-11", monthlyCents: 7900, chance: 0.45 },
+    { createdAt: "2026-10-05", endsAt: "2026-10-12", monthlyCents: 2900, chance: 0.2 },
+    { createdAt: "2026-10-06", endsAt: "2026-10-13", monthlyCents: 19900, chance: 0.15 },
+    { createdAt: "2026-10-06", endsAt: null, monthlyCents: null, chance: 0.15 },
+  ],
+  lapsed: 1,
+  assumptions: { realisticPct: 60, spendPerDayCents: null, horizonDays: 180, trialDays: 7 },
+  visitors: 700,
+};
+
+console.log("── dates");
+check("a day after Oct 6 is Oct 7; Sep 30 → Oct 6 is six days apart", addDays("2026-10-06", 1) === "2026-10-07" && daysBetween("2026-09-30", "2026-10-06") === 6);
+check("a pace over the last seven days (or since the launch when younger)", near(perDay(["2026-10-06", "2026-10-05", "2026-10-05", "2026-09-29"], "2026-09-30", "2026-10-06"), 3 / 7, 0.001) && near(perDay(["2026-10-06"], "2026-10-05", "2026-10-06"), 0.5, 0.001));
+
+const f = investorFigures(base);
+console.log("── spend");
+check("spend since the launch only: $700 over 7 days, $100 a day", f.spend.totalCents === 70000 && f.spend.daysWithSpend === 7 && f.spend.perDayRecentCents === 10000 && f.spend.perDayProjectedCents === 10000 && f.spend.lastDate === "2026-10-06");
+check("a set daily budget projects instead of the recent average", investorFigures({ ...base, assumptions: { ...base.assumptions, spendPerDayCents: 5000 } }).spend.perDayProjectedCents === 5000);
+
+console.log("── trials and paying");
+check("4 trials, 3 priced: $307 if all pay, $184 realistic at 60%, average $102", f.trials.count === 4 && f.trials.priced === 3 && f.trials.maxMrrCents === 30700 && f.trials.realisticMrrCents === 18420 && f.trials.avgMonthlyCents === 10233);
+check("by behaviour: 0.45×79 + 0.2×29 + 0.15×199 = $71 (23%)", f.trials.byBehaviourMrrCents === 3555 + 580 + 2985 && f.trials.byBehaviourPct === 23);
+check("paying: 2 accounts, $158 MRR, $1,896 ARR", f.paying.count === 2 && f.paying.mrrCents === 15800 && f.paying.arrCents === 189600);
+check("revenue to date at list price: 5 days of $79 + 1 day of $79 = $15.80", f.paying.revenueToDateCents === Math.round((7900 * 5) / 30) + Math.round(7900 / 30));
+check("signups = trials + paying + lapsed = 7; observed share paid 2 of 3 = 67%", f.signups === 7 && f.observed.paid === 2 && f.observed.lapsed === 1 && f.observed.pct === 67);
+check("projected MRR: all pay $465, realistic $342, by behaviour $229", f.projected.mrrAllPayCents === 46500 && f.projected.mrrRealisticCents === 34220 && f.projected.mrrByBehaviourCents === 15800 + 7120);
+
+console.log("── unit economics");
+check("cost per visitor $1, per signup $100, per paying (2 + 4×0.6) $159", f.unit.costPerVisitorCents === 100 && f.unit.costPerSignupCents === 10000 && f.unit.costPerPayingRealisticCents === Math.round(70000 / 4.4));
+check("visitor → signup 1%, 6 signups over 7 days = 0.86 a day", f.unit.visitorToSignupPct === 1 && f.unit.signupsPerDay === 0.86);
+check("payback: $700 ÷ $342 a month = 2 months; return to date 2%", f.unit.paybackMonths === 2 && f.unit.returnToDatePct === 2);
+
+console.log("── the curve");
+check("one point per day from the launch to the horizon, booked then projected", f.curve.length === 7 + 180 && f.curve[0].date === "2026-09-30" && !f.curve[6].projected && f.curve[7].projected);
+check("spend runs: $700 today, $800 tomorrow", f.curve[6].spendCents === 70000 && f.curve[7].spendCents === 80000);
+const today = f.curve[6];
+check("revenue today (all-pay = realistic while only paying accounts earn): $15.80", today.allPayCents === today.realisticCents && near(today.realisticCents, 1580, 2));
+const oct11 = f.curve.find((p) => p.date === "2026-10-11")!;
+const oct10 = f.curve.find((p) => p.date === "2026-10-10")!;
+check("the first trial starts earning on its end day, Oct 11 ($79/30 all-pay, 60% of it realistic)", near(oct11.allPayCents - oct10.allPayCents, (15800 + 7900) / 30, 2) && near(oct11.realisticCents - oct10.realisticCents, (15800 + 7900 * 0.6) / 30, 2));
+check("the realistic line stays under the all-pay line once trials earn", f.curve.at(-1)!.realisticCents < f.curve.at(-1)!.allPayCents);
+check("future signups (0.86 a day at $102) start earning seven days after they arrive", f.curve[14].allPayCents - f.curve[13].allPayCents > f.curve[13].allPayCents - f.curve[12].allPayCents);
+check("break-even: a date within the horizon, after today", f.breakEven.withinHorizon && f.breakEven.date !== null && f.breakEven.daysFromToday! > 0 && f.breakEven.daysFromToday! < 180, `${f.breakEven.date} in ${f.breakEven.daysFromToday} days`);
+const cross = f.curve.find((p) => p.date === f.breakEven.date)!;
+const before = f.curve[f.curve.indexOf(cross) - 1];
+check("…and it is the first day realistic revenue meets the spend", cross.realisticCents >= cross.spendCents && before.realisticCents < before.spendCents);
+
+console.log("── what moves it");
+const allPay = investorFigures({ ...base, assumptions: { ...base.assumptions, realisticPct: 100 } });
+check("at 100% the realistic line is the all-pay line and break-even comes sooner", allPay.curve.every((p) => p.realisticCents === p.allPayCents) && allPay.breakEven.daysFromToday! < f.breakEven.daysFromToday!);
+const heavy = investorFigures({ ...base, assumptions: { ...base.assumptions, spendPerDayCents: 100000 } });
+check("$1,000 a day with this revenue never breaks even in the horizon, and the sentence says so", !heavy.breakEven.withinHorizon && /do not pay for themselves/.test(paybackSentence(heavy)));
+const none = investorFigures({ ...base, spend: [] });
+check("no spend: nothing to recover, no unit costs", none.spend.totalCents === 0 && none.unit.costPerSignupCents === null && none.unit.paybackMonths === null && /No ad spend/.test(paybackSentence(none)));
+const covered = investorFigures({ ...base, spend: [{ date: "2026-09-30", cents: 500 }] });
+check("$5 of spend is already covered: the sentence says so", /already covered/.test(paybackSentence(covered)));
+check("the sentence names the pace, the share and the date", /\$100 a day on ads, 0\.86 signups a day, 60% of trials paying/.test(paybackSentence(f)) && /on [A-Z][a-z]+ \d+, 202\d\./.test(paybackSentence(f)), paybackSentence(f));
+check("no visitors known → no per-visitor figures", investorFigures({ ...base, visitors: null }).unit.costPerVisitorCents === null && investorFigures({ ...base, visitors: 0 }).unit.visitorToSignupPct === null);
+check("dollars read as written", dollars(34220) === "$342" && dollars(158) === "$1.58" && dollars(0) === "$0");
+
+console.log(bad === 0 ? "\nAll investor model checks passed." : `\n${bad} investor model check(s) FAILED.`);
+process.exit(bad === 0 ? 0 : 1);
