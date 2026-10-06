@@ -574,8 +574,8 @@ const RESEND_MAX = 3;
  * lib/cardlessTrial) and the same account the paid return creates, with
  * everything that waited for completePendingSignup — the welcome email, the
  * attribution, metaSignupJson, CompleteRegistration and StartTrial. Answers a
- * sign-in ticket the confirmation page redeems. Opening the link again within
- * fifteen minutes signs in again; later it says the shop is already set up.
+ * sign-in ticket the confirmation page redeems. Reusing the link sends the
+ * visitor to sign-in without issuing another ticket or changing the trial.
  */
 export async function confirmCardlessTrial(
   secret: string,
@@ -597,6 +597,10 @@ export async function confirmCardlessTrial(
 const confirmKey = (hash: string) => `signup-confirm:${hash}`;
 const confirmIndexKey = (token: string) => `signup-confirm-of:${token}`;
 
+function cardlessSignupAlreadyUsed(email: string) {
+  return { ok: false as const, done: true, email, error: "This link was already used. Sign in to open your shop." };
+}
+
 /** The account and the trial, from a confirmed intent. Not exported: the
  *  only way in is the emailed link (confirmCardlessTrial). */
 async function finishCardlessTrial(
@@ -610,12 +614,12 @@ async function finishCardlessTrial(
   if (!rec?.cardless) {
     const done = await loadDone(token);
     if (done && done.sessionId === CARDLESS_SESSION) {
-      return { ok: false, done: true, email: done.email, error: "This link was already used. Sign in to open your shop." };
+      return cardlessSignupAlreadyUsed(done.email);
     }
     return { ok: false, error: "This link has expired — links last 24 hours. Start the signup again." };
   }
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
-  if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
+  if (taken) return cardlessSignupAlreadyUsed(rec.email);
   const refusal = await cardlessTrialRefusal(rec.email);
   if (refusal) return { ok: false, error: refusal };
   // The day's ceiling filled while the link sat in the inbox: the same
@@ -654,14 +658,13 @@ async function finishCardlessTrial(
     checkoutCurrency: sub.currency ?? "usd",
   });
   if (!created.ok) {
-    // The account could not be created (the address was taken a moment ago):
-    // the trial it was for must not keep running in Stripe.
-    try {
-      const { stripe } = await getStripeClient();
-      await stripe.subscriptions.cancel(sub.id);
-    } catch (err) {
-      console.warn("[signup] orphan card-less trial not cancelled:", err);
-    }
+    // Stripe's per-token idempotency key makes overlapping confirmations share
+    // one trial. A losing account-create request must never cancel it: the
+    // winner may have committed its User but not its Subscription row yet.
+    // Even an absent mirror cannot prove the trial is orphaned. Leave cleanup
+    // to the card-less trial's automatic expiry; no payment method was added.
+    const registered = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
+    if (registered) return cardlessSignupAlreadyUsed(rec.email);
     return created;
   }
   await writeCardlessRecord(created.orgId, {
