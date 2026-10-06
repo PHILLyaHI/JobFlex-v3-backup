@@ -5,7 +5,7 @@
 import type { Metadata } from "next";
 import { investorLinkOpen, investorReport } from "@/lib/investors";
 import { InvestorReportView } from "@/components/v3/admin-investors/investor-report";
-import { TRAFFIC_SINCE_LABEL } from "@/lib/traffic-visitor";
+import { longDate } from "@/lib/investorModel";
 import s from "./investors-public.module.css";
 
 export const dynamic = "force-dynamic";
@@ -33,7 +33,7 @@ export default async function InvestorsPublicPage({ params }: { params: Promise<
           <div>
             <div className={s.kicker}>JobFlex · Investors</div>
             <h1 className={s.h1}>Ads, trials and payback</h1>
-            <p className={s.sub}>Live figures since {TRAFFIC_SINCE_LABEL}, the day the ads started. Read {new Date(report.at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}.</p>
+            <p className={s.sub}>Live figures since {longDate(report.figures.since)}, the day the first campaign went live. Read {new Date(report.at).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}.</p>
           </div>
           <a className={s.pdf} href={`/api/investors/${token}/pdf`}>Download PDF</a>
         </header>

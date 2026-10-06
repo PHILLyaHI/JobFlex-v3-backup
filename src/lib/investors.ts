@@ -18,7 +18,7 @@ import { db } from "@/lib/db";
 import { countedOrgs, statsHiddenIds } from "@/lib/statsHidden";
 import { signupState } from "@/lib/traffic-live";
 import { TRAFFIC_SINCE, TRAFFIC_SINCE_MS, TRAFFIC_TZ } from "@/lib/traffic-visitor";
-import { fetchLiveTotals } from "@/lib/traffic-server";
+import { fetchInvestorVisitors } from "@/lib/traffic-server";
 import { valueSignups } from "@/lib/trialProjectionRead";
 import { investorFigures, dayOf, PLATFORMS, PLATFORM_LABEL, type InvestorAssumptions, type InvestorFigures, type SpendDay, type SpendPlatform } from "@/lib/investorModel";
 
@@ -41,13 +41,16 @@ export interface AdSpendEntry {
 }
 
 export interface InvestorSettings extends InvestorAssumptions {
+  /** The day the first campaign went live (owner, 2026-10-06: "count only what
+   *  happened after that"); null = the live map's start, TRAFFIC_SINCE. */
+  sinceDate: string | null;
   linkToken: string | null;
   linkEnabled: boolean;
   /** When the link was last made. */
   linkMadeAt: string | null;
 }
 
-export const DEFAULT_SETTINGS: InvestorSettings = { realisticPct: 60, spendPerDayCents: null, horizonDays: 180, trialDays: 7, linkToken: null, linkEnabled: false, linkMadeAt: null };
+export const DEFAULT_SETTINGS: InvestorSettings = { realisticPct: 60, spendPerDayCents: null, horizonDays: 180, trialDays: 7, sinceDate: null, linkToken: null, linkEnabled: false, linkMadeAt: null };
 const MAX_ENTRIES = 3000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -137,6 +140,7 @@ export function cleanSettings(raw: unknown): InvestorSettings {
     spendPerDayCents: typeof r.spendPerDayCents === "number" && Number.isFinite(r.spendPerDayCents) && r.spendPerDayCents >= 0 ? Math.round(r.spendPerDayCents) : null,
     horizonDays: Math.round(num(r.horizonDays, DEFAULT_SETTINGS.horizonDays, 30, 730)),
     trialDays: Math.round(num(r.trialDays, DEFAULT_SETTINGS.trialDays, 1, 90)),
+    sinceDate: typeof r.sinceDate === "string" && DATE.test(r.sinceDate) && r.sinceDate >= "2025-01-01" ? r.sinceDate : null,
     linkToken: typeof r.linkToken === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(r.linkToken) ? r.linkToken : null,
     linkEnabled: r.linkEnabled === true,
     linkMadeAt: typeof r.linkMadeAt === "string" ? r.linkMadeAt : null,
@@ -174,8 +178,21 @@ export interface InvestorReport {
   visitorsKnown: boolean;
   /** Paying accounts whose plan has no list price — counted as $0 in the MRR, and said so. */
   payingUnpriced: number;
+  /** Accounts paying from before the start day — not counted, but named. */
+  before: { paying: number; mrrCents: number };
+  /** The first day a visitor arrived from an ad (utm_source or fbclid), when the analytics answered. */
+  firstAdDay: string | null;
   /** When this was read. */
   at: string;
+}
+
+/** Midnight of `date` in `tz`, as a timestamp (the day's offset read from Intl). */
+function dayStartMs(date: string, tz: string): number {
+  const guess = Date.parse(`${date}T00:00:00Z`);
+  const name = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" }).formatToParts(new Date(guess)).find((x) => x.type === "timeZoneName")?.value ?? "GMT";
+  const m = /([+-])(\d{2}):?(\d{2})?/.exec(name);
+  const offsetMin = m ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 0;
+  return guess - offsetMin * 60_000;
 }
 
 const todayIn = (tz: string) => {
@@ -187,27 +204,32 @@ const todayIn = (tz: string) => {
 export async function investorReport(): Promise<InvestorReport> {
   const [entries, settings, hidden] = await Promise.all([readAdSpend(), readInvestorSettings(), statsHiddenIds()]);
   const today = todayIn(TRAFFIC_TZ);
+  // The start day: the first campaign's (owner, 2026-10-06), else the live map's.
+  const since = settings.sinceDate ?? TRAFFIC_SINCE;
+  const sinceMs = settings.sinceDate ? dayStartMs(since, TRAFFIC_TZ) : TRAFFIC_SINCE_MS;
 
-  // The accounts since the launch, with their subscriptions — the signups list's rows.
+  // The accounts since the start day, with their subscriptions — the signups list's rows.
   const orgs = await db.organization.findMany({
-    where: { createdAt: { gte: new Date(TRAFFIC_SINCE_MS) }, ...countedOrgs(hidden) },
+    where: { createdAt: { gte: new Date(sinceMs) }, ...countedOrgs(hidden) },
     orderBy: { createdAt: "desc" },
     take: 5000,
     select: { id: true, createdAt: true, subscription: { select: { plan: true, status: true, trialEndsAt: true, stripePriceId: true, externalSubId: true, provider: true, createdAt: true } } },
   });
-  // Every paying account, launch or not: the MRR investors ask about is all of it.
+  // Every paying account; the ones from before the start day are named, not counted.
   const payingAll = await db.subscription.findMany({
     where: { status: "ACTIVE", organization: countedOrgs(hidden) },
     select: { organizationId: true, plan: true, status: true, trialEndsAt: true, stripePriceId: true, externalSubId: true, provider: true, createdAt: true, organization: { select: { createdAt: true } } },
   });
 
+  const payRow = (p: (typeof payingAll)[number]) => ({ orgId: p.organizationId, createdAt: p.organization.createdAt, state: "paying" as const, sub: { plan: p.plan, status: p.status, trialEndsAt: p.trialEndsAt, stripePriceId: p.stripePriceId, externalSubId: p.externalSubId, provider: p.provider }, subCreatedAt: p.createdAt, trialEndsAt: p.trialEndsAt });
   const rows = [
     ...orgs.map((o) => ({ orgId: o.id, createdAt: o.createdAt, state: signupState(o.subscription?.status ?? ""), sub: o.subscription ? { plan: o.subscription.plan, status: o.subscription.status, trialEndsAt: o.subscription.trialEndsAt, stripePriceId: o.subscription.stripePriceId, externalSubId: o.subscription.externalSubId, provider: o.subscription.provider } : null, subCreatedAt: o.subscription?.createdAt ?? o.createdAt, trialEndsAt: o.subscription?.trialEndsAt ?? null })),
-    ...payingAll.filter((p) => !orgs.some((o) => o.id === p.organizationId)).map((p) => ({ orgId: p.organizationId, createdAt: p.organization.createdAt, state: "paying" as const, sub: { plan: p.plan, status: p.status, trialEndsAt: p.trialEndsAt, stripePriceId: p.stripePriceId, externalSubId: p.externalSubId, provider: p.provider }, subCreatedAt: p.createdAt, trialEndsAt: p.trialEndsAt })),
+    ...payingAll.filter((p) => p.organization.createdAt.getTime() >= sinceMs && !orgs.some((o) => o.id === p.organizationId)).map(payRow),
   ];
+  const beforeRows = payingAll.filter((p) => p.organization.createdAt.getTime() < sinceMs).map(payRow);
   let values = new Map<string, { monthlyCents: number | null; chance?: number }>();
   try {
-    values = (await valueSignups(rows.map((r) => ({ orgId: r.orgId, createdAt: r.createdAt, state: r.state, sub: r.sub })), Date.now())).values;
+    values = (await valueSignups([...rows, ...beforeRows].map((r) => ({ orgId: r.orgId, createdAt: r.createdAt, state: r.state, sub: r.sub })), Date.now())).values;
   } catch {
     values = new Map();
   }
@@ -224,18 +246,23 @@ export async function investorReport(): Promise<InvestorReport> {
   const lapsed = rows.filter((r) => r.state === "lapsed").length;
   const payingUnpriced = rows.filter((r) => r.state === "paying" && values.get(r.orgId)?.monthlyCents == null).length;
 
+  const before = { paying: beforeRows.length, mrrCents: beforeRows.reduce((a, r) => a + (values.get(r.orgId)?.monthlyCents ?? 0), 0) };
+
   let visitors: number | null = null;
+  let firstAdDay: string | null = null;
   try {
-    visitors = (await fetchLiveTotals(TRAFFIC_TZ)).production.allTime;
+    const v = await fetchInvestorVisitors(since, TRAFFIC_TZ);
+    visitors = v.visitors;
+    firstAdDay = v.firstAdDay;
   } catch {
     visitors = null;
   }
 
   const spend: SpendDay[] = entries.map((e) => ({ date: e.date, cents: e.cents }));
-  const figures = investorFigures({ since: TRAFFIC_SINCE, today, spend, paying, trials, lapsed, assumptions: settings, visitors });
+  const figures = investorFigures({ since, today, spend, paying, trials, lapsed, assumptions: settings, visitors });
   const byPlatform = PLATFORMS.map((platform) => {
-    const mine = entries.filter((e) => e.platform === platform && e.date >= TRAFFIC_SINCE && e.date <= today);
+    const mine = entries.filter((e) => e.platform === platform && e.date >= since && e.date <= today);
     return { platform, label: PLATFORM_LABEL[platform], cents: mine.reduce((a, e) => a + e.cents, 0), days: new Set(mine.map((e) => e.date)).size };
   }).filter((p) => p.cents > 0);
-  return { figures, settings, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, at: new Date().toISOString() };
+  return { figures, settings, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, at: new Date().toISOString() };
 }

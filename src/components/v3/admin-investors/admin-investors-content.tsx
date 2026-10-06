@@ -9,7 +9,7 @@ import { useState } from "react";
 import { Copy, ExternalLink, FileDown, Link as LinkIcon, RefreshCw, Trash2 } from "lucide-react";
 import { addAdSpendAction, deleteAdSpendAction, investorLinkAction, saveInvestorSettingsAction } from "@/actions/investors";
 import type { InvestorReport } from "@/lib/investors";
-import { dollars, PLATFORMS, PLATFORM_LABEL, type SpendPlatform } from "@/lib/investorModel";
+import { dollars, longDate, PLATFORMS, PLATFORM_LABEL, type SpendPlatform } from "@/lib/investorModel";
 import { InvestorReportView } from "./investor-report";
 import shared from "@/components/v3/admin-overview/admin-shared.module.css";
 import s from "./admin-investors.module.css";
@@ -37,6 +37,8 @@ export function AdminInvestorsContent({ initial, origin }: { initial: InvestorRe
   const [projPerDay, setProjPerDay] = useState(a.spendPerDayCents === null ? "" : String(a.spendPerDayCents / 100));
   const [horizon, setHorizon] = useState(a.horizonDays);
   const [trialDays, setTrialDays] = useState(a.trialDays);
+  const [sinceDate, setSinceDate] = useState(a.sinceDate ?? "");
+  const sinceOrNull = sinceDate.trim() === "" ? null : sinceDate;
 
   const run = async (call: () => Promise<{ ok: true; report: InvestorReport } | { ok: false; error: string }>) => {
     setPending(true);
@@ -62,7 +64,7 @@ export function AdminInvestorsContent({ initial, origin }: { initial: InvestorRe
       setError("Copy did not work here — select the link and copy it.");
     }
   };
-  const assumptionsChanged = pct !== a.realisticPct || horizon !== a.horizonDays || trialDays !== a.trialDays || (projPerDay.trim() === "" ? a.spendPerDayCents !== null : Math.round(Number(projPerDay) * 100) !== a.spendPerDayCents);
+  const assumptionsChanged = pct !== a.realisticPct || horizon !== a.horizonDays || trialDays !== a.trialDays || sinceOrNull !== a.sinceDate || (projPerDay.trim() === "" ? a.spendPerDayCents !== null : Math.round(Number(projPerDay) * 100) !== a.spendPerDayCents);
 
   const controls = (
     <div className={s.controls}>
@@ -110,9 +112,24 @@ export function AdminInvestorsContent({ initial, origin }: { initial: InvestorRe
           className={s.form}
           onSubmit={(e) => {
             e.preventDefault();
-            void run(() => saveInvestorSettingsAction({ realisticPct: pct, spendPerDayDollars: projPerDay.trim() === "" ? null : Number(projPerDay), horizonDays: horizon, trialDays }));
+            void run(() => saveInvestorSettingsAction({ realisticPct: pct, spendPerDayDollars: projPerDay.trim() === "" ? null : Number(projPerDay), horizonDays: horizon, trialDays, sinceDate: sinceOrNull }));
           }}
         >
+          <label className={`${s.field} ${s.wide}`}>
+            <span>Counting from · the day the first campaign went live</span>
+            <input className={s.in} type="date" value={sinceDate} min="2025-01-01" max={todayLocal()} onChange={(e) => setSinceDate(e.target.value)} />
+            <small>
+              {report.firstAdDay ? (
+                <>
+                  First visitor from an ad seen on <b>{longDate(report.firstAdDay)}</b>
+                  {report.firstAdDay !== sinceDate && <> · <button type="button" className={s.textBtn} onClick={() => setSinceDate(report.firstAdDay ?? "")}>use that day</button></>}.{" "}
+                </>
+              ) : (
+                <>Blank counts from the live map&apos;s start, Sep 30, 2026. </>
+              )}
+              Signups, trials, paying accounts and spend before this day are left out.
+            </small>
+          </label>
           <label className={`${s.field} ${s.wide}`}>
             <span>Realistic share of trials that pay · <b>{pct}%</b></span>
             <input className={s.range} type="range" min={0} max={100} step={5} value={pct} onChange={(e) => setPct(Number(e.target.value))} aria-label="Realistic share of trials that pay, percent" />

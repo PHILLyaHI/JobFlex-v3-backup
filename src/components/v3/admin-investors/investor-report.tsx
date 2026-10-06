@@ -6,13 +6,13 @@
 import type { ReactNode } from "react";
 import { dollars, longDate, paybackSentence, type InvestorFigures } from "@/lib/investorModel";
 import type { InvestorReport } from "@/lib/investors";
-import { TRAFFIC_SINCE_LABEL } from "@/lib/traffic-visitor";
 import { PaybackChart } from "./payback-chart";
 import s from "./investor-report.module.css";
 
 const n = (v: number) => v.toLocaleString("en-US");
 const pct = (v: number | null, suffix = "%") => (v === null ? "—" : `${v}${suffix}`);
 const money = (v: number | null) => (v === null ? "—" : dollars(v));
+const shortDate = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 export function InvestorReportView({ report, shared = false, between }: { report: InvestorReport; shared?: boolean; between?: ReactNode }) {
   const f = report.figures;
@@ -33,7 +33,7 @@ export function InvestorReportView({ report, shared = false, between }: { report
 
       {/* The numbers. */}
       <section className={s.kpis} aria-label="The figures">
-        <Kpi label="Ad spend" value={dollars(f.spend.totalCents)} note={`since ${TRAFFIC_SINCE_LABEL} · ${dollars(f.spend.perDayRecentCents)}/day lately`} tone="ink" />
+        <Kpi label="Ad spend" value={dollars(f.spend.totalCents)} note={`since ${shortDate(f.since)} · ${dollars(f.spend.perDayRecentCents)}/day lately`} tone="ink" />
         <Kpi label="Visitors" value={f.visitors === null ? "—" : n(f.visitors)} note={f.visitors === null ? "analytics not reached" : `${money(f.unit.costPerVisitorCents)} each`} />
         <Kpi label="Signed up" value={n(f.signups)} note={`${f.unit.signupsPerDay}/day · ${pct(f.unit.visitorToSignupPct)} of visitors · ${money(f.unit.costPerSignupCents)} each`} />
         <Kpi label="On free trial" value={n(f.trials.count)} note={`${dollars(f.trials.maxMrrCents)}/mo if all pay`} tone="trial" />
@@ -91,7 +91,7 @@ export function InvestorReportView({ report, shared = false, between }: { report
       <section className={s.method}>
         <h2 className={s.h2}>How these are figured</h2>
         <ul>
-          <li>Counting from {TRAFFIC_SINCE_LABEL}, the day the live map and the ads started. Visitors are unique people on www.jobflex.app, bots and previews out.</li>
+          <li>Counting from {longDate(f.since)}, the day the first campaign went live — only what happened from that day on. Visitors are unique people on www.jobflex.app, bots and previews out.{report.before.paying > 0 ? ` ${report.before.paying} ${report.before.paying === 1 ? "account" : "accounts"} paying from before that day (${dollars(report.before.mrrCents)}/mo) ${report.before.paying === 1 ? "is" : "are"} not counted.` : ""}</li>
           <li>Ad spend is the budget booked per day{shared ? "" : " (typed in on this page; Meta's own figures once its API token is connected)"}. Days with no entry count as zero.</li>
           <li>A trial is worth its plan&apos;s monthly list price: a yearly plan as a twelfth, a custom plan by its pages. Discounts, taxes and churn are not modelled.</li>
           <li>The realistic share is {a.realisticPct}% of trials paying, set by the owner; &ldquo;by behaviour&rdquo; reads each account&apos;s activity instead and is shown beside it.</li>

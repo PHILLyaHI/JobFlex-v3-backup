@@ -27,7 +27,7 @@
 import type { TrialProjection, TrialTier } from "./trialProjection";
 import { TRAFFIC_EVENTS as E, pageLabel, type StaleNote } from "./traffic-contract";
 // Who counts and what is "from an ad": one rule for the whole page (2026-10-01).
-import { BROWSER_TYPE_SQL, HOST_SQL, UA_SQL, carriesAdTag, isCountedEvent, sinceSql, trafficDayStartMs, visitorRuleSql } from "./traffic-visitor";
+import { BROWSER_TYPE_SQL, HOST_SQL, TRAFFIC_SINCE, UA_SQL, carriesAdTag, isCountedEvent, sinceSql, trafficDayStartMs, visitorRuleSql } from "./traffic-visitor";
 import { resolveLandingVariant, VARIANT_TRADE } from "@/components/v3/landing-e/landing-variants";
 
 export const LIVE_WINDOW_MINUTES = 30;
@@ -1209,6 +1209,33 @@ export function buildLiveTotalsQuery(timezone: string, fullHistory = false): str
       toHour(${localNow}) * 3600 + toMinute(${localNow}) * 60 + toSecond(${localNow}) AS now_secs
     FROM events
     WHERE event = '$pageview' AND timestamp <= now() AND ${sinceSql(fullHistory)}
+  )
+  WHERE pathname != '/admin' AND NOT startsWith(pathname, '/admin/')`;
+}
+
+/** THE INVESTORS' VISITORS (2026-10-06, lib/investors): one row —
+ *  [unique visitors from the owner's chosen start day, the first day a visitor
+ *  came from an ad]. Production hosts, the page's one visitor rule, /admin
+ *  out, scanned from the live map's start. "From an ad" is the page's rule
+ *  (lib/traffic-visitor carriesAdTag): utm_source or fbclid on the link. The
+ *  first-ad day comes back as '1970-01-01' when there is none; the reader
+ *  treats that as unknown. */
+export function buildInvestorVisitorsQuery(timezone: string, sinceDate: string): string {
+  const tz = tzLiteral(timezone);
+  const prop = (name: string) => `ifNull(toString(properties.${name}), '')`;
+  const production = visitorRuleSql({ host: "hostname", ua: "ua", browserType: "browser_type", event: "'$pageview'" }, "production");
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(sinceDate) ? sinceDate : TRAFFIC_SINCE;
+  return `SELECT
+    uniqExactIf(person, day >= toDate('${date}') AND ${production}),
+    toString(minIf(day, from_ad AND ${production}))
+  FROM (
+    SELECT toString(person_id) AS person,
+      ifNull(nullIf(${prop("$pathname")}, ''), path(${prop("$current_url")})) AS pathname,
+      ${HOST_SQL} AS hostname, ${UA_SQL} AS ua, ${BROWSER_TYPE_SQL} AS browser_type,
+      toDate(toTimeZone(timestamp, ${tz})) AS day,
+      (${prop("utm_source")} != '' OR ${prop("fbclid")} != '') AS from_ad
+    FROM events
+    WHERE event = '$pageview' AND timestamp <= now() AND ${sinceSql(false)}
   )
   WHERE pathname != '/admin' AND NOT startsWith(pathname, '/admin/')`;
 }

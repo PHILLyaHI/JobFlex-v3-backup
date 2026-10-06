@@ -60,7 +60,7 @@ export function InvestorPdfDocument({ report }: { report: InvestorReport }) {
       <Page size="LETTER" style={s.page}>
         <Text style={s.kicker}>JobFlex · Investors</Text>
         <Text style={s.h1}>Ads, trials and payback</Text>
-        <Text style={s.sub}>Live figures since {longDate(f.since)}, the day the ads started · read {read}</Text>
+        <Text style={s.sub}>Live figures since {longDate(f.since)}, the day the first campaign went live · read {read}</Text>
         <View style={s.lead}>
           <Text style={s.lbl}>When the ads pay for themselves</Text>
           <Text style={s.leadText}>{paybackSentence(f)}</Text>
@@ -113,7 +113,7 @@ export function InvestorPdfDocument({ report }: { report: InvestorReport }) {
         )}
         <View wrap={false}>
         <Text style={s.h2}>How these are figured</Text>
-        <Text style={s.li}>· Counting from {longDate(f.since)}. Visitors are unique people on www.jobflex.app, bots and previews out.</Text>
+        <Text style={s.li}>· Counting from {longDate(f.since)}, the day the first campaign went live — only what happened from that day on. Visitors are unique people on www.jobflex.app, bots and previews out.{report.before.paying > 0 ? ` ${report.before.paying} account(s) paying from before that day (${dollars(report.before.mrrCents)}/mo) not counted.` : ""}</Text>
         <Text style={s.li}>· A trial is worth its plan&apos;s monthly list price (a yearly plan as a twelfth, a custom plan by its pages). Discounts, taxes and churn are not modelled.</Text>
         <Text style={s.li}>· The realistic share is {a.realisticPct}% of trials paying; &quot;by behaviour&quot; reads each account&apos;s activity instead.</Text>
         <Text style={s.li}>· The curve: a paying account earns a thirtieth of its monthly price a day from the day it started paying, a trial from the day it ends; new signups arrive at {f.unit.signupsPerDay}/day at {dollars(f.trials.avgMonthlyCents)}/mo and pay after a {a.trialDays}-day trial; spend continues at {dollars(f.spend.perDayProjectedCents)}/day for {a.horizonDays} days.</Text>

@@ -13,6 +13,7 @@
 :global(.jf-blueprint .content) .field > span b { color: var(--blueprint); font-weight: 700; }
 :global(.jf-blueprint .content) .field small { font-size: 11.5px; line-height: 1.45; color: var(--muted); }
 :global(.jf-blueprint .content) .wide { grid-column: 1 / -1; }
+:global(.jf-blueprint .content) .textBtn { padding: 0; border: 0; background: none; font: inherit; font-weight: 700; color: var(--blueprint); text-decoration: underline; cursor: pointer; }
 :global(.jf-blueprint .content) .in { width: 100%; height: 40px; padding: 0 10px; box-sizing: border-box; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-family: var(--font); font-size: 14px; color: var(--ink); }
 :global(.jf-blueprint .content) .in:focus { outline: none; border-color: var(--ink); }
 :global(.jf-blueprint .content) .range { width: 100%; accent-color: var(--blueprint); min-height: 28px; }

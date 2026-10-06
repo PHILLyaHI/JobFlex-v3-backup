@@ -61,6 +61,8 @@ export async function saveInvestorSettingsAction(input: Record<string, unknown> 
   else if (typeof input.spendPerDayDollars === "number") patch.spendPerDayCents = Math.round(input.spendPerDayDollars * 100);
   if (typeof input.horizonDays === "number") patch.horizonDays = input.horizonDays;
   if (typeof input.trialDays === "number") patch.trialDays = input.trialDays;
+  if (input.sinceDate === null) patch.sinceDate = null;
+  else if (typeof input.sinceDate === "string" && DATE.test(input.sinceDate)) patch.sinceDate = input.sinceDate;
   try {
     await saveInvestorSettings(patch);
   } catch {

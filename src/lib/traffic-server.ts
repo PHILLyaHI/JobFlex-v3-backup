@@ -1,6 +1,6 @@
 import type { ExperimentResult, StaleNote, StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficDaily, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
 import { buildExperimentsQuery, buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
-import { CONVERTED_HOURS, MAP_HISTORY_LIMIT, buildConvertedQuery, buildLiveQuery, buildLiveTotalsQuery, buildMapHistoryQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, mapHistoryEventsFromRow, minutesIntoDay, shapeLive, shortId, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair, type MapHistory, type MapSpan } from "./traffic-live";
+import { CONVERTED_HOURS, MAP_HISTORY_LIMIT, buildConvertedQuery, buildLiveQuery, buildInvestorVisitorsQuery, buildLiveTotalsQuery, buildMapHistoryQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, mapHistoryEventsFromRow, minutesIntoDay, shapeLive, shortId, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair, type MapHistory, type MapSpan } from "./traffic-live";
 import { analystSessionFromRow, buildAnalystQuery, type LandingSession } from "./traffic-analyst";
 import { TRAFFIC_TZ } from "./traffic-visitor";
 
@@ -73,6 +73,27 @@ export async function fetchLiveTotals(timezone: string, fullHistory = false): Pr
   const promise = runTrafficQuery(buildLiveTotalsQuery(timezone || "UTC", fullHistory), "live totals").then((rows) => liveTotalsFromRow(Array.isArray(rows[0]) ? rows[0] : []));
   promise.catch(() => { if (liveTotals.get(key)?.promise === promise) liveTotals.delete(key); });
   liveTotals.set(key, { at: now, promise });
+  return promise;
+}
+
+/** THE INVESTORS' VISITORS (2026-10-06): unique visitors from the owner's
+ *  chosen start day, and the first day a visitor came from an ad — the hint
+ *  beside the "Counting from" field. Cached like the totals, per day asked. */
+export interface InvestorVisitors { visitors: number; firstAdDay: string | null }
+const investorVisitors = new Map<string, { at: number; promise: Promise<InvestorVisitors> }>();
+export async function fetchInvestorVisitors(sinceDate: string, timezone = TRAFFIC_TZ): Promise<InvestorVisitors> {
+  const key = `${sinceDate}|${timezone}`;
+  const now = Date.now();
+  const hit = investorVisitors.get(key);
+  if (hit && now - hit.at < LIVE_TOTALS_CACHE_MS) return hit.promise;
+  const promise = runTrafficQuery(buildInvestorVisitorsQuery(timezone, sinceDate), "investor visitors").then((rows) => {
+    const row: unknown[] = Array.isArray(rows[0]) ? rows[0] : [];
+    const v = Number(row[0]);
+    const d = typeof row[1] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(row[1]) && row[1] >= "2020-01-01" ? row[1] : null;
+    return { visitors: Number.isFinite(v) && v > 0 ? Math.round(v) : 0, firstAdDay: d };
+  });
+  promise.catch(() => { if (investorVisitors.get(key)?.promise === promise) investorVisitors.delete(key); });
+  investorVisitors.set(key, { at: now, promise });
   return promise;
 }
 
