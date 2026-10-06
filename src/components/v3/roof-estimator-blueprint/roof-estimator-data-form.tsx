@@ -1911,13 +1911,6 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                         <div className="rf-details-row"><dt>Roof facets (estimated)</dt><dd>{solarFacetCount != null ? `≈${solarFacetCount}` : "Unavailable"}</dd></div>
                         {solar && <div className="rf-details-row"><dt>Area method</dt><dd>{solar.areaMethod === "google-ground-area-ratio" ? "Adjusted for building footprint" : "Modeled roof area"}</dd></div>}
                       </dl>
-                      <p className="rf-details-note">The facet count estimates roof surfaces from detected planes. Small dormers, obscured sections and separate surfaces may be missed or combined. It is not a verified facet count. Roof condition, eave height and measured edge lengths are unavailable.</p>
-                      <p className="rf-details-note">The satellite view may show imagery from a different date.</p>
-                      {solar?.warnings.map((warning, index) => (
-                        <p className="rf-details-note" key={index}>
-                          {warning.replace(/^Google's\b/, "The model's").replace(/^Google\b/, "The").replace(/\bGoogle\b/g, "the model")}
-                        </p>
-                      ))}
                     </div>
                   </details>
                 )}
