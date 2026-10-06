@@ -70,7 +70,7 @@ export async function estimateRoof(input: {
   // geometry rather than a single average pitch.
   measurementNotes?: string;
   /** Where `pitch` came from — the estimate must never price a pitch nobody stated. */
-  pitchSource?: "measured" | "eagleview" | "entered";
+  pitchSource?: "measured" | "eagleview" | "solar" | "entered";
   /**
    * A two-pitch roof, when the elevation data measured one (audit
    * 2026-09-08: 12958 is 4/12 on 53 % and 9/12 on 47 %, and the estimate saw
@@ -114,7 +114,9 @@ await enforceRateLimit(`ai:${organizationId}`, 60, HOUR, "AI runs");
       ? `Roof pitch: ${families.map((f) => `${Math.round(f.pitch12)}/12 on ${Math.round(f.share * 100)}% of the roof`).join(" + ")} (two-pitch roof — price labor and steep-slope surcharge per family, by its share of the squares)`
       : `Pitch: ${input.pitch}`;
   const sourceLine =
-    input.pitchSource === "measured"
+    input.pitchSource === "solar"
+      ? "Pitch and area source: Google aerial estimate, preliminary. Linear roof quantities are estimates, not measured. Verify on site before ordering materials."
+      : input.pitchSource === "measured"
       ? "Pitch source: measured from aerial elevation data."
       : input.pitchSource === "entered"
         ? "Pitch source: entered by the contractor, not measured."
@@ -260,12 +262,14 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
   let address = data.address?.trim() || null;
   let stateHint: string | null = null;
   let measurementRow: { id: string } | null = null;
+  let preliminaryAerial = false;
   if (data.measurementId) {
     const m = await db.roofMeasurement
-      .findFirst({ where: { id: data.measurementId, organizationId }, select: { id: true, address: true, city: true, state: true, zip: true } })
+      .findFirst({ where: { id: data.measurementId, organizationId }, select: { id: true, source: true, address: true, city: true, state: true, zip: true } })
       .catch(() => null);
     if (m) {
       measurementRow = { id: m.id };
+      preliminaryAerial = m.source === "solar";
       const full = [m.address, [m.city, m.state].filter(Boolean).join(", "), m.zip].filter(Boolean).join(", ");
       address = full || address;
       stateHint = m.state;
@@ -287,7 +291,9 @@ export async function convertRoofEstimateToProposal(raw: unknown) {
       title: data.title,
       // Scope only — assumptions stay on the estimate, never baked into the
       // proposal's scope (keeps the preview / calendar / job detail clean).
-      scopeOfWork: text.scopeOfWork,
+      scopeOfWork: preliminaryAerial
+        ? [text.scopeOfWork, "Preliminary roof estimate based on Google aerial data. Roof quantities and pricing require field verification before ordering materials."].filter(Boolean).join("\n\n")
+        : text.scopeOfWork,
       description: text.overview,
       address,
       status: ProposalStatus.DRAFT,

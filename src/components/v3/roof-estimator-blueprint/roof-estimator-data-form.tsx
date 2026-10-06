@@ -10,10 +10,10 @@
 //     measurement carries no imagery); no outlines, no lines on either;
 //   · everything derived from the drawn MODEL is honestly absent, not zeroed:
 //     the layer toggles, PNG/PDF export, LINEAR FOOTAGE and the pitch-mix
-//     panel are gone with the drawing. The numbers shown are EagleView
-//     Instant's calibrated totals; DETAILS stays (it is Instant data).
+//     panel are gone with the drawing. EagleView totals retain their details;
+//     Google aerial estimates show their own source and review requirements.
 //
-// Actions: measureRoofInstant / listRoofMeasurements / getRoofMeasurement
+// Actions: measureRoof / measureRoofInstant / listRoofMeasurements / getRoofMeasurement
 // (src/actions/roofMeasurement.ts, data-only) + getMeasurementPhoto (Google
 // Static Maps, disk-cached) + getMeasurementOrtho (EagleView clear).
 import * as React from "react";
@@ -31,6 +31,7 @@ import {
   getMeasurementPhoto,
   getRoofMeasurement,
   listRoofMeasurements,
+  measureRoof,
   measureRoofInstant,
 } from "@/actions/roofMeasurement";
 import { estimateRoof, convertRoofEstimateToProposal } from "@/actions/roofEstimator";
@@ -143,6 +144,7 @@ const SOURCE_CHIP: Record<MeasurementSource, { label: string; tone: "ok" | "wait
   "instant+recon": { label: "Instant", tone: "ok" },
   "instant-outline": { label: "No facets", tone: "bad" },
   recon: { label: "Estimate", tone: "wait" },
+  solar: { label: "Roof estimate", tone: "wait" },
 };
 
 /** Sum of the known values; null when none is known. */
@@ -237,7 +239,7 @@ function shotDateLabel(v: string | undefined): string | null {
   return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 
-export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { aiEnabled?: boolean; initialAddress?: string } = {}) {
+export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, measurementEnabled = false, initialAddress }: { aiEnabled?: boolean; evEnabled?: boolean; measurementEnabled?: boolean; initialAddress?: string } = {}) {
   const router = useRouter();
 
   // ── Screen ──
@@ -260,6 +262,17 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   // Set when the action measured (and, for Instant, billed) but could not save.
   const [unsaved, setUnsaved] = React.useState(false);
   const [instantBusy, setInstantBusy] = React.useState(false);
+  const [measurementBusy, setMeasurementBusy] = React.useState(false);
+  const [solarReviewed, setSolarReviewed] = React.useState(false);
+  const isSolar = measurement?.source === "solar";
+  const solar = isSolar ? measurement.provenance.solar : null;
+  // Pricing allocates sloped roofing squares, so weight families by surface
+  // area rather than footprint; otherwise steep facets are underpriced.
+  const solarSurfaceTotal = solar?.pitchFamilies.reduce((sum, family) => sum + family.surfaceSqft, 0) ?? 0;
+  const solarPitchShares = solarSurfaceTotal > 0
+    ? solar!.pitchFamilies.map(family => ({ pitch12: family.pitch12, share: family.surfaceSqft / solarSurfaceTotal }))
+    : [];
+  const solarNeedsReview = isSolar && !solarReviewed;
   // Set when the shown measurement reused an already-paid EagleView answer —
   // the explicit paid re-measure button renders only then.
   const [reusedInstant, setReusedInstant] = React.useState<"stored" | "recovered" | null>(null);
@@ -279,7 +292,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   // the stored provenance (coverage, completeness, EagleView's own occlusion
   // survey) — the same assessRoof, on its data-only inputs.
   const assessment = React.useMemo(() => {
-    if (!measurement) return null;
+    if (!measurement || measurement.source === "solar") return null;
     const p = measurement.provenance;
     return assessRoof({
       coverage: p.coverage ?? null,
@@ -328,7 +341,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   // save shows zero facets and no pitch. Ask the server to collect the pending
   // orders every few seconds for about two minutes and swap the fuller
   // measurement in as it lands.
-  const instantPacks = measurement && measurement.source !== "recon" && measurement.instant ? measurement.provenance?.instantPacks ?? null : null;
+  const instantPacks = measurement && measurement.source !== "recon" && !isSolar && measurement.instant ? measurement.provenance?.instantPacks ?? null : null;
   // Placed and paid, not delivered when the row was saved: the server
   // collects these for free, and nothing is priced until they land.
   const packsPendingList = React.useMemo(() => instantPacks?.pending ?? [], [instantPacks]);
@@ -509,7 +522,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   const [reportBusy, setReportBusy] = React.useState(false);
   React.useEffect(() => {
     const m = measurement;
-    if (!m?.address || m.source === "recon") return;
+    if (!m?.address || m.source === "recon" || m.source === "solar") return;
     let cancelled = false;
     void evReportFootages({ address: m.address, city: m.city, state: m.state, zip: m.zip, lat: m.lat, lng: m.lng })
       .then((r) => {
@@ -560,17 +573,19 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   // bought). Nothing is priced on a pitch nobody stated.
   const [pitchEntered, setPitchEntered] = React.useState<string | null>(null);
 
-  // A free estimate is never priced; the data path only saves Instant rows,
-  // but old "recon" rows can still be opened from history.
+  // Legacy recon rows remain unpriceable. Google estimates have a separate
+  // source and require the contractor's review before pricing.
   const isRecon = measurement?.source === "recon";
   const savedId = measurement && !unsaved && measurement.id !== "unsaved" ? measurement.id : null;
   const hasEstimate = materials.length > 0 || labor.length > 0;
   const materialsTotal = materials.reduce((a, l) => a + l.quantity * l.unitPrice, 0);
   const laborTotal = labor.reduce((a, l) => a + l.quantity * l.unitPrice, 0);
-  const busy = instantBusy || openingId != null;
+  const busy = instantBusy || measurementBusy || openingId != null;
 
   function resetResult() {
     setMeasurement(null);
+    setSolarReviewed(false);
+    setReport({ state: "none" });
     setManual(null);
     setExtra(new Set());
     setPitchEntered(null);
@@ -600,13 +615,15 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
 
   type OrderInput = { address: string; city: string; state: string; zip: string; lat?: number; lng?: number };
   function orderInput(): OrderInput {
-    return { address: picked?.address ?? "", city, state: stateCode, zip, lat: picked?.lat, lng: picked?.lng };
+    const address = addrRef.current ? addrRef.current.value.trim() : picked?.address ?? "";
+    const matchingPick = picked?.address === address ? picked : null;
+    return { address, city, state: stateCode, zip, lat: matchingPick?.lat, lng: matchingPick?.lng };
   }
 
   // ── Photos ──
   // The EagleView clear ortho exists only when the paid answer carried imagery;
   // without it the ORTHO tab is hidden (not disabled) per the owner's call.
-  const hasOrtho = !!measurement?.instant?.imagery?.some(
+  const hasOrtho = !isSolar && !!measurement?.instant?.imagery?.some(
     (im) => im.view === "ortho" && im.masked === false && !!im.token && !!im.bbox,
   );
   const orthoShotDate = shotDateLabel(
@@ -723,7 +740,8 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   function showMeasurement(m: RoofMeasurementDTO, wasUnsaved: boolean, reveal = true) {
     setMeasurement(m);
     latestRef.current = m;
-    setReport({ state: "loading" });
+    setReport({ state: m.source === "solar" || m.source === "recon" ? "none" : "loading" });
+    setSolarReviewed(false);
     setExtra(new Set());
     setPitchEntered(null);
     setUnsaved(wasUnsaved);
@@ -775,6 +793,66 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   });
   React.useEffect(() => () => stopHoldProgress(), []);
 
+  async function runMeasurement() {
+    if (busy || addressLoading || !measurementEnabled) return;
+    const input = orderInput();
+    if (!input.address) {
+      addrRef.current?.focus();
+      toast.info("Enter the address first", "Type the street address or pick it from the suggestions, then measure.");
+      return;
+    }
+    if (zip && !/^\d{5}(?:-\d{4})?$/.test(zip.trim())) {
+      toast.error("Check the ZIP code", "Enter all 5 digits, or a ZIP+4 code.");
+      return;
+    }
+    resetResult();
+    holdRef.current = null;
+    setHolding(false);
+    stopHoldProgress();
+    setIntakeError(null);
+    setReusedInstant(null);
+    setMeasurementBusy(true);
+    setMs({ pct: 0, step: 0, done: false });
+    setMsReport(input.address);
+    setMsHint("Checking the roof at this address. The report opens when the measurements are ready.");
+    setPanel("measuring");
+    try {
+      const res = await measureRoof(input);
+      if (!res.ok) {
+        setPanel("intake");
+        setIntakeError({ text: res.error, kind: res.noRoof ? "no-roof" : res.stillProcessing ? "processing" : "failed", target: input, reorder: res.canReorder === true });
+        if (!reportPlanLimitResult(res)) toast.error("Couldn't measure this roof", res.error);
+        return;
+      }
+      const solarResult = res.measurement.source === "solar";
+      const pendingNow = solarResult ? 0 : res.measurement.provenance.instantPacks?.pending?.length ?? 0;
+      setReusedInstant(solarResult ? null : res.reusedInstant?.how ?? null);
+      if (!res.unsaved) void loadRecent();
+      if (pendingNow > 0 && !res.unsaved && res.measurement.id !== "unsaved") {
+        showMeasurement(res.measurement, false, false);
+        holdRef.current = { id: res.measurement.id, startedAt: nowMs() };
+        setHolding(true);
+        setMsHint("The roof area is measured. The pitch, facets and details are being read now — the report opens when everything is in.");
+        startHoldProgress();
+        return;
+      }
+      showMeasurement(res.measurement, !!res.unsaved);
+      if (solarResult) {
+        toast.success(res.unsaved ? "Roof estimate ready — not saved" : "Roof estimate ready", "Review the roof and measurements before pricing.");
+      } else {
+        measuredToast(res.measurement, !!res.unsaved, res.reusedInstant?.how ?? null);
+      }
+    } catch (err) {
+      setPanel("intake");
+      const text = "The measurement request did not complete. Check the connection and try again.";
+      setIntakeError({ text, kind: "failed", target: input });
+      toast.error("Couldn't measure this roof", text);
+      console.warn("[roof] Measurement failed", err);
+    } finally {
+      setMeasurementBusy(false);
+    }
+  }
+
   // Measure. A repeat of an address the org already paid for REUSES the
   // stored EagleView answer (no new bill); `forceNewOrder` is the explicit
   // "re-measure at a new cost" gesture and is never set by a plain click.
@@ -782,7 +860,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   // report's own retry buttons pass the open measurement's address (review
   // 2026-09-17: on a row opened from Recent they measured nothing at all).
   async function runInstant(forceNewOrder = false, target?: OrderInput) {
-    if (addressLoading) return;
+    if (busy || addressLoading || !evEnabled) return;
     const input = target ?? orderInput();
     if (!input.address) {
       if (target) {
@@ -893,7 +971,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
       resetResult();
       showMeasurement(m, false);
       // A saved row IS a stored answer: the paid re-order is offered the same way.
-      setReusedInstant(m.instant ? "stored" : null);
+      setReusedInstant(m.instant && m.source !== "solar" ? "stored" : null);
     } catch (err) {
       toast.error("Couldn't open measurement", errMsg(err));
     } finally {
@@ -904,6 +982,10 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   async function generate() {
     const t = totals;
     if (t?.squares == null) return;
+    if (solarNeedsReview) {
+      toast.info("Check the roof and measurements first", "Confirm the roof below the satellite view before pricing.");
+      return;
+    }
     if (isRecon) {
       toast.error(
         "Estimated measurements can’t be priced",
@@ -922,12 +1004,14 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
     }
     setGenBusy(true);
     try {
-      const families = pitchMeasured ? pitchFamilyShares(pitchRep!.families) : [];
+      const families = isSolar ? solarPitchShares : pitchMeasured ? pitchFamilyShares(pitchRep!.families) : [];
       const pitchNote =
         pitchKind === "measured"
           ? families.length > 1
             ? `two-pitch roof: ${families.map((f) => `${Math.round(f.pitch12)}/12 (${Math.round(f.share * 100)}% of the roof)`).join(" + ")} — measured from aerial elevation data (${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of the roof read cleanly)`
             : `pitch ${pitchForEstimate} over the whole roof — measured from aerial elevation data (${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of the roof read cleanly; that is the measurement's coverage, not a share of the roof at this pitch)`
+          : pitchKind === "solar"
+            ? `pitch ${pitchForEstimate} estimated from Google aerial data — preliminary, not field verified`
           : pitchKind === "eagleview"
             ? `pitch ${pitchForEstimate} (${AERIAL.reported} figure)`
             : `pitch ${pitchForEstimate} entered by user — not measured`;
@@ -938,8 +1022,10 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
         ? flatRoof
           ? `MEASURED perimeter from the aerial report #${mf.reportId}: ${Math.round(mf.eaveFt + mf.rakeFt)} ft, and ${Math.round(mf.stepFlashFt)} ft where the roof meets a wall — use these for coping, edge metal, base flashing and termination bar`
           : `MEASURED lengths from the aerial report #${mf.reportId}: eave ${Math.round(mf.eaveFt)} ft, rake ${Math.round(mf.rakeFt)} ft, ridge ${Math.round(mf.ridgeFt)} ft, hip ${Math.round(mf.hipFt)} ft, valley ${Math.round(mf.valleyFt)} ft, step flashing ${Math.round(mf.stepFlashFt)} ft — use these for drip edge, starter, cap, ridge vent, valley metal and step flashing`
-        : est
-          ? roofFacts && isFlatRoof(roofFacts)
+          : est
+          ? isSolar
+            ? `linear quantities ESTIMATED from building footprint and assumed roof shape: eave ${Math.round(est.eaveFt)} ft, rake ${Math.round(est.rakeFt)} ft, ridge ${Math.round(est.ridgeFt)} ft, hip ${Math.round(est.hipFt)} ft — verify every run on site`
+          : roofFacts && isFlatRoof(roofFacts)
             ? `flat roof perimeter ESTIMATED from the outline: ${Math.round(est.eaveFt)} ft — split it between parapet (coping) and open edge (edge metal) from the photo`
             : `edge lengths ESTIMATED from the outline and shape: eave ${Math.round(est.eaveFt)} ft, rake ${Math.round(est.rakeFt)} ft, ridge ${Math.round(est.ridgeFt)} ft, hip ${Math.round(est.hipFt)} ft${est.valleyFt != null && est.valleyFt > 0 ? `, valley ${Math.round(est.valleyFt)} ft (from the facet count)` : ""} — use these unless the photo says otherwise`
           : null;
@@ -985,7 +1071,9 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
         // builder handles as metal — not as a membrane assembly.
         roofKind: roofFacts && isFlatRoof(roofFacts) && likeForLikeFamily(roofFacts) !== "metal" ? "low-slope" : "steep",
         buildingUse: manual ? null : buildingUse,
-        measurementNotes: manual
+        measurementNotes: isSolar
+          ? `${solarEstimateNote} ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), ${pitchNote}. Footprint ${footprint.sqft != null ? num(footprint.sqft) + " sq ft" : "unavailable"}. ${factsNote} All linear quantities are estimates, not measured lengths. Itemize flashing and vent quantities and record the assumptions.`
+          : manual
           ? `Contractor-entered takeoff: ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft), ${pitchNote}. No facet or linear-footage breakdown; allow for ridge, valley and flashing.`
           : `${AERIAL.vendor} (calibrated): ${t.squares.toFixed(1)} squares (${num(t.areaSqft ?? 0)} sq ft) for the main structure, ${pitchNote}, footprint ${
               footprint.sqft != null
@@ -1007,7 +1095,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
       setSampleEstimate(!!res.disabled);
       setTablesEdited(false);
       setTitle(res.data.title);
-      setAssumptions(res.data.assumptions);
+      setAssumptions(isSolar ? [solarEstimateNote, ...res.data.assumptions] : res.data.assumptions);
       setScopeText(res.data.scope ?? "");
       setMaterials(res.data.materials.map((m) => ({ id: nanoid(6), ...m })));
       setLabor(res.data.labor.map((m) => ({ id: nanoid(6), ...m })));
@@ -1033,6 +1121,10 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
     });
   }
   function applyPackage(pkg: RoofPackage, spec: RoofPackageSpec, quiet = false) {
+    if (solarNeedsReview) {
+      toast.info("Check the roof and measurements first", "Confirm the roof before pricing.");
+      return null;
+    }
     if (!pitchForEstimate) {
       toast.error("Enter the roof pitch first");
       return null;
@@ -1054,7 +1146,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
       title: `${spec.systemName.trim() || "Roof"} · ${siteAddress || "site"}`,
       materials: pkg.materials.map(toLine),
       labor: pkg.labor.map(toLine),
-      assumptions: pkg.assumptions,
+      assumptions: isSolar ? [solarEstimateNote, ...pkg.assumptions] : pkg.assumptions,
       scope: pkg.scope.join("\n"),
     };
     setMaterials(next.materials);
@@ -1149,6 +1241,10 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   // React would not have committed to state yet ("convert as is").
   async function convertWith(input: { title: string; materials: EditableLine[]; labor: EditableLine[]; assumptions: string[]; scope: string }) {
     if (!measurement && !manual) return;
+    if (solarNeedsReview) {
+      toast.info("Check the roof and measurements first", "Confirm the roof before creating a proposal.");
+      return;
+    }
     if (isRecon) {
       toast.error("Estimated measurements can’t become a proposal", "Use Measure this roof on this address first.");
       return;
@@ -1211,20 +1307,21 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   // The footprint the estimate prices on: EagleView's figure unless it
   // disagrees with the building's own outline by more than a tenth, in which
   // case the outline wins (lib/roofDiagram/instantTotals.footprintRead).
-  const footprint = footprintRead(structure);
+  const footprint = isSolar && solar ? { ...footprintRead(structure), sqft: solar.footprintSqft } : footprintRead(structure);
   const totals = inst
-    ? includedStructures.length
+    ? !isSolar && includedStructures.length
       ? instantTotalsOf(includedStructures)
       : inst.totals
     : manual
       ? manualTotals(manual)
       : null;
   const siteAddress = measurement?.address ?? manual?.address ?? null;
+  const solarEstimateNote = "Preliminary roof estimate. Area, pitch and linear quantities are estimated. Verify measurements on site before ordering materials.";
   // A large difference needs an area check. A ratio alone cannot establish
   // which provider selected the intended structure, so retain both sources.
   const googleSqft = measurement?.provenance?.googleAreaSqft ?? null;
   const evUndercount =
-    !manual && totals?.areaSqft != null && googleSqft != null && googleSqft >= 400 && totals.areaSqft < googleSqft * 0.5
+    !manual && !isSolar && totals?.areaSqft != null && googleSqft != null && googleSqft >= 400 && totals.areaSqft < googleSqft * 0.5
       ? { evSqft: totals.areaSqft, googleSqft, structures: measurement?.instant?.structures.length ?? 0 }
       : null;
 
@@ -1241,12 +1338,15 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
         reason?: string;
       }
     | undefined;
-  const pitchMeasured = pitchRep?.source === "measured" && pitchRep.families.length > 0;
+  const pitchMeasured = !isSolar && pitchRep?.source === "measured" && pitchRep.families.length > 0;
   // EagleView's published pitch for the MAIN structure (null without pack 002).
-  const evPitch = manual ? null : structure?.pitch ?? null;
+  const evPitch = manual || isSolar ? null : structure?.pitch ?? null;
+  const solarPitch = solar?.pitchLabel ?? (isSolar ? inst?.totals.pitchLabel : null);
   // Where the pitch the page shows (and prices) comes from — never a default.
-  const pitchKind: "measured" | "eagleview" | "entered" | null = manual
+  const pitchKind: "measured" | "eagleview" | "solar" | "entered" | null = manual
     ? (manual.pitchLabel || pitchEntered ? "entered" : null)
+    : solarPitch
+      ? "solar"
     : pitchMeasured
       ? "measured"
       : evPitch
@@ -1256,9 +1356,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
           : null;
   const pitchLabelShown = manual
     ? manual.pitchLabel || pitchEntered || "—"
-    : displayedPitchLabel(pitchRep, evPitch) ?? pitchEntered ?? "—";
+    : solar ? `${solar.predominantPitch12}/12` : solarPitch ?? displayedPitchLabel(pitchRep, evPitch) ?? pitchEntered ?? "—";
   const pitchHint =
-    pitchKind === "measured"
+    pitchKind === "solar"
+      ? `rise / 12 · estimated${solar && solar.pitchFamilies.length > 1 ? " · mixed pitches" : ""}`
+    : pitchKind === "measured"
       ? `measured · ${Math.round((pitchRep!.trustedShare ?? 0) * 100)}% of roof`
       : pitchKind === "entered"
         ? "rise / 12 · entered by hand"
@@ -1268,7 +1370,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
             ? "drawing pipeline (legacy) · no source"
             : "pitch not available — enter pitch to price";
   // The pitch the estimate will be priced on, or null: no pitch, no estimate.
-  const pitchForEstimate = pitchKind === "measured" ? `${Math.round(pitchRep!.families[0].pitch12)}/12` : pitchKind === "eagleview" ? evPitch : pitchKind === "entered" ? (manual ? manual.pitchLabel || pitchEntered : pitchEntered) : null;
+  const pitchForEstimate = pitchKind === "solar" ? solarPitch : pitchKind === "measured" ? `${Math.round(pitchRep!.families[0].pitch12)}/12` : pitchKind === "eagleview" ? evPitch : pitchKind === "entered" ? (manual ? manual.pitchLabel || pitchEntered : pitchEntered) : null;
   const eaveHeights = structure?.eaveHeightFt
     ? Object.entries(structure.eaveHeightFt).map(([facade, ft]) => ({ facade, ft }))
     : [];
@@ -1289,35 +1391,37 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
     totals?.squares != null
       ? {
           squares: totals.squares,
-          squaresBasis: manual ? "entered" : "measured",
-          pitchFamilies: (pitchMeasured
+          squaresBasis: isSolar ? "estimated" : manual ? "entered" : "measured",
+          pitchFamilies: (isSolar && solar
+            ? solarPitchShares
+          : pitchMeasured
             ? pitchFamilyShares(pitchRep!.families)
             : pitchForEstimate
               ? [{ pitch12: Number(pitchForEstimate.split("/")[0]), share: 1 }]
               : []
           ).filter((f) => Number.isFinite(f.pitch12)),
-          pitchBasis: pitchKind === "entered" ? "entered" : pitchKind ? "measured" : null,
+          pitchBasis: pitchKind === "entered" ? "entered" : pitchKind === "solar" ? "estimated" : pitchKind ? "measured" : null,
           // A ticked outbuilding joins the edges and the flashing counts, not
           // only the squares (review 2026-09-17: the barn's drip edge, starter
           // and vents were priced on the house's outline alone).
-          perimeterFt: manual ? null : sumOrNull(includedStructures.map((s) => ringPerimeterFt(s.outline))),
+          perimeterFt: manual || isSolar ? null : sumOrNull(includedStructures.map((s) => ringPerimeterFt(s.outline))),
           // …and the MAIN structure still contributes the footprint the
           // provenance read settled on — EagleView's figure unless the
           // building's own outline disagrees by more than a tenth
           // (footprintRead). An outbuilding adds its own reported figure.
-          footprintSqft: manual
+          footprintSqft: isSolar ? footprint.sqft : manual
             ? null
             : sumOrNull(
                 includedStructures.map((s) => (s === structure ? footprint.sqft : s.footprintSqft ?? null)),
               ),
-          chimney: manual ? null : anyOrNull(includedStructures.map((s) => s.chimney ?? null)),
-          rooftopAcCount: manual ? null : sumOrNull(includedStructures.map((s) => s.rooftopAcCount ?? null)),
-          shape: manual ? null : structure?.shape ?? null,
-          facetCount: manual ? null : sumOrNull(includedStructures.map((s) => s.facetCount ?? null)),
-          storeys: manual ? null : storeysFromEaves(eaveHeights),
-          measured: manual ? null : report.state === "measured" ? report.footage ?? null : null,
-          existingMaterial: manual ? null : structure?.material ?? null,
-          facetConfidence: manual ? null : structure?.confidence?.facetCount ?? null,
+          chimney: manual || isSolar ? null : anyOrNull(includedStructures.map((s) => s.chimney ?? null)),
+          rooftopAcCount: manual || isSolar ? null : sumOrNull(includedStructures.map((s) => s.rooftopAcCount ?? null)),
+          shape: manual || isSolar ? null : structure?.shape ?? null,
+          facetCount: manual || isSolar ? null : sumOrNull(includedStructures.map((s) => s.facetCount ?? null)),
+          storeys: manual || isSolar ? null : storeysFromEaves(eaveHeights),
+          measured: manual || isSolar ? null : report.state === "measured" ? report.footage ?? null : null,
+          existingMaterial: manual || isSolar ? null : structure?.material ?? null,
+          facetConfidence: manual || isSolar ? null : structure?.confidence?.facetCount ?? null,
           buildingUse: manual ? null : buildingUse,
         }
       : null;
@@ -1348,7 +1452,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
   // from is still recorded where it is acted on: the Basis column on every
   // estimate line and the package's own assumptions.
   const edgeTiles = (() => {
-    const mf = report.state === "measured" ? report.footage ?? null : null;
+    const mf = !isSolar && report.state === "measured" ? report.footage ?? null : null;
     if (mf) {
       return {
         edges: `${num(mf.eaveFt + mf.rakeFt)} ft`,
@@ -1381,7 +1485,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
     { label: "Rooftop AC", value: structure?.rooftopAcCount },
   ].filter((detail) => detail.value != null && detail.value !== "");
 
-  const hasDetails = eaveHeights.length > 0 || !!structure || (measurement?.chimneys.length ?? 0) > 0;
+  const hasDetails = !isSolar && (eaveHeights.length > 0 || !!structure || (measurement?.chimneys.length ?? 0) > 0);
   const reconDown = measurement?.provenance?.reconUnavailable ?? null;
   const partialCoverage = measurement?.provenance?.partialCoverage ?? null;
   const photoShown = view === "satellite" ? satPhoto : orthoPhoto;
@@ -1396,7 +1500,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
             <div>
               <div className="card-title">Measure a roof</div>
               <div className="card-sub">
-                Choose an address to measure its roof.
+                Enter an address to measure the roof and build an estimate.
               </div>
             </div>
           </div>
@@ -1405,7 +1509,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
             className="rf-body"
             onSubmit={(e) => {
               e.preventDefault();
-              void runInstant();
+              void runMeasurement();
             }}
           >
             <div className="addr-grid">
@@ -1470,19 +1574,17 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
               </div>
             )}
 
-            {/* Pin-on-the-roof check before the BILLED lookup. Only a picked
+            {/* Pin-on-the-roof check before measurement. Only a picked
                 suggestion carries the rooftop point; free typing hides it. */}
             {picked && !picked.typed && picked.lat != null && picked.lng != null && (
               <AddressPinPreview lat={picked.lat} lng={picked.lng} label={picked.formatted} />
             )}
 
             <div className="rf-actions">
-              <button className="btn btn-primary btn--sm" type="submit" id="instantBtn" disabled={busy || addressLoading}>
-                <svg className="ic"><use href="#i-roof" /></svg>
-                {instantBusy ? "Measuring…" : "Measure this roof"}
+              <button className="btn btn-primary btn--sm" type="submit" id="instantBtn" disabled={busy || addressLoading || !measurementEnabled}>
+                <svg className="ic" aria-hidden="true"><use href="#i-roof" /></svg>
+                {measurementBusy || instantBusy ? "Measuring…" : "Measure this roof"}
               </button>
-              {/* What the click costs, said once, as a drawing annotation. */}
-              <span className="rf-actions-note">Billed per lookup · a paid answer for the same address is reused free</span>
             </div>
           </form>
         </div>
@@ -1514,7 +1616,8 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
                         <span className="rf-recent-meta">
                           {dateShort(r.createdAt)}
                           {r.predominantPitch ? ` · ${r.predominantPitch}` : ""}
-                          {r.facetCount != null ? ` · ${r.facetCount} facets` : ""}
+                          {r.source !== "solar" && r.facetCount != null ? ` · ${r.facetCount} facets` : ""}
+                          {r.source === "solar" ? " · preliminary" : ""}
                           {r.pitchKind === "legacy" ? " · drawing pipeline (legacy)" : ""}
                         </span>
                       </span>
@@ -1543,10 +1646,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
             <div className="ms-num">{msReport}</div>
             <div className="ms-head">
               <div className="ms-stage" role="status" aria-live="polite">
-                {ms.done ? "Report ready" : `${stepLabel(Math.min(ms.step, MS_STEPS.length - 1))}…`}
+                {measurementBusy ? "Measuring the roof…" : ms.done ? "Report ready" : `${stepLabel(Math.min(ms.step, MS_STEPS.length - 1))}…`}
               </div>
-              <div className="ms-pct">{ms.pct}%</div>
+              {!measurementBusy && <div className="ms-pct">{ms.pct}%</div>}
             </div>
+            {!measurementBusy && <>
             <div className="ms-track" role="progressbar" aria-label="Measurement progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={ms.pct}>
               <span className="ms-fill" style={{ width: `${ms.pct}%` }} />
             </div>
@@ -1559,6 +1663,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
                 </li>
               ))}
             </ol>
+            </>}
             <div className="ms-hint">
               {msHint ?? "Measuring the structure, pitch by pitch."}
             </div>
@@ -1698,7 +1803,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
                 {unsaved && (
                   <div className="call warn">
                     <div>
-                      <b>Measured but not saved.</b> The figures below are real, but the record could not be
+                      <b>{isSolar ? "Estimated but not saved." : "Measured but not saved."}</b> The record could not be
                       written, so this measurement will not appear in Recent measurements.
                     </div>
                   </div>
@@ -1707,13 +1812,13 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
             )}
 
             <div className="card rf-hero" id="rfHero">
-              <HeroCell l="Total area" v={totals?.areaSqft != null ? num(totals.areaSqft) : "—"} h="sq ft" />
+              <HeroCell l="Total area" v={totals?.areaSqft != null ? num(totals.areaSqft) : "—"} h={isSolar ? "sq ft · estimated" : "sq ft"} />
               <HeroCell l="Roofing squares" v={totals?.squares != null ? num(totals.squares, 1) : "—"} h="× 100 sq ft" accent />
               <HeroCell l="Predominant pitch" v={pitchLabelShown} h={pitchHint} />
-              <HeroCell l="Roof facets" v={totals?.facetCount != null ? String(totals.facetCount) : "—"} h="planes" />
-              <HeroCell l="Eaves + rakes" v={edgeTiles.edges} h="linear ft" />
-              <HeroCell l="Ridge + hips" v={edgeTiles.ridge} h="linear ft" />
-              <HeroCell l="Valleys" v={edgeTiles.valley} h="linear ft" />
+              {!isSolar && <HeroCell l="Roof facets" v={totals?.facetCount != null ? String(totals.facetCount) : "—"} h="planes" />}
+              <HeroCell l="Eaves + rakes" v={edgeTiles.edges} h={isSolar ? "linear ft · estimated" : "linear ft"} />
+              <HeroCell l="Ridge + hips" v={edgeTiles.ridge} h={isSolar ? "linear ft · estimated" : "linear ft"} />
+              <HeroCell l="Valleys" v={edgeTiles.valley} h={isSolar ? "not measured" : "linear ft"} />
             </div>
             {measurement && (
             <div className="rf-grid">
@@ -1723,7 +1828,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
                     <div className="card-title" id="vwTitle">{view === "satellite" ? "Satellite view" : "Ortho view"}</div>
                     <div className="card-sub" id="vwSub">
                       {[measurement.address, [measurement.city, measurement.state].filter(Boolean).join(" ")].filter(Boolean).join(", ") || "Roof"}
-                      {savedId ? ` · DRAWING № RM-${savedId.slice(-6).toUpperCase()}` : ""}
+                      {savedId ? ` · ${isSolar ? "ESTIMATE" : "DRAWING"} № RM-${savedId.slice(-6).toUpperCase()}` : ""}
                     </div>
                   </div>
                   <div className="vw-controls">
@@ -1794,14 +1899,32 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
                   <span className="lg">
                     {view === "satellite"
                       ? liveMap
-                        ? "Google Maps satellite · the pin marks the measured point · drag to pan · scroll to zoom"
-                        : "Google Maps satellite · the pin marks the measured point"
+                        ? `Google Maps satellite · the pin marks ${isSolar ? "the selected building" : "the measured point"} · drag to pan · scroll to zoom`
+                        : `Google Maps satellite · the pin marks ${isSolar ? "the selected building" : "the measured point"}`
                       : `${AERIAL.ortho}${orthoShotDate ? ` · ${orthoShotDate}` : ""}`}
                   </span>
                 </div>
               </div>
 
               <div className="rf-side">
+                {isSolar && (
+                  <details key={measurement.id} className="card rf-card rf-measurement-details" data-solar-estimate="1">
+                    <summary className="rf-head"><span className="card-title">Measurement details</span></summary>
+                    <div className="rf-details">
+                      <dl>
+                        <div className="rf-details-row"><dt>Source</dt><dd>Google aerial estimate</dd></div>
+                        <div className="rf-details-row"><dt>Imagery date</dt><dd>{solar?.imageryDate ?? "Unavailable"}</dd></div>
+                        <div className="rf-details-row"><dt>Imagery quality</dt><dd>{solar?.imageryQuality ?? "Unavailable"}</dd></div>
+                        <div className="rf-details-row"><dt>Building footprint</dt><dd>{footprint.sqft != null ? `${num(footprint.sqft)} sq ft` : "Unavailable"}</dd></div>
+                        <div className="rf-details-row"><dt>Modeled segments</dt><dd>{solar?.segmentCount ?? "Unavailable"}</dd></div>
+                        {solar && <div className="rf-details-row"><dt>Area method</dt><dd>{solar.areaMethod === "google-ground-area-ratio" ? "Adjusted for building footprint" : "Modeled roof area"}</dd></div>}
+                      </dl>
+                      <p className="rf-details-note">Modeled segments are not verified roof facets. Roof condition, eave height and measured edge lengths are unavailable.</p>
+                      <p className="rf-details-note">The satellite view may show imagery from a different date.</p>
+                      {solar?.warnings.map((warning, index) => <p className="rf-details-note" key={index}>{warning}</p>)}
+                    </div>
+                  </details>
+                )}
                 {hasDetails && (
                   <div className="card rf-card">
                     <div className="rf-head">
@@ -1860,7 +1983,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
                     </div>
                   </div>
                 )}
-                <div className="card rf-card">
+                {!isSolar && <div className="card rf-card">
                   <div className="rf-head">
                     <div className="card-title">Structures</div>
                     <div className="card-sub">
@@ -1907,9 +2030,19 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
                       ))}
                     </dl>
                   )}
-                </div>
+                </div>}
               </div>
             </div>
+            )}
+
+            {isSolar && (
+              <div className="rf-notice">
+                <label className="rf-attach rf-solar-review">
+                  <input type="checkbox" checked={solarReviewed} onChange={(event) => setSolarReviewed(event.target.checked)} disabled={genBusy || convertBusy} />
+                  <span>I checked the roof and measurements.</span>
+                </label>
+                <p className="rf-details-note">Verify on site before ordering materials.</p>
+              </div>
             )}
 
             <BuildEstimateCardSwitch
@@ -1922,19 +2055,19 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
               onWaste={setWaste}
               wasteOptions={WASTE_OPTIONS}
               aiEnabled={aiEnabled}
-              waiting={packsPending ? "Still reading the pitch and details — the estimate prices once they land." : null}
+              waiting={solarNeedsReview ? "Check the roof and measurements above before pricing." : packsPending ? "Still reading the pitch and details — the estimate prices once they land." : null}
               pitchEntry={
                 /* EagleView supplied no pitch (pack 002 not bought): the
                    contractor states one, and the estimate says so. Not while
                    the pitch pack is still on its way. */
-                !(manual?.pitchLabel) && !pitchMeasured && !evPitch && totals?.squares != null && !packsPending
+                !(manual?.pitchLabel) && !pitchMeasured && !evPitch && !solarPitch && totals?.squares != null && !packsPending
                   ? { value: pitchEntered, onChange: setPitchEntered, options: PITCHES }
                   : null
               }
               generate={{
                 busy: genBusy,
-                disabled: isRecon || genBusy || totals?.squares == null || !pitchForEstimate || packsPending,
-                reason: packsPending
+                disabled: isRecon || solarNeedsReview || genBusy || totals?.squares == null || !pitchForEstimate || packsPending,
+                reason: solarNeedsReview ? "Check the roof and measurements first." : packsPending
                   ? "Still reading the pitch and details."
                   : !pitchForEstimate
                     ? "Enter the pitch first — the measurement has none for this roof."
@@ -1969,11 +2102,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
               facts={roofFacts}
               onBuildingUse={manual ? undefined : answerUse}
               report={
-                measurement && !manual && !isRecon
+                measurement && !manual && !isRecon && !isSolar
                   ? { state: report.state, reportId: report.reportId ?? null, status: report.status ?? null, busy: reportBusy, onOrder: () => void orderFullReport(), onCheck: () => void checkReport() }
                   : null
               }
-              builderDisabled={convertBusy}
+              builderDisabled={convertBusy || solarNeedsReview}
               converting={convertBusy}
               onBuild={applyPackage}
               onConvert={convertPackage}
@@ -2008,7 +2141,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
                             className="btn btn-primary btn--sm"
                             type="button"
                             id="convertBtn"
-                            disabled={convertBusy || isRecon || sampleEstimate}
+                            disabled={convertBusy || isRecon || solarNeedsReview || sampleEstimate}
                             title={sampleEstimate ? "Sample lines (AI is off) can’t become a proposal — build the package instead." : "Create a draft proposal from these lines"}
                             onClick={() => void convert()}
                           >
@@ -2033,7 +2166,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, initialAddress }: { ai
           setPanel("intake");
           window.requestAnimationFrame(() => addrRef.current?.focus());
         }}
-        showRemeasure={panel === "report" && !manual && reusedInstant != null}
+        showRemeasure={panel === "report" && !manual && !isSolar && evEnabled && reusedInstant != null}
         remeasureLabel={packsMissing ? "Order the missing packs — billed" : "Re-measure — new paid lookup"}
         onRemeasure={() => void runInstant(true, reportInput())}
       />

@@ -3,6 +3,7 @@
 // Pure types only: this file must stay importable from client components.
 
 import type { InstantRoofData } from "@/lib/eagleview";
+import type { SolarRoofEstimate } from "@/lib/roofSolarEstimate";
 // отчёты этапов построения удалены вместе с движком (roofcore):
 // диагностика хранится как непрозрачные данные старых строк
 type PlanarizeReport = Record<string, unknown>;
@@ -16,7 +17,7 @@ type ConformReport = Record<string, unknown>;
  *   instant-outline — Instant numbers, no usable imagery: building outline only
  *   recon           — free aerial reconstruction alone (an ESTIMATE, never priced)
  */
-export type MeasurementSource = "instant+recon" | "instant-outline" | "recon";
+export type MeasurementSource = "instant+recon" | "instant-outline" | "recon" | "solar";
 
 /** Which candidate the calibration selection gate shipped (spec §6.5):
  *  synthesized (straight skeleton from the Instant outline), refined
@@ -98,6 +99,10 @@ export interface MeasurementValidation {
 }
 
 export interface MeasurementProvenance {
+  /** Google aerial estimate; never an EagleView order or surveyed measurement. */
+  solar?: SolarRoofEstimate;
+  /** Requested location, retained separately from the selected building center. */
+  solarRequestedPin?: { lat: number; lng: number };
   /** Google Solar imagery behind the reconstruction. */
   imageryQuality?: string;
   imageryDate?: string;
@@ -472,7 +477,7 @@ export interface RoofMeasurementSummary {
   predominantPitch: string | null;
   facetCount: number | null;
   /** Where the list's pitch comes from — `legacy` is a drawing-pipeline row with no EagleView answer. */
-  pitchKind: "measured" | "eagleview" | "none" | "legacy";
+  pitchKind: "measured" | "eagleview" | "solar" | "none" | "legacy";
   pngUrl: string | null;
   createdAt: string;
 }

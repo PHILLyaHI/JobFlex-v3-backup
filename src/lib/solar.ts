@@ -132,6 +132,7 @@ export interface SolarRoofSegment {
   pitchDegrees: number;
   azimuthDegrees: number;
   areaMeters2: number;
+  groundAreaMeters2?: number;
   centerLat: number;
   centerLng: number;
   planeHeightAtCenterMeters: number;
@@ -143,18 +144,112 @@ export interface BuildingInsights {
   center: { lat: number; lng: number } | null;
   segments: SolarRoofSegment[];
   wholeRoofAreaM2: number | null;
+  wholeRoofGroundAreaM2?: number | null;
+  buildingGroundAreaM2?: number | null;
+  boundingBox?: {
+    sw: { lat: number; lng: number };
+    ne: { lat: number; lng: number };
+  } | null;
+  name?: string | null;
+  /** Malformed source segments must not silently become a complete estimate. */
+  invalidSegmentCount?: number;
 }
 
-const num = (v: unknown): number => {
-  const n = typeof v === "number" ? v : parseFloat(String(v));
-  return Number.isFinite(n) ? n : 0;
-};
+// These JSON fields are numbers. Do not turn missing pitch into a flat roof,
+// accept a numeric prefix ("23junk"), or coerce null/booleans into zero.
+// Google declares pitch, azimuth, and plane height as proto3 `optional float`,
+// so they have explicit presence: a measured zero is serialized, absence is
+// unset. This differs from implicit-presence scalars whose zero can be omitted.
+// https://github.com/googleapis/googleapis/blob/master/google/maps/solar/v1/solar_service.proto
+// https://protobuf.dev/programming-guides/json/#presence-and-default-values
+const finiteNumber = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? v : null;
 
 // Defensive read of an unknown JSON tree — the Solar schema is stable but we
 // never want a shape change to throw inside a server action.
 type Json = Record<string, unknown>;
-const obj = (v: unknown): Json => (v && typeof v === "object" ? (v as Json) : {});
+const obj = (v: unknown): Json =>
+  v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : {};
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+function parseLocation(raw: unknown): { lat: number; lng: number } | null {
+  const location = obj(raw);
+  const lat = finiteNumber(location.latitude);
+  const lng = finiteNumber(location.longitude);
+  return lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180
+    ? { lat, lng }
+    : null;
+}
+
+function parseSolarDate(raw: unknown): SolarDate | null {
+  const date = obj(raw);
+  const year = finiteNumber(date.year);
+  const month = finiteNumber(date.month);
+  const day = finiteNumber(date.day);
+  if (year === null || !Number.isInteger(year) || year < 1 || year > 9999) return null;
+  if ((date.month !== undefined && month === null) || (date.day !== undefined && day === null)) return null;
+  if (month !== null && (!Number.isInteger(month) || month < 0 || month > 12)) return null;
+  if (day !== null && (!Number.isInteger(day) || day < 0 || day > 31)) return null;
+  if (day && !month) return null;
+  if (month && day) {
+    const parsed = new Date(`${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00Z`);
+    if (parsed.getUTCMonth() + 1 !== month || parsed.getUTCDate() !== day) return null;
+  }
+  return { year, ...(month ? { month } : {}), ...(day ? { day } : {}) };
+}
+
+/** Parse the API payload without I/O, retaining the statistics needed for coverage checks. */
+export function parseBuildingInsights(raw: unknown): BuildingInsights {
+  const b = obj(raw);
+  const sp = obj(b.solarPotential);
+  const rawSegments = arr(sp.roofSegmentStats);
+  const segments: SolarRoofSegment[] = rawSegments
+    .map((raw) => {
+      const s = obj(raw);
+      const stats = obj(s.stats);
+      const centre = parseLocation(s.center);
+      const pitchDegrees = finiteNumber(s.pitchDegrees);
+      const azimuthDegrees = finiteNumber(s.azimuthDegrees);
+      const areaMeters2 = finiteNumber(stats.areaMeters2);
+      const planeHeightAtCenterMeters = finiteNumber(s.planeHeightAtCenterMeters);
+      const groundAreaMeters2 = finiteNumber(stats.groundAreaMeters2);
+      if (
+        pitchDegrees === null || pitchDegrees < 0 || pitchDegrees >= 90 ||
+        azimuthDegrees === null || azimuthDegrees < 0 || azimuthDegrees > 360 ||
+        areaMeters2 === null || areaMeters2 <= 0 || !centre ||
+        planeHeightAtCenterMeters === null ||
+        (stats.groundAreaMeters2 !== undefined && (groundAreaMeters2 === null || groundAreaMeters2 <= 0))
+      ) return null;
+      return {
+        pitchDegrees,
+        azimuthDegrees,
+        areaMeters2,
+        ...(groundAreaMeters2 !== null ? { groundAreaMeters2 } : {}),
+        centerLat: centre.lat,
+        centerLng: centre.lng,
+        planeHeightAtCenterMeters,
+      };
+    })
+    .filter((s): s is SolarRoofSegment => s !== null);
+
+  const wholeRoof = obj(sp.wholeRoofStats);
+  const building = obj(sp.buildingStats);
+  const box = obj(b.boundingBox);
+  const sw = parseLocation(box.sw);
+  const ne = parseLocation(box.ne);
+  return {
+    imageryQuality: typeof b.imageryQuality === "string" ? b.imageryQuality : "UNKNOWN",
+    imageryDate: parseSolarDate(b.imageryDate),
+    center: parseLocation(b.center),
+    segments,
+    wholeRoofAreaM2: finiteNumber(wholeRoof.areaMeters2),
+    wholeRoofGroundAreaM2: finiteNumber(wholeRoof.groundAreaMeters2),
+    buildingGroundAreaM2: finiteNumber(building.groundAreaMeters2),
+    boundingBox: sw && ne && sw.lat < ne.lat && sw.lng < ne.lng ? { sw, ne } : null,
+    name: typeof b.name === "string" && b.name.trim() ? b.name : null,
+    invalidSegmentCount: rawSegments.length - segments.length,
+  };
+}
 
 export async function getBuildingInsights(
   lat: number,
@@ -166,32 +261,7 @@ export async function getBuildingInsights(
     `?location.latitude=${lat}&location.longitude=${lng}` +
     `&requiredQuality=HIGH&key=${process.env.GOOGLE_MAPS_API_KEY}`;
   const res = await solarFetch(url, "buildingInsights");
-  const b = obj(await res.json());
-  const sp = obj(b.solarPotential);
-  const segments: SolarRoofSegment[] = arr(sp.roofSegmentStats)
-    .map((raw) => {
-      const s = obj(raw);
-      const centre = obj(s.center);
-      return {
-        pitchDegrees: num(s.pitchDegrees),
-        azimuthDegrees: num(s.azimuthDegrees),
-        areaMeters2: num(obj(s.stats).areaMeters2),
-        centerLat: num(centre.latitude),
-        centerLng: num(centre.longitude),
-        planeHeightAtCenterMeters: num(s.planeHeightAtCenterMeters),
-      };
-    })
-    .filter((s) => s.areaMeters2 > 0);
-
-  const centre = obj(b.center);
-  const wholeRoof = obj(sp.wholeRoofStats);
-  return {
-    imageryQuality: String(b.imageryQuality ?? "UNKNOWN"),
-    imageryDate: (b.imageryDate as SolarDate | undefined) ?? null,
-    center: centre.latitude != null ? { lat: num(centre.latitude), lng: num(centre.longitude) } : null,
-    segments,
-    wholeRoofAreaM2: wholeRoof.areaMeters2 != null ? num(wholeRoof.areaMeters2) : null,
-  };
+  return parseBuildingInsights(await res.json());
 }
 
 // ── Data layers ──────────────────────────────────────────────────────────────

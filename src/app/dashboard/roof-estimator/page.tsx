@@ -14,6 +14,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/lib/auth";
 import { isEagleViewEnabled } from "@/lib/eagleview";
+import { isRoofMeasurementEnabled } from "@/lib/roofMeasurementProvider";
 import { isOpenAIEnabled } from "@/lib/sdk/openai";
 import { RoofEstimatorContent } from "@/components/v3/roof-estimator-blueprint/roof-estimator-content";
 import { readEstimateSeed } from "@/lib/estimateSeed";
@@ -74,6 +75,7 @@ export default async function RoofEstimatorPage() {
       <EstimateSeedStrip seed={seed} />
       <RoofEstimatorContent
         evEnabled={isEagleViewEnabled()}
+        measurementEnabled={isRoofMeasurementEnabled()}
         aiEnabled={isOpenAIEnabled()}
         drawingEnabled={drawingEnabled}
         initialAddress={seed?.address && looksLikeStreetAddress(seed.address) ? seed.address : undefined}

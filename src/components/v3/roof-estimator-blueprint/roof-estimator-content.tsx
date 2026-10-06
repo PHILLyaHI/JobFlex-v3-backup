@@ -25,6 +25,7 @@ import { RoofEstimatorSprite } from "./sprite";
 
 export function RoofEstimatorContent({
   evEnabled,
+  measurementEnabled = false,
   aiEnabled,
   drawingEnabled = true,
   initialAddress,
@@ -33,6 +34,8 @@ export function RoofEstimatorContent({
   initialAddress?: string;
   /** EagleView credentials present — read on the server, in page.tsx. */
   evEnabled: boolean;
+  /** The configured measurement service is available. */
+  measurementEnabled?: boolean;
   /** OpenAI key present; without it the estimate generator returns a sample. */
   aiEnabled: boolean;
   /** ROOF_DRAWING_ENABLED (server env, page.tsx): false = the 2D/3D tool is
@@ -54,19 +57,18 @@ export function RoofEstimatorContent({
         <div className="page-actions" id="rfAgainHost" />
       </div>
 
-      {evEnabled ? (
-        drawingEnabled ? (
+      {measurementEnabled ? (
+        drawingEnabled && evEnabled ? (
           <RoofEstimatorBlueprintForm aiEnabled={aiEnabled} />
         ) : (
-          <RoofEstimatorDataForm aiEnabled={aiEnabled} initialAddress={initialAddress} />
+          <RoofEstimatorDataForm aiEnabled={aiEnabled} evEnabled={evEnabled} measurementEnabled={measurementEnabled} initialAddress={initialAddress} />
         )
       ) : (
         <div className="card rf-card">
           <div className="rf-body">
-            <div className="card-title">Aerial data isn’t configured.</div>
+            <div className="card-title">Roof measurement is unavailable.</div>
             <p className="rf-note">
-              Set <code>EAGLEVIEW_CLIENT_ID</code> and <code>EAGLEVIEW_CLIENT_SECRET</code> in{" "}
-              <code>.env.local</code> to enable roof measurement.
+              Ask your administrator to enable roof measurement.
             </p>
           </div>
         </div>

@@ -45,7 +45,7 @@ export type RoofMeasurementSummaryRow = Pick<
   "id" | "source" | "address" | "city" | "state" | "areaSqft" | "squares" | "predominantPitch" | "facetCount" | "pngUrl" | "createdAt"
 >;
 
-const SOURCES: ReadonlySet<string> = new Set<MeasurementSource>(["instant+recon", "instant-outline", "recon"]);
+const SOURCES: ReadonlySet<string> = new Set<MeasurementSource>(["instant+recon", "instant-outline", "recon", "solar"]);
 
 const parseJson = (s: string | null): unknown => {
   if (!s) return null;
@@ -105,7 +105,7 @@ export function toSummary(row: RoofMeasurementSummaryRow): RoofMeasurementSummar
     facetCount: row.facetCount,
     // The column as saved; listRoofMeasurements replaces this with the
     // page's rule (lib/roofDiagram/instantTotals.rowFigures).
-    pitchKind: row.predominantPitch ? "eagleview" : "none",
+    pitchKind: row.predominantPitch ? (row.source === "solar" ? "solar" : "eagleview") : "none",
     pngUrl: row.pngUrl,
     createdAt: row.createdAt.toISOString(),
   };

@@ -214,7 +214,7 @@ export function pitchFamilyShares(families: readonly PitchFamily[]): Array<{ pit
     .map((f) => ({ pitch12: f.pitch12, share: f.planSqft / total }));
 }
 
-export type PitchKind = "measured" | "eagleview" | "none" | "legacy";
+export type PitchKind = "measured" | "eagleview" | "solar" | "none" | "legacy";
 
 export interface RowFigures {
   areaSqft: number | null;
@@ -267,7 +267,7 @@ export function rowFigures(input: {
       squares: t.squares,
       facetCount: t.facetCount,
       predominantPitch: pitch,
-      pitchKind: fromMeasured || legacyMeasured ? "measured" : pitch ? "eagleview" : "none",
+      pitchKind: prov.solar && pitch ? "solar" : fromMeasured || legacyMeasured ? "measured" : pitch ? "eagleview" : "none",
       mainIndex: index,
     };
   }

@@ -1139,7 +1139,7 @@ function buildSteep(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   // ── Assumptions: where every number came from ──
   assumptions.unshift(
     `Roof system: ${sysName}; underlayment: ${spec.underlaymentName.trim() || "none"}; waste ${spec.wastePct}%.`,
-    `Roof size: ${sq.toFixed(1)} squares (${fmt(sq * 100)} sq ft) — ${facts.squaresBasis === "measured" ? "aerial data, calibrated" : "contractor's takeoff"}.`,
+    `Roof size: ${sq.toFixed(1)} squares (${fmt(sq * 100)} sq ft) — ${facts.squaresBasis === "measured" ? "aerial data, calibrated" : facts.squaresBasis === "estimated" ? "preliminary estimate; verify before ordering materials" : "contractor's takeoff"}.`,
   );
   if (fasciaFt > 0) {
     assumptions.push(
@@ -1495,7 +1495,7 @@ function buildLowSlope(spec: RoofPackageSpec, facts: RoofFacts): BuiltPackage {
   const seams = seamWords(rule);
   assumptions.push(
     `Roof system: ${sysName} — ${METHOD_WORDS[rule.method]}${seams ? `, ${seams}` : ""}; waste ${spec.wastePct}%.`,
-    `Roof size: ${sq.toFixed(1)} squares (${fmt(sq * 100)} sq ft) — ${SQ === "measured" ? "aerial data, calibrated" : "contractor's takeoff"}. Flat roof: no ridge, hip, valley, starter or attic vents.`,
+    `Roof size: ${sq.toFixed(1)} squares (${fmt(sq * 100)} sq ft) — ${SQ === "measured" ? "aerial data, calibrated" : SQ === "estimated" ? "preliminary estimate; verify before ordering materials" : "contractor's takeoff"}. Flat roof: no ridge, hip, valley, starter or attic vents.`,
   );
   if (surface) {
     assumptions.push("Restoration over the existing roof: no tear-off, insulation or cover board. Wet areas the core cuts find are cut out and replaced before the coating goes on.");

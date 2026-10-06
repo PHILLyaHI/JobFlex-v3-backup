@@ -76,6 +76,7 @@
      control row on this page — text input, styled select, small action button —
      resolves its height from here. */
   --field-h: 38px;
+  --roof-touch-h: 44px;
 
   /* Height of the model window. The donor's drawing was a bare `<svg>` at
      `height: auto`, so the card grew and shrank with whatever the viewBox
@@ -1917,6 +1918,15 @@
 .bp :global(.content .rf-attach input) { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; margin: 0; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; cursor: pointer; }
 .bp :global(.content .rf-attach input:checked) { background: var(--ink); box-shadow: inset 0 0 0 2.5px #fff; }
 .bp :global(.content .rf-attach input:focus-visible) { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+.bp :global(.content .rf-solar-review) { min-height: var(--roof-touch-h); height: auto; padding-block: 10px; white-space: normal; line-height: 1.5; }
+.bp :global(.content .rf-solar-review input) { flex-shrink: 0; }
+.bp :global(.content .rf-measurement-details > summary) { display: list-item; min-height: var(--roof-touch-h); cursor: pointer; }
+.bp :global(.content .rf-measurement-details:not([open]) > summary) { border-bottom: 0; }
+.bp :global(.content .rf-measurement-details > summary:focus-visible) { outline: var(--border-thin); outline-color: var(--blueprint); outline-offset: calc(-1 * var(--radius)); }
+
+@media (max-width: 768px) {
+  .bp :global(.content .rf-actions .btn) { min-height: var(--roof-touch-h); height: auto; }
+}
 
 /* The 2D drawing's host inside the stage. It stays mounted under the 3D
    model — `hidden`, not unmounted — so the export ref survives the switch. */

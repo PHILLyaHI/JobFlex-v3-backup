@@ -44,7 +44,9 @@ export async function satellitePhotoPng(row: PhotoSubject): Promise<{ ok: true; 
   const zoom = STATICMAP_ZOOM;
 
   const keyBase = instantAddressKey({ address: row.address ?? "", city: row.city ?? "", state: row.state ?? "", zip: row.zip ?? "" }).replace(/[^A-Za-z0-9]+/g, "-");
-  const file = join(STATICMAP_DIR, `${keyBase}-z${zoom}.png`);
+  // Different pins at one street address must not reuse a photo centered on
+  // another building (particularly when confirming a Google roof estimate).
+  const file = join(STATICMAP_DIR, `${keyBase}-${lat.toFixed(6)}-${lng.toFixed(6)}-z${zoom}.png`);
   try {
     return { ok: true, bytes: await fs.readFile(file), zoom };
   } catch {
