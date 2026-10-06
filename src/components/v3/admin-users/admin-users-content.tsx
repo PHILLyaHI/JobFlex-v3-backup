@@ -31,6 +31,7 @@ import type { PlanGrant, SyncingMark } from "@/lib/planGrant";
 import { STRIPE_SCAN_CEILING_LABEL } from "@/components/v3/admin-subscribers/billing-metrics";
 import { SubscriptionEditor } from "./admin-subscription-editor";
 import { UsageReset } from "./admin-usage-reset";
+import { CustomPagesEditor } from "./admin-custom-pages";
 import { setOrganizationInternal } from "@/actions/adminLeadCenter";
 import shared from "./admin-shared.module.css";
 import s from "./admin-users.module.css";
@@ -563,6 +564,12 @@ function UserForm({
           <SubscriptionEditor key={user.orgId + user.recordStatus + user.recordPlan + (user.syncing?.since ?? "")} user={user} plans={plans} />
         )}
       </div>
+
+      {/* The custom plan's pages — what its gate opens, beside what Stripe
+          bills (owner, 2026-10-06). Only for an org on the custom plan. */}
+      {user.orgId && user.recordPlan.toUpperCase() === "CUSTOM" ? (
+        <CustomPagesEditor key={user.orgId + user.recordPlan} orgId={user.orgId} orgName={user.orgName} />
+      ) : null}
 
       {user.orgId ? (
         <OrgInternal key={user.orgId + String(user.orgInternal)} orgId={user.orgId} orgName={user.orgName} initial={user.orgInternal} />

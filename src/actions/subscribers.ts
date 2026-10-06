@@ -19,6 +19,7 @@ import {
   type MrrExclusion,
   type PricedBy,
 } from "@/components/v3/admin-subscribers/billing-metrics";
+import { customPriceCents, normalizeCustomPages } from "@/lib/customPlan";
 
 // The MRR rule itself lives in that module — see its header. This file only
 // establishes the FACTS each rule reads: which organization a subscription
@@ -265,8 +266,11 @@ function planFor(sub: Stripe.Subscription, slugByPrice: ReadonlyMap<string, stri
   const ledgerSlug = priceId ? slugByPrice.get(priceId) : undefined;
   if (ledgerSlug) return ledgerSlug;
   const m = sub.metadata ?? {};
+  // The custom plan's prices are not in the ledger (lib/customBilling).
+  if (sub.items.data.some((i) => /^custom(-base|-page)?$/.test(i.price?.metadata?.jfKind ?? ""))) return "CUSTOM";
   if (m.planTier) return m.planTier.toUpperCase();
   if (m.planName) return m.planName.toUpperCase();
+  if (m.planSlug) return m.planSlug.toUpperCase();
   const price = sub.items.data[0]?.price;
   const pm = price?.metadata ?? {};
   if (pm.planName) return pm.planName.toUpperCase();
@@ -299,17 +303,49 @@ export async function getSubscribersData(): Promise<SubscribersData> {
 
   if (stripeEnabled) {
     try {
-      return await fromStripe();
+      return await labelCustomRows(await fromStripe());
     } catch (err) {
       // Configured but unreachable is NOT the same as not configured, and the
       // page says which. Fall through to the platform's own record so the
       // list still renders.
       const message = err instanceof Error ? err.message : String(err);
       console.error("[subscribers] live Stripe fetch failed, using the platform record:", err);
-      return await fromRecord(true, message.slice(0, 300));
+      return await labelCustomRows(await fromRecord(true, message.slice(0, 300)));
     }
   }
-  return await fromRecord(false, null);
+  return await labelCustomRows(await fromRecord(false, null));
+}
+
+/** "Custom · 3 pages · $50" (owner, 2026-10-06): a custom plan's row names
+ *  the pages the org holds (our record, lib/customBilling) and what it bills.
+ *  When the bill is not what those pages cost, the row says so. */
+async function labelCustomRows(data: SubscribersData): Promise<SubscribersData> {
+  const custom = data.rows.filter((r) => r.plan.toUpperCase() === "CUSTOM" && r.organizationId);
+  if (!custom.length) return data;
+  const pageRows = await db.syncState.findMany({
+    where: { key: { in: custom.map((r) => `orgPages:${r.organizationId}`) } },
+    select: { key: true, cursor: true },
+  });
+  const pagesByOrg = new Map(
+    pageRows.map((r) => {
+      let pages: string[] = [];
+      try {
+        pages = normalizeCustomPages(JSON.parse(r.cursor) as string[]);
+      } catch {
+        pages = [];
+      }
+      return [r.key.slice("orgPages:".length), pages] as const;
+    }),
+  );
+  const money = (c: number) => (Number.isInteger(c / 100) ? `$${c / 100}` : `$${(c / 100).toFixed(2)}`);
+  for (const r of custom) {
+    const pages = pagesByOrg.get(r.organizationId!) ?? [];
+    const priced = customPriceCents(pages);
+    const billed = r.source === "stripe" ? r.amountCents : priced;
+    const n = pages.length;
+    r.planName = `Custom · ${n} page${n === 1 ? "" : "s"} · ${money(billed)}${r.source === "stripe" && billed !== priced && !r.comped ? ` (pages cost ${money(priced)})` : ""}`;
+  }
+  return data;
 }
 
 // ── Stripe-sourced: the list IS the set of Stripe subscriptions ────────────

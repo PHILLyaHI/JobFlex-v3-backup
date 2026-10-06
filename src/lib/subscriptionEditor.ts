@@ -160,9 +160,10 @@ function intervalOf(sub: Stripe.Subscription | null): "MONTH" | "YEAR" | null {
 }
 
 function priceCentsOf(sub: Stripe.Subscription | null): number | null {
-  const item = sub?.items.data[0];
-  if (!item?.price) return null;
-  return (item.price.unit_amount ?? 0) * (item.quantity ?? 1);
+  // Every line: a custom plan bills its base and its page quantity together.
+  const items = sub?.items.data.filter((i) => i.price) ?? [];
+  if (!items.length) return null;
+  return items.reduce((sum, i) => sum + (i.price.unit_amount ?? 0) * (i.quantity ?? 1), 0);
 }
 
 function planSlugOf(sub: Stripe.Subscription, s: Situation): string | null {
