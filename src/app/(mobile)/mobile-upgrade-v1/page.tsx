@@ -22,14 +22,13 @@ import type { Metadata, Viewport } from "next";
 import { requireOrg, isOwnerRole } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
-import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
-import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
+import { isStripeEnabled } from "@/lib/sdk/stripe";
 import { getStripeMode } from "@/lib/stripeMode";
-import { SubscriptionStatus } from "@/lib/prismaEnums";
-import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
+import { normalizeCustomPages } from "@/lib/customPlan";
 import { customPlanOffered } from "@/lib/customPlanFlag";
 import { MobileUpgradeContent } from "@/components/v3/mobile-upgrade/mobile-upgrade";
 import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
+import { applyCheckoutReturn } from "@/lib/checkoutReturn";
 
 export const dynamic = "force-dynamic";
 
@@ -48,78 +47,10 @@ export const viewport: Viewport = {
   themeColor: "#0a0a0a",
 };
 
-/** Verify a checkout return and record the plan change. Returns the new plan
- *  slug, or null when the session is not this org's or not paid.
- *
- *  The same routine as the desktop page's, for the same reason: the live
- *  webhook cannot see sandbox events at all, and even live, the customer lands
- *  back here before the event does. */
-async function verifyReturn(organizationId: string, sessionId: string): Promise<string | null> {
-  try {
-    const { stripe } = await getStripeClient();
-    const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["subscription"],
-    });
-    if (session.metadata?.organizationId !== organizationId) return null;
-    const paid = session.status === "complete" || session.payment_status === "paid";
-    if (!paid) return null;
-    const planSlug = (session.metadata?.planSlug as string | undefined) ?? null;
-    if (!planSlug) return null;
-    const sub = session.subscription;
-    const subId = typeof sub === "string" ? sub : (sub?.id ?? null);
-    const trialEnd =
-      sub && typeof sub !== "string" && sub.trial_end ? new Date(sub.trial_end * 1000) : null;
-    const periodEnd = sub && typeof sub !== "string" ? subscriptionPeriodEndDate(sub) : null;
-    const customerId = typeof session.customer === "string" ? session.customer : null;
-    const status = trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE;
-    // The old subscription ends here — the checkout route names the one this
-    // purchase replaces. Best-effort: a failure leaves it for the admin's
-    // reconcile, it never blocks the plan change that was paid for.
-    const replaces = (session.metadata?.replacesSubId as string | undefined) || null;
-    if (replaces && replaces !== subId) {
-      await stripe.subscriptions
-        .cancel(replaces, { prorate: false, invoice_now: false })
-        .catch((err) => console.warn("[mobile-upgrade] could not cancel replaced sub:", err));
-    }
-    if (planSlug === CUSTOM_PLAN_SLUG) {
-      const pages = normalizeCustomPages(
-        String(session.metadata?.customPages ?? "").split(",").filter(Boolean),
-      );
-      await db.syncState
-        .upsert({
-          where: { key: `orgPages:${organizationId}` },
-          update: { cursor: JSON.stringify(pages) },
-          create: { key: `orgPages:${organizationId}`, cursor: JSON.stringify(pages) },
-        })
-        .catch(() => {});
-    }
-    await db.subscription.upsert({
-      where: { organizationId },
-      update: {
-        plan: planSlug.toUpperCase(),
-        status,
-        provider: "STRIPE",
-        ...(customerId ? { externalCustomerId: customerId } : {}),
-        ...(subId ? { externalSubId: subId } : {}),
-        trialEndsAt: trialEnd,
-        currentPeriodEnd: periodEnd,
-      },
-      create: {
-        organizationId,
-        plan: planSlug.toUpperCase(),
-        status,
-        provider: "STRIPE",
-        externalCustomerId: customerId,
-        externalSubId: subId,
-        trialEndsAt: trialEnd,
-        currentPeriodEnd: periodEnd,
-      },
-    });
-    return planSlug;
-  } catch (err) {
-    console.warn("[mobile-upgrade] checkout verify failed:", err);
-    return null;
-  }
+/** The checkout return, processed once (lib/checkoutReturn): a second visit
+ *  of the same success URL changes nothing. */
+function verifyReturn(organizationId: string, sessionId: string): Promise<string | null> {
+  return applyCheckoutReturn(organizationId, sessionId, "mobile-upgrade");
 }
 
 export default async function MobileUpgradeV1Page({

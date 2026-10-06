@@ -22,80 +22,28 @@ import { redirect } from "next/navigation";
 import { requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
-import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
-import { subscriptionPeriodEndDate } from "@/lib/stripeCompat";
+import { isStripeEnabled } from "@/lib/sdk/stripe";
 import { getStripeMode } from "@/lib/stripeMode";
 import { isOwnerRole } from "@/lib/orgContext";
-import { SubscriptionStatus } from "@/lib/prismaEnums";
-import { CUSTOM_PLAN_SLUG, normalizeCustomPages } from "@/lib/customPlan";
+import { normalizeCustomPages } from "@/lib/customPlan";
 import { customPlanOffered } from "@/lib/customPlanFlag";
 import type { UpgradePlan } from "@/components/v3/upgrade-blueprint/upgrade-content";
 // One URL, two designs: the desktop build above 768px, the handheld build in
 // components/v3/mobile-upgrade at or below it. Same props, one loader — see
 // upgrade-responsive.tsx.
 import { UpgradeResponsive } from "./upgrade-responsive";
-import { recordPlanChange } from "@/lib/subscriptionRecord";
 // TEMP (2026-09-19): the dev-only plan simulator; see lib/devSimulation.
 import { isDevSimulationEnabled } from "@/lib/devSimulation";
 import { DevPlanSimulator } from "./dev-plan-simulator";
+import { applyCheckoutReturn } from "@/lib/checkoutReturn";
 
 export const metadata = { title: "Plans & upgrade — JobFlex" };
 export const dynamic = "force-dynamic";
 
-/** Verify a checkout return and record the plan change. Returns the new plan
- *  slug, or null when the session is not this org's or not paid. */
-async function verifyReturn(organizationId: string, sessionId: string): Promise<string | null> {
-  try {
-    const { stripe } = await getStripeClient();
-    const session = await stripe.checkout.sessions.retrieve(sessionId, {
-      expand: ["subscription"],
-    });
-    if (session.metadata?.organizationId !== organizationId) return null;
-    const paid = session.status === "complete" || session.payment_status === "paid";
-    if (!paid) return null;
-    const planSlug = (session.metadata?.planSlug as string | undefined) ?? null;
-    if (!planSlug) return null;
-    const sub = session.subscription;
-    const subId = typeof sub === "string" ? sub : (sub?.id ?? null);
-    const trialEnd = sub && typeof sub !== "string" && sub.trial_end ? new Date(sub.trial_end * 1000) : null;
-    const periodEnd = sub && typeof sub !== "string" ? subscriptionPeriodEndDate(sub) : null;
-    const customerId = typeof session.customer === "string" ? session.customer : null;
-    // Canonical enum casing: the limits engine treated the old lowercase
-    // "active"/"trialing" as LAPSED (free quotas for a paying customer).
-    // currentPeriodEnd makes the row self-expiring should the webhook never
-    // arrive (e.g. a sandbox-mode checkout the live webhook never sees).
-    const status = trialEnd ? SubscriptionStatus.TRIALING : SubscriptionStatus.ACTIVE;
-    /* THE OLD SUBSCRIPTION ENDS HERE. The checkout route names the one this
-       purchase replaces; it is cancelled at once, without a proration credit
-       (the new plan starts now and was paid in full), so the org never bills
-       twice. Best-effort: a failure here leaves the old sub for the admin's
-       reconcile, it never blocks the plan change that was paid for. */
-    const replaces = (session.metadata?.replacesSubId as string | undefined) || null;
-    if (replaces && replaces !== subId) {
-      await stripe.subscriptions
-        .cancel(replaces, { prorate: false, invoice_now: false })
-        .catch((err) => console.warn("[upgrade] could not cancel replaced subscription:", err));
-    }
-    // A custom plan's pages, for the page gate and the sidebar locks.
-    if (planSlug === CUSTOM_PLAN_SLUG) {
-      const pages = normalizeCustomPages(
-        String(session.metadata?.customPages ?? "").split(",").filter(Boolean),
-      );
-      await db.syncState
-        .upsert({
-          where: { key: `orgPages:${organizationId}` },
-          update: { cursor: JSON.stringify(pages) },
-          create: { key: `orgPages:${organizationId}`, cursor: JSON.stringify(pages) },
-        })
-        .catch(() => {});
-    }
-    // The write itself lives in lib/subscriptionRecord so the dev simulator
-    // records a plan change by the same code rather than a copy of it.
-    return await recordPlanChange({ organizationId, planSlug, status, customerId, subId, trialEnd, periodEnd });
-  } catch (err) {
-    console.warn("[upgrade] checkout verify failed:", err);
-    return null;
-  }
+/** The checkout return, processed once (lib/checkoutReturn): a second visit
+ *  of the same success URL changes nothing. */
+function verifyReturn(organizationId: string, sessionId: string): Promise<string | null> {
+  return applyCheckoutReturn(organizationId, sessionId, "upgrade");
 }
 
 export default async function UpgradePage({
