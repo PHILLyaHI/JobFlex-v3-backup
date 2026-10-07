@@ -85,7 +85,7 @@ import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { Nav } from "./nav";
 import { PRICING, REGISTER } from "./routes";
 import { SmoothWheel } from "./smooth-wheel";
-import { trialRequiresCard } from "@/lib/trialPolicy";
+import { trialRequiresCard } from "@/lib/trialPolicyServer";
 import { customPlanOffered } from "@/lib/customPlanFlag";
 import type { InAppBrowser } from "@/lib/inAppBrowser";
 import "./landing-e.css";
@@ -113,7 +113,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
   const v = withHook(variantContent(variant), hookContent(variant, hook));
   // TRIAL_REQUIRES_CARD (lib/trialPolicy): the card-less trial's line under
   // the hero heading, the plan cards' words and the FAQ's card answer.
-  const requiresCard = trialRequiresCard();
+  const requiresCard = await trialRequiresCard();
   // Every register link carries the trade, the visit's utm_* and the fbclid.
   const register = signupHref(REGISTER, { industry: variant, utm, fbclid });
   // …and so does the nav's Pricing link, for /pricing to hand on (pricing-visit.tsx).

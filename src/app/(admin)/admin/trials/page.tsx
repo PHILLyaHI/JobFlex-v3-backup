@@ -6,6 +6,7 @@
 import type { Metadata } from "next";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { getTrialWatch } from "@/actions/trialWatch";
+import { trialPolicyStatus } from "@/lib/trialPolicyServer";
 import { AdminTrialsContent } from "@/components/v3/admin-trials/admin-trials-content";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,6 @@ export const metadata: Metadata = { title: "JobFlex Admin · Trial watch" };
 
 export default async function AdminTrialsPage() {
   await requirePlatformAdmin();
-  const data = await getTrialWatch();
-  return <AdminTrialsContent data={data} />;
+  const [data, policy] = await Promise.all([getTrialWatch(), trialPolicyStatus()]);
+  return <AdminTrialsContent data={data} policy={policy} />;
 }

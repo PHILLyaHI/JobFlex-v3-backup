@@ -12,6 +12,8 @@ import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import type { TrialCard, TrialWatchData } from "@/actions/trialWatch";
+import type { TrialPolicyStatus } from "@/lib/trialPolicyServer";
+import { TrialPolicyPanel } from "./trial-policy-panel";
 import type { TrialLevel } from "@/lib/trialWatch";
 import { formatSpend, PAID_SERVICE_LABEL } from "@/lib/paidApiCosts";
 import { TRIAL_CAP_KEYS, TRIAL_CAP_NOUN } from "@/lib/trialCaps";
@@ -23,7 +25,7 @@ const LEVEL_LABEL: Record<TrialLevel, string> = { suspicious: "Look at this", wa
 /** The card-less trial's card, as the row's second line says it. */
 const CARD_LABEL: Record<TrialCard, string> = { none: "No card", "on-file": "Card added", ended: "Ended, no card", restarted: "Paid after trial" };
 
-export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
+export function AdminTrialsContent({ data, policy }: { data: TrialWatchData; policy: TrialPolicyStatus }) {
   const [level, setLevel] = useState<"" | TrialLevel>("");
   // Card-less trials apart (owner, 2026-10-01): "no-card" is every trial that
   // started without one, whatever has happened since; the rest narrow it.
@@ -66,6 +68,8 @@ export function AdminTrialsContent({ data }: { data: TrialWatchData }) {
           <b>Page views are not being recorded yet.</b> The PageView table is not in this database — push the schema and this page fills in. Until then only the signals that need no page views show: a competitor&apos;s domain, a test name, the records made.
         </p>
       )}
+
+      <TrialPolicyPanel initial={policy} />
 
       <div className="kpi-grid">
         <div className="kpi">
