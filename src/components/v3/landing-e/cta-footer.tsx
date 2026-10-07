@@ -1,5 +1,4 @@
 import { CookieSettingsLink, DoNotSellLink } from "@/components/consent/cookie-settings-link";
-import { CtaNote } from "./cta-note";
 import { TrialLine } from "./trial-line";
 import { Logo } from "./logo";
 import { REGISTER } from "./routes";
@@ -21,7 +20,7 @@ export function CtaFooter({
   cta,
   requiresCard = true,
 }: {
-  /** TRIAL_REQUIRES_CARD: false sets the card-less trial's line under the heading. */
+  /** TRIAL_REQUIRES_CARD: the words of the trial's badge under the heading. */
   requiresCard?: boolean;
   registerHref?: string;
   /** A trade variant's primary CTA words; the default page keeps its own. */
@@ -42,7 +41,7 @@ export function CtaFooter({
           <p className="mt-3 text-[clamp(30px,4vw,56px)] font-bold leading-[1.1] tracking-[-0.02em] text-lp-sky">
             Today, it&rsquo;s your turn.
           </p>
-          {requiresCard ? null : <TrialLine tone="dark" className="mt-8" href={registerHref} spot="final" />}
+          <TrialLine tone="dark" className="mt-8" href={registerHref} spot="final" requiresCard={requiresCard} />
           {/* One button, both viewports (owner, 2026-08-25). The white mobile
               variant and the blue one were rendering together — `.jf-lp
               .lp-btn-lime` sets display and outranks Tailwind's `hidden` — and
@@ -53,7 +52,6 @@ export function CtaFooter({
               {cta ?? "Start 7-Day Free Trial"}
               <span aria-hidden>→</span>
             </a>
-            {requiresCard ? <CtaNote tone="dark" className="mt-3 text-center" /> : null}
           </div>
         </Reveal>
       </div>

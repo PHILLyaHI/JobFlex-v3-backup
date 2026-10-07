@@ -1,5 +1,5 @@
 /* THE TRADE'S PRICE IN THE FIRST SCREEN (2026-10-04; the analyst: "put the
-   ad's exact claim, the trade, the price and 'free trial, no card' in the
+   ad's exact claim, the trade, the price and '7-day free trial' in the
    hero, above the fold"). A roofer who clicked a roof-report ad wants one
    number: what the roof estimator costs once the trial is over.
 

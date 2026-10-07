@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { expandPlanFeatures, formatPlanPrice, planCtaLabel, priceCadence, type PlanDTO } from "@/lib/planCatalog";
+import { expandPlanFeatures, formatPlanPrice, priceCadence, type PlanDTO } from "@/lib/planCatalog";
 import "./pricing-faq.css";
 
 /* THE REGISTER'S PLAN CARDS ON THE LANDING (owner, 2026-09-26). A port of
@@ -11,7 +11,8 @@ import "./pricing-faq.css";
    has it, grey dash where it does not — and the card's own full-width start
    button. Everything is read from the live catalogue (getPlanCatalog on the
    server): expandPlanFeatures gives the shared rows and what each plan
-   includes, formatPlanPrice / planCtaLabel the price and the button words.
+   includes, formatPlanPrice the price. Every button starts the same 7-day
+   trial (lib/trialPolicy TRIAL_DAYS), whatever the catalogue row's own days.
    The register reads no `plan` param, so every button is the register link.
 
    On a phone (≤768px) the row is the register's swipe carousel: cards
@@ -38,12 +39,9 @@ function Minus() {
 export function PricingPlans({
   plans,
   registerHref,
-  requiresCard = true,
 }: {
   plans: PlanDTO[];
   registerHref: string;
-  /** TRIAL_REQUIRES_CARD: false — every card starts the same 7-day trial, no card. */
-  requiresCard?: boolean;
 }) {
   const { rows, included } = expandPlanFeatures(plans);
   const heroIndex = Math.max(0, plans.findIndex((p) => p.highlight));
@@ -188,7 +186,7 @@ export function PricingPlans({
                 </button>
               ) : null}
               <a href={registerHref} className="lp-pw-go" data-cta="pricing">
-                {requiresCard ? planCtaLabel(p.trialDays) : "Start free trial"}
+                Start free trial
                 <span className="sr-only"> on {p.name}</span>
               </a>
             </article>

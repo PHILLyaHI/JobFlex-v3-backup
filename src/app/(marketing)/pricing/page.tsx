@@ -6,7 +6,6 @@
 
 import type { Metadata } from "next";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
-import { getCustomPlanTrialDays } from "@/lib/customPlanConfig";
 import { PricingPage } from "@/components/v3/pricing-d/pricing-page";
 import { trialRequiresCard } from "@/lib/trialPolicy";
 import { customPlanOffered } from "@/lib/customPlanFlag";
@@ -22,14 +21,10 @@ export const metadata: Metadata = {
 };
 
 export default async function Page() {
-  const [plans, customTrialDays] = await Promise.all([
-    getPlanCatalog(),
-    getCustomPlanTrialDays(),
-  ]);
+  const plans = await getPlanCatalog();
   return (
     <PricingPage
       plans={plans}
-      customTrialDays={customTrialDays}
       requiresCard={trialRequiresCard()}
       customOffered={customPlanOffered()}
     />

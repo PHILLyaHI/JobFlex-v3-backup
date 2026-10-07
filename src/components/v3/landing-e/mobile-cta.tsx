@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CtaNote } from "./cta-note";
 import { TrialLine } from "./trial-line";
 import { REGISTER } from "./routes";
 
@@ -10,7 +9,7 @@ export function MobileCta({
   cta,
   requiresCard = true,
 }: {
-  /** TRIAL_REQUIRES_CARD: false shows the card-less trial's line, compact. */
+  /** TRIAL_REQUIRES_CARD: the words of the trial's line, compact. */
   requiresCard?: boolean;
   registerHref?: string;
   /** A trade variant's primary CTA words; the default page keeps its own. */
@@ -48,7 +47,7 @@ export function MobileCta({
         <a href={registerHref} className="lp-btn-dark h-12 w-full text-[16px] font-semibold" data-cta="sticky">
           {cta ?? "Start FREE Trial"}
         </a>
-        {requiresCard ? <CtaNote className="text-center" /> : <TrialLine size="sm" className="mx-auto flex w-fit" />}
+        <TrialLine size="sm" className="mx-auto flex w-fit" requiresCard={requiresCard} />
       </div>
     </div>
   );

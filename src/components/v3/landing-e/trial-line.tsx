@@ -1,7 +1,8 @@
-/* THE CARD-LESS TRIAL'S PROMISE (owner, 2026-10-01; TRIAL_REQUIRES_CARD off —
-   lib/trialPolicy). "7-Day Free Trial — No Credit Card Required" is not the
-   small mono note the card-first trial carried under its buttons: it is its
-   own line under the heading, set as a Blueprint stamp — an ink (or white)
+/* THE TRIAL'S PROMISE (owner, 2026-10-01; words by TRIAL_REQUIRES_CARD —
+   lib/trialPolicy trialLine: "Start your 7-day free trial" with the card, the
+   default since 2026-10-06; the card-less line with the flag off). It is not
+   the small mono note the card-first trial once carried under its buttons: it
+   is its own line under the heading, set as a Blueprint stamp — an ink (or white)
    frame, heavy uppercase, the blue tick — large enough to be read before the
    button is (landing-e.css, .lp-trial-line). `tone` picks the ink for a black
    or a white ground; `size="sm"` is the sticky phone bar's.
@@ -20,7 +21,10 @@ export function TrialLine({
   className = "",
   href,
   spot,
+  requiresCard = true,
 }: {
+  /** TRIAL_REQUIRES_CARD (lib/trialPolicy), read on the server by the page. */
+  requiresCard?: boolean;
   tone?: "light" | "dark";
   /** lg: its own line under a heading; sm: the sticky phone bar; bar: under
    *  the hero's pair, exactly as wide as the pair, tick at the left. */
@@ -37,7 +41,7 @@ export function TrialLine({
       <svg viewBox="0 0 24 24" aria-hidden>
         <path d="M4 12.5l5 5L20 6.5" />
       </svg>
-      {trialLine(false)}
+      {trialLine(requiresCard)}
     </>
   );
   return href ? (

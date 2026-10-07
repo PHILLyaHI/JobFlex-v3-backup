@@ -43,7 +43,7 @@ const DATA_Q: Record<"roofing" | "fencing" | "hvac" | "other", Faq> = {
 const CARD_Q: Record<"card" | "cardless", Faq> = {
   card: {
     q: "Do I need a credit card to start?",
-    a: "Yes, at step 3 of signup, when you pick a plan. The 7 days are free and the first charge comes on day 8. Cancel in one click from Subscription before then and you pay nothing.",
+    a: "Yes, a card is required to start the trial; you are not charged for 7 days and can cancel in one tap.",
   },
   cardless: {
     q: "Do I need a credit card to start?",

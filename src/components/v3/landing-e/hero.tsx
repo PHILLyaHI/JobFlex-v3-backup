@@ -6,7 +6,6 @@ import { HeroVisual } from "./hero-visual";
 import { DEFAULT_LANDING, type LandingVariant, type LandingVariantKey, type UtmParams } from "./landing-variants";
 import { Reveal } from "./reveal";
 import { GoogleSignupButton } from "./google-signup-button";
-import { CtaNote } from "./cta-note";
 import { TrialLine } from "./trial-line";
 import { trialLine } from "@/lib/trialPolicy";
 import { HeroEntrance } from "./hero-entrance";
@@ -51,8 +50,8 @@ export function Hero({
   /** The in-app browser the server read from the request (lib/inAppBrowser):
    *  no Google button there, from the first paint. */
   inAppBrowser?: InAppBrowser | null;
-  /** TRIAL_REQUIRES_CARD (lib/trialPolicy): false puts the card-less trial's
-   *  line under the heading instead of the small note under the buttons. */
+  /** TRIAL_REQUIRES_CARD (lib/trialPolicy): the words of the trial's badge
+   *  under the buttons (lib/trialPolicy trialLine). */
   requiresCard?: boolean;
   variant?: LandingVariant;
   /** The variant's key, for the Google button's cookie and callback. */
@@ -176,9 +175,8 @@ export function Hero({
               Sign up with Google
             </GoogleSignupButton>
           </div>
-          {requiresCard ? null : <TrialLine tone="dark" size="bar" href={registerHref} spot="hero" />}
+          <TrialLine tone="dark" size="bar" href={registerHref} spot="hero" requiresCard={requiresCard} />
           </div>
-          {requiresCard ? <CtaNote tone="dark" className="mt-3 text-center" /> : null}
           {/* The price, in the first screen (2026-10-04): under the trial's
               line, in the same mono caps as the card-first note. */}
           {priceLine ? <p className="lp-hero-price">{priceLine}</p> : null}
@@ -186,7 +184,7 @@ export function Hero({
         </HeroEntrance>
       </div>
 
-      <div className={`lp-hero-vis relative z-[1] mt-[8vmin] px-5 pb-[26vmin] sm:px-6${requiresCard ? "" : " lp-hero-vis--badge"}${adScreen ? " lp-hero-vis--cta" : ""}`}>
+      <div className={`lp-hero-vis lp-hero-vis--badge relative z-[1] mt-[8vmin] px-5 pb-[26vmin] sm:px-6${adScreen ? " lp-hero-vis--cta" : ""}`}>
         {/* Two builds of the same screen, not one build clipped: the desktop
             plate's 208px sidebar and four-across KPI row cannot survive a
             phone column (owner, 2026-08-25). The phone build also skips

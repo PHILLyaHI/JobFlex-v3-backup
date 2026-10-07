@@ -24,6 +24,7 @@ import { Reveal } from "@/components/v3/landing-e/reveal";
 import { REGISTER } from "@/components/v3/landing-e/routes";
 import { PricingPlans } from "@/components/v3/landing-e/pricing-plans";
 import { TrialLine } from "@/components/v3/landing-e/trial-line";
+import { TRIAL_DAYS } from "@/lib/trialPolicy";
 import { PricingVisit } from "./pricing-visit";
 import { priceCadence, type PlanDTO } from "@/lib/planCatalog";
 import { CUSTOM_BASE_CENTS, CUSTOM_PAGE_CENTS, CUSTOM_PAGES } from "@/lib/customPlan";
@@ -39,17 +40,14 @@ function price(cents: number): string {
 
 export function PricingPage({
   plans,
-  customTrialDays,
   requiresCard = true,
   customOffered = false,
 }: {
   /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): false hides "Build your plan". */
   customOffered?: boolean;
-  /** TRIAL_REQUIRES_CARD (lib/trialPolicy): false — the card-less trial's line under the heading and on every start button. */
+  /** TRIAL_REQUIRES_CARD (lib/trialPolicy): the words of the trial's badge. */
   requiresCard?: boolean;
   plans: PlanDTO[];
-  /** The custom plan's trial, set in /admin/plans. */
-  customTrialDays: number;
 }) {
   // A $0 tier is what happens when somebody skips, not something to sell here.
   const sellable = plans.filter((p) => !p.isFree);
@@ -68,7 +66,7 @@ export function PricingPage({
               <h1 className="mt-6 max-w-[22ch] text-[clamp(38px,5.4vw,72px)] font-bold leading-[1.04] tracking-[-0.03em]">
                 Pay for the shop you run.
               </h1>
-              {requiresCard ? null : <TrialLine className="mt-6" href={REGISTER} spot="pricing-page" />}
+              <TrialLine className="mt-6" href={REGISTER} spot="pricing-page" requiresCard={requiresCard} />
               <p className="mt-6 max-w-[52ch] text-[16px] leading-[1.65] text-slate-500 sm:text-[17px]">
                 Every plan carries unlimited clients and the client portal. Move up, move down, or
                 build your own from the pages you actually open. No setup fee, cancel whenever.
@@ -83,7 +81,7 @@ export function PricingPage({
             <div className="border-t border-slate-900/10 pt-[6vmin]">
               {sellable.length > 0 ? (
                 <Reveal className="pr-plans">
-                  <PricingPlans plans={sellable} registerHref={REGISTER} requiresCard={requiresCard} />
+                  <PricingPlans plans={sellable} registerHref={REGISTER} />
                 </Reveal>
               ) : (
                 <p className="py-12 text-center text-[15px] text-slate-500">
@@ -131,11 +129,7 @@ export function PricingPage({
                           <i>{priceCadence(true)} base</i>
                         </p>
                         <div className="mt-2.5">
-                          {!requiresCard ? (
-                            <span className="pr-trial">7-day free trial · no card</span>
-                          ) : customTrialDays > 0 ? (
-                            <span className="pr-trial">{customTrialDays}-day free trial</span>
-                          ) : null}
+                          <span className="pr-trial">{TRIAL_DAYS}-day free trial</span>
                         </div>
                         <p className="pr-desc mt-5">
                           A full build with all {CUSTOM_PAGES.length} pages comes to{" "}
@@ -144,7 +138,7 @@ export function PricingPage({
                         </p>
                       </div>
                       <a href={REGISTER} className="lp-pw-go mt-8" data-cta="pricing-custom">
-                        {!requiresCard ? "Start free trial" : customTrialDays > 0 ? `Start ${customTrialDays}-day trial` : "Build your plan"}
+                        Start free trial
                       </a>
                     </div>
                   </div>
