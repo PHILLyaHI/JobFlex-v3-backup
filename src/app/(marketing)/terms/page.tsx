@@ -11,8 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function TermsPage() {
-  // The trial sentence follows TRIAL_REQUIRES_CARD (lib/trialPolicy): the
-  // card-less trial asks for no payment method, so the terms do not say it does.
+  // The trial sentence follows TRIAL_REQUIRES_CARD (lib/trialPolicy): a card
+  // up front by default (2026-10-06); the card-less trial, with the flag off,
+  // asks for no payment method, so then the terms do not say it does.
   const requiresCard = trialRequiresCard();
   return (
     <LegalPage title="Terms of service" number="02" summary="The agreement for your workspace, subscriptions, business documents, and connected services." updated={LEGAL_UPDATED.terms}>
@@ -37,7 +38,7 @@ export default function TermsPage() {
         and any trial. An authorized recurring subscription renews at the disclosed interval until
         canceled.{" "}
         {requiresCard
-          ? "When a 7-day free trial is offered with a payment method, the first charge occurs after the trial unless canceled beforehand. Review the specific offer at checkout."
+          ? "Starting the 7-day free trial requires a payment method. Nothing is charged during the trial; the price of the plan you chose is first charged when it ends, unless you cancel beforehand. Review the specific offer at checkout."
           : "When a 7-day free trial is offered, no payment method is needed to start it. If you add one, the first charge occurs when the trial ends unless canceled beforehand; if you do not, the trial ends without a charge and the workspace becomes read-only until one is added. Review the specific offer when you sign up."}
       </p>
       <p>

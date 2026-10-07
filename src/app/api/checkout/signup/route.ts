@@ -72,7 +72,9 @@ export async function POST(req: Request) {
     customPages: pending.customPages,
   });
   if (!priced.ok) return NextResponse.json({ error: priced.error }, { status: priced.status });
-  const { trialDays, planLabel, isCustom } = priced;
+  // trialDays is TRIAL_DAYS for every plan (lib/trialPolicy via signupPricing):
+  // seven days, then Stripe charges the picked plan's price.
+  const { trialDays, planLabel, isCustom, cents } = priced;
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = priced.lineItems;
   const discount = await resolveSignupDiscount({ stripe, mode, attribution: pending.attribution, trialDays, where: "checkout/signup" });
   // `discounts` and `allow_promotion_codes` are mutually exclusive at Stripe,
@@ -81,9 +83,18 @@ export async function POST(req: Request) {
 
   const origin = new URL(req.url).origin;
   try {
+    // REHEARSALS ONLY: STRIPE_TEST_CLOCKS=1 opens the checkout for a customer
+    // made on a Stripe test clock of its own, so a harness can walk the trial
+    // to day 8 and see the first charge (the card-less trial's rule, in
+    // lib/cardlessTrial). Never in production, never on the live account.
+    let customer: string | null = null;
+    if (mode === "test" && process.env.NODE_ENV !== "production" && process.env.STRIPE_TEST_CLOCKS === "1") {
+      const clock = await stripe.testHelpers.testClocks.create({ frozen_time: Math.floor(Date.now() / 1000), name: `signup ${pending.email}`.slice(0, 300) });
+      customer = (await stripe.customers.create({ email: pending.email, name: pending.businessName, test_clock: clock.id, metadata: { signupToken: String(token) } })).id;
+    }
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer_email: pending.email,
+      ...(customer ? { customer } : { customer_email: pending.email }),
       client_reference_id: String(token),
       line_items: lineItems,
       // The custom plan's pages ride the subscription too (lib/customBilling);

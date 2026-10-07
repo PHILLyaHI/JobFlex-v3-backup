@@ -1,23 +1,33 @@
-// THE TRIAL'S TERMS, IN ONE PLACE (owner, 2026-10-01: a free trial with no
-// card, for now — behind a flag).
+// THE TRIAL'S TERMS, IN ONE PLACE.
 //
-// TRIAL_REQUIRES_CARD=true is the pay-first signup exactly as it was: the plan
-// step opens Stripe Checkout, the card is taken, the plan's own trial runs
-// (/api/checkout/signup → completePendingSignup). Anything else — unset, the
-// default — is the card-less trial: the plan step asks for nothing, the
-// address is confirmed by email, and the account starts on a 7-day trial with
-// no payment method on file (lib/cardlessTrial). Read on the server only;
-// pages hand the answer to their client components as a prop.
+// THE CARD IS TAKEN UP FRONT (owner, 2026-10-06 — back from the card-less
+// experiment of 2026-10-01). The plan step opens Stripe Checkout for the plan
+// picked, the card is taken, the trial runs TRIAL_DAYS, and on day 8 Stripe
+// charges that plan's price (/api/checkout/signup → completePendingSignup).
+// That is the default: no variable, or anything but "false".
+//
+// TRIAL_REQUIRES_CARD=false brings back the card-less trial: the plan step
+// asks for nothing, the address is confirmed by email, and the account
+// starts on a 7-day trial with no payment method on file (lib/cardlessTrial).
+// The code stays, switched off. Trials already started that way keep their
+// ribbon, caps and add-card screen whatever the flag says — those read the
+// organization's own card-less record (lib/trialState), not this switch.
+// Read on the server only; pages hand the answer to their client components
+// as a prop.
 
-/** True when signup takes a card up front (the pay-first flow). */
+/** True when signup takes a card up front (the default). */
 export function trialRequiresCard(): boolean {
-  return process.env.TRIAL_REQUIRES_CARD?.trim().toLowerCase() === "true";
+  return process.env.TRIAL_REQUIRES_CARD?.trim().toLowerCase() !== "false";
 }
 
-/** The card-less trial's length. Fixed, whatever the plan's own trial says. */
-export const CARDLESS_TRIAL_DAYS = 7;
+/** Every signup trial's length, on either path and whatever plan is picked —
+ *  the catalog's per-plan trialDays no longer decide a new shop's trial. */
+export const TRIAL_DAYS = 7;
 
-/** The line every register button and plan card carries, by flag. */
+/** The card-less trial's length (the same seven days). */
+export const CARDLESS_TRIAL_DAYS = TRIAL_DAYS;
+
+/** The line every trial badge, register button note and plan card carries. */
 export function trialLine(requiresCard: boolean): string {
-  return requiresCard ? "7 days free · Cancel anytime" : "7-Day Free Trial · No Credit Card Required";
+  return requiresCard ? "Start your 7-day free trial" : "7-Day Free Trial · No Credit Card Required";
 }

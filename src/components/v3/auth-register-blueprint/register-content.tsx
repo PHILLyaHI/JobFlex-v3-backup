@@ -60,7 +60,7 @@ import {
   type SignupPlan,
   type SignupPromo,
 } from "@/actions/signupPaywall";
-import { trialLine } from "@/lib/trialPolicy";
+import { TRIAL_DAYS, trialLine } from "@/lib/trialPolicy";
 import {
   completePendingSignup,
   requestCardlessTrial,
@@ -87,7 +87,7 @@ const PICKER_EXIT_MS = 220;
 type Step = 1 | 2 | 3 | 4;
 
 /** Fallback trial length, used only until the catalog answers. */
-const DEFAULT_TRIAL_DAYS = 14;
+const DEFAULT_TRIAL_DAYS = TRIAL_DAYS;
 
 // How long the "Your shop is live" panel holds before it hands over to the
 // dashboard. Shared by both register surfaces.
@@ -1583,16 +1583,15 @@ export function RegisterContent({
                 speaks for. */}
             <div className="pw-head">
               <h1 className="auth-h1">Pick a plan.</h1>
-              {/* The card-less trial's promise, its own line under the heading
-                  (owner, 2026-10-01) — the stamp the landing carries. */}
-              {requiresCard ? null : (
-                <p className="pw-trial">
-                  <svg className="ic" aria-hidden>
-                    <use href="#i-check" />
-                  </svg>
-                  {trialLine(false)}
-                </p>
-              )}
+              {/* The trial's promise, its own line under the heading (owner,
+                  2026-10-01) — the stamp the landing carries, in the words
+                  of TRIAL_REQUIRES_CARD (lib/trialPolicy trialLine). */}
+              <p className="pw-trial">
+                <svg className="ic" aria-hidden>
+                  <use href="#i-check" />
+                </svg>
+                {trialLine(requiresCard)}
+              </p>
             </div>
 
             {plansErr ? (
@@ -1745,9 +1744,7 @@ export function RegisterContent({
                         ? busyLabel
                         : !checkoutReady
                           ? "Checkout is not configured"
-                          : requiresCard
-                            ? `Start ${p.trialDays || DEFAULT_TRIAL_DAYS}-day trial`
-                            : "Start free trial"}
+                          : "Start free trial"}
                     </button>
                   </div>
                 );
@@ -1879,9 +1876,7 @@ export function RegisterContent({
                     ? busyLabel
                     : !checkoutReady
                       ? "Checkout is not configured"
-                      : requiresCard
-                        ? `Start ${customTrialDays}-day trial`
-                        : "Start free trial"}
+                      : "Start free trial"}
                 </button>
               </div>
               ) : null}
