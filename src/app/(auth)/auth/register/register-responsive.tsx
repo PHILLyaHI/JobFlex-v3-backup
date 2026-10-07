@@ -148,7 +148,7 @@ export function RegisterResponsive({
   utm?: UtmParams | null;
   /** The in-app browser the request's user agent names (lib/inAppBrowser). */
   inAppBrowser?: InAppBrowser | null;
-  /** TRIAL_REQUIRES_CARD, read on the server (lib/trialPolicy). */
+  /** signupTrialMode (lib/trialPolicyServer) is "card", read on the server. */
   requiresCard?: boolean;
   /** Step 1's error on arrival — a refused Google address (lib/disposableEmail). */
   initialError?: string | null;

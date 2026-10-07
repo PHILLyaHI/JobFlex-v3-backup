@@ -7,12 +7,12 @@
 import type { Metadata } from "next";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
 import { PricingPage } from "@/components/v3/pricing-d/pricing-page";
-import { trialRequiresCard } from "@/lib/trialPolicyServer";
+import { signupTrialMode } from "@/lib/trialPolicyServer";
 import { customPlanOffered } from "@/lib/customPlanFlag";
 
 // RENDERED PER REQUEST (owner, 2026-10-07). It used to be ISR (an hour), so
 // the server-side flags it reads — CUSTOM_PLAN_ENABLED (lib/customPlanFlag)
-// and TRIAL_REQUIRES_CARD (lib/trialPolicy) — were baked into the prerender
+// and the trial's card (lib/trialPolicyServer signupTrialMode) — were baked into the prerender
 // at build time and showed whatever the environment said THEN until the page
 // regenerated. The landing, which shows the same plans and flags, has always
 // been dynamic; this page now matches it.
@@ -29,7 +29,7 @@ export default async function Page() {
   return (
     <PricingPage
       plans={plans}
-      requiresCard={await trialRequiresCard()}
+      requiresCard={(await signupTrialMode()) === "card"}
       customOffered={customPlanOffered()}
     />
   );

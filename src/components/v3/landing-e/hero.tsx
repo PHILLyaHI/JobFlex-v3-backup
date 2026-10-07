@@ -50,7 +50,7 @@ export function Hero({
   /** The in-app browser the server read from the request (lib/inAppBrowser):
    *  no Google button there, from the first paint. */
   inAppBrowser?: InAppBrowser | null;
-  /** TRIAL_REQUIRES_CARD (lib/trialPolicy): the words of the trial's badge
+  /** signupTrialMode (lib/trialPolicyServer): the words of the trial's badge
    *  under the buttons (lib/trialPolicy trialLine). */
   requiresCard?: boolean;
   variant?: LandingVariant;

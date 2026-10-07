@@ -18,20 +18,20 @@ import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { readPendingSignup, sendSignupInitiateCheckout } from "@/actions/signupCheckout";
 import { resolveSignupDiscount, resolveSignupPrice } from "@/lib/signupPricing";
 import { customMetadata } from "@/lib/customBilling";
-import { trialRequiresCard } from "@/lib/trialPolicyServer";
-import { cardlessTrialsPaused } from "@/lib/trialDailyCap";
+import { signupTrialMode } from "@/lib/trialPolicyServer";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
 import { CUSTOM_PLAN_SLUG } from "@/lib/customPlan";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  // The card checkout is the TRIAL_REQUIRES_CARD=true path; with the flag off
-  // the plan step starts the card-less trial instead (lib/cardlessTrial) —
-  // unless the day's card-less ceiling is reached (lib/trialDailyCap), when
-  // the trial takes a card here exactly as with the flag on.
-  if (!(await trialRequiresCard()) && !(await cardlessTrialsPaused())) {
-    return NextResponse.json({ error: "Start the free trial from the plan step." }, { status: 409 });
+  // The card checkout is the plan step's "card" path (signupTrialMode,
+  // lib/trialPolicyServer). It is ALWAYS honoured (owner, 2026-10-07): a page
+  // loaded while the trial took a card may press after the switch went to
+  // "no card" — the visitor chose the card, so Checkout opens rather than a
+  // dead end. The answer is read only to note that case.
+  if ((await signupTrialMode()) === "no-card") {
+    console.info("[signup] card checkout while the trial is card-less: the page was loaded on the card path");
   }
   if (!isStripeEnabled()) {
     return NextResponse.json({ error: "Stripe is not configured." }, { status: 503 });

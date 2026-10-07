@@ -39,7 +39,7 @@ const DATA_Q: Record<"roofing" | "fencing" | "hvac" | "other", Faq> = {
   },
 };
 
-/* The card question, by TRIAL_REQUIRES_CARD (lib/trialPolicy). */
+/* The card question, by signupTrialMode (lib/trialPolicyServer). */
 const CARD_Q: Record<"card" | "cardless", Faq> = {
   card: {
     q: "Do I need a credit card to start?",

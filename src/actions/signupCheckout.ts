@@ -49,7 +49,7 @@ import { fbcFromFbclid, sendMetaEvent, type MetaSignupContext } from "@/lib/meta
 import { metaStartTrial } from "@/lib/metaSignupEvents";
 import { sendWelcomeFirstEstimate } from "@/lib/email/welcome";
 import { trackActivation } from "@/lib/activation-events";
-import { trialRequiresCard } from "@/lib/trialPolicyServer";
+import { signupTrialState } from "@/lib/trialPolicyServer";
 import { createCardlessSubscription, nameOrgOnSubscription } from "@/lib/cardlessTrial";
 import { writeCardlessRecord } from "@/lib/trialState";
 import { cardlessTrialRefusal, markCardlessTrialUsed, trialRequestsPerIpHour } from "@/lib/trialGuard";
@@ -512,7 +512,7 @@ export async function completePendingSignup(
 }
 
 /**
- * THE CARD-LESS TRIAL, STEP ONE (TRIAL_REQUIRES_CARD off — lib/trialPolicy).
+ * THE CARD-LESS TRIAL, STEP ONE (signupTrialMode "no-card" — lib/trialPolicyServer).
  * The plan step's "Start free trial" lands here instead of at Stripe
  * Checkout. Nothing is created yet (owner, 2026-10-01: "confirm before the
  * dashboard"): the brakes are checked (lib/trialGuard — per IP, per address,
@@ -524,15 +524,18 @@ export async function requestCardlessTrial(
   token: string,
   planSlug: string,
 ): Promise<{ ok: true; email: string; resendAt: number } | { ok: false; error: string; resendAt?: number; requiresCard?: true }> {
-  if (await trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account.", requiresCard: true };
+  // THE ONE ANSWER (lib/trialPolicyServer), read fresh: the switch, else the
+  // deployment's default, and the day's ceiling on card-less trials. "card"
+  // moves the plan step to Checkout — no brake is spent on this answer.
+  const trial = await signupTrialState({ fresh: true });
+  if (trial.mode === "card") {
+    return { ok: false, error: trial.capReached ? TRIALS_PAUSED_MESSAGE : TRIAL_NOW_TAKES_CARD, requiresCard: true };
+  }
   if (planSlug === CUSTOM_PLAN_SLUG && !customPlanOffered()) return { ok: false, error: CUSTOM_PLAN_OFF_SALE };
   const rec = await loadPending(token);
   if (!rec) return { ok: false, error: "That signup expired. Start again." };
   const taken = await db.user.findUnique({ where: { email: rec.email }, select: { id: true } });
   if (taken) return { ok: false, error: "That email is already registered. Try signing in." };
-  // THE DAY'S CEILING (lib/trialDailyCap): past it the signup goes on, and
-  // the plan step switches to the card — no brake is spent on this answer.
-  if (await cardlessTrialsPaused()) return { ok: false, error: TRIALS_PAUSED_MESSAGE, requiresCard: true };
   // THE BRAKES. A first request counts against the network (trials per IP per
   // hour); a resend counts against this signup only — RESEND_COOLDOWN_MS
   // between two links, RESEND_MAX in an hour — so asking for the email again
@@ -586,6 +589,10 @@ export async function requestCardlessTrial(
   }
   return { ok: true, email: rec.email, resendAt: next.cardless!.requestedAt + RESEND_COOLDOWN_MS };
 }
+
+/** What the plan step says when the switch went to "card" after the page loaded. */
+const TRIAL_NOW_TAKES_CARD =
+  "The free trial now starts with a card on file — nothing is charged until the 7 days end. Press Start free trial again to continue.";
 
 /** A minute between two confirmation emails, and three resends an hour. */
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -645,7 +652,9 @@ async function finishCardlessTrial(
   const refusal = await cardlessTrialRefusal(rec.email);
   if (refusal) return { ok: false, error: refusal };
   // The day's ceiling filled while the link sat in the inbox: the same
-  // signup goes on at the plan step, with a card (lib/trialDailyCap).
+  // signup goes on at the plan step, with a card (lib/trialDailyCap). The
+  // owner's switch is deliberately not read here — signupTrialMode decided
+  // when the link was sent, and a link already emailed is honoured.
   if (await cardlessTrialsPaused()) return { ok: false, error: TRIALS_PAUSED_MESSAGE, cardHref: `/auth/register?signup=${encodeURIComponent(token)}` };
 
   const planSlug = rec.cardless.planSlug;

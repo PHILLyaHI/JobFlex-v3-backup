@@ -29,7 +29,7 @@ export function LandingPricing({
   customOffered?: boolean;
   registerHref?: string;
   cta?: string;
-  /** TRIAL_REQUIRES_CARD: the words of the trial's badge under the title. */
+  /** signupTrialMode (lib/trialPolicyServer): the words of the trial's badge under the title. */
   requiresCard?: boolean;
 }) {
   const sellable = plans.filter((p) => !p.isFree);

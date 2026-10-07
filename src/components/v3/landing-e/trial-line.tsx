@@ -23,7 +23,7 @@ export function TrialLine({
   spot,
   requiresCard = true,
 }: {
-  /** TRIAL_REQUIRES_CARD (lib/trialPolicy), read on the server by the page. */
+  /** signupTrialMode (lib/trialPolicyServer), read on the server by the page. */
   requiresCard?: boolean;
   tone?: "light" | "dark";
   /** lg: its own line under a heading; sm: the sticky phone bar; bar: under

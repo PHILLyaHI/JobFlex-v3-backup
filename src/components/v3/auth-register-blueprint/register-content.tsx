@@ -127,7 +127,7 @@ export function RegisterContent({
   /* CUSTOM_PLAN_ENABLED (lib/customPlanFlag), read on the server: the custom
      plan's card and page picker on the plan step. */
   offerCustom?: boolean;
-  /* TRIAL_REQUIRES_CARD (lib/trialPolicy), read on the server. True: the plan
+  /* signupTrialMode (lib/trialPolicyServer), read on the server. True: the plan
      step opens Stripe Checkout and the card is taken there, as it always was.
      False: the plan step starts a 7-day trial with no card (onStartCardless). */
   requiresCard?: boolean;
@@ -152,8 +152,8 @@ export function RegisterContent({
 }) {
   const router = useRouter();
   /* The trial takes a card when the server says so on the first render
-     (TRIAL_REQUIRES_CARD, or the day's card-less trials are taken —
-     lib/trialDailyCap), or when the plan step's request is told so later. */
+     (signupTrialMode — the switch, the deployment's default and the day's
+     ceiling on card-less trials, lib/trialPolicyServer), or when the plan step's request is told so later. */
   const [requiresCard, setRequiresCard] = React.useState(requiresCardInitial);
   /* IN-APP BROWSERS (2026-10-01): Google refuses its sign-in inside them
      ("403 disallowed_useragent") and One Tap does not render, so step 1 is
@@ -1596,7 +1596,7 @@ export function RegisterContent({
               <h1 className="auth-h1">Pick a plan.</h1>
               {/* The trial's promise, its own line under the heading (owner,
                   2026-10-01) — the stamp the landing carries, in the words
-                  of TRIAL_REQUIRES_CARD (lib/trialPolicy trialLine). */}
+                  of signupTrialMode (lib/trialPolicyServer; words: lib/trialPolicy trialLine). */}
               <p className="pw-trial">
                 <svg className="ic" aria-hidden>
                   <use href="#i-check" />

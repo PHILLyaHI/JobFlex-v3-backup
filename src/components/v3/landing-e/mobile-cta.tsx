@@ -9,7 +9,7 @@ export function MobileCta({
   cta,
   requiresCard = true,
 }: {
-  /** TRIAL_REQUIRES_CARD: the words of the trial's line, compact. */
+  /** signupTrialMode (lib/trialPolicyServer): the words of the trial's line, compact. */
   requiresCard?: boolean;
   registerHref?: string;
   /** A trade variant's primary CTA words; the default page keeps its own. */

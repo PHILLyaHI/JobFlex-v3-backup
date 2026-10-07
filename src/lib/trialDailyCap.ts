@@ -37,11 +37,16 @@ export async function cardlessStartsInLastDay(now = new Date()): Promise<number>
     .catch(() => 0);
 }
 
+/** The ceiling's rule, given the count: 0 pauses outright. */
+export function cardlessCeilingReached(startsLastDay: number, perDay = cardlessTrialsPerDay()): boolean {
+  return perDay === 0 || startsLastDay >= perDay;
+}
+
 /** True when the 24-hour ceiling is reached: new trials take a card. */
 export async function cardlessTrialsPaused(now = new Date()): Promise<boolean> {
   const cap = cardlessTrialsPerDay();
   if (cap === 0) return true;
-  return (await cardlessStartsInLastDay(now)) >= cap;
+  return cardlessCeilingReached(await cardlessStartsInLastDay(now), cap);
 }
 
 /** What the plan step says when the ceiling sends a signup to the card. */

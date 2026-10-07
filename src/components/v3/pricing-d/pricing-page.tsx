@@ -37,7 +37,7 @@ export function PricingPage({
 }: {
   /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag): false hides "Build your plan". */
   customOffered?: boolean;
-  /** TRIAL_REQUIRES_CARD (lib/trialPolicy): the words of the trial's badge. */
+  /** signupTrialMode (lib/trialPolicyServer): the words of the trial's badge. */
   requiresCard?: boolean;
   plans: PlanDTO[];
 }) {

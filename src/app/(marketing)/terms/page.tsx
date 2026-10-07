@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalContact, LegalPage } from "@/components/legal/legal-page";
 import { LEGAL_OPERATOR_NAME, LEGAL_UPDATED } from "@/lib/legal";
-import { trialRequiresCard } from "@/lib/trialPolicyServer";
 
 export const metadata: Metadata = {
   title: "JobFlex · Terms of service",
@@ -10,11 +9,11 @@ export const metadata: Metadata = {
   alternates: { canonical: "/terms" },
 };
 
-export default async function TermsPage() {
-  // The trial sentence follows TRIAL_REQUIRES_CARD (lib/trialPolicy): a card
-  // up front by default (2026-10-06); the card-less trial, with the flag off,
-  // asks for no payment method, so then the terms do not say it does.
-  const requiresCard = await trialRequiresCard();
+export default function TermsPage() {
+  // The trial sentence holds on either path (owner, 2026-10-07): whether the
+  // trial takes a card is the plan step's answer (lib/trialPolicyServer
+  // signupTrialMode), which the owner can switch at any time — the terms say
+  // where to read it instead of following the switch.
   return (
     <LegalPage title="Terms of service" number="02" summary="The agreement for your workspace, subscriptions, business documents, and connected services." updated={LEGAL_UPDATED.terms}>
       <p>
@@ -36,10 +35,11 @@ export default async function TermsPage() {
       <p>
         Your plan and checkout specify pricing, billing intervals, features, limits, applicable taxes,
         and any trial. An authorized recurring subscription renews at the disclosed interval until
-        canceled.{" "}
-        {requiresCard
-          ? "Starting the 7-day free trial requires a payment method. Nothing is charged during the trial; the price of the plan you chose is first charged when it ends, unless you cancel beforehand. Review the specific offer at checkout."
-          : "When a 7-day free trial is offered, no payment method is needed to start it. If you add one, the first charge occurs when the trial ends unless canceled beforehand; if you do not, the trial ends without a charge and the workspace becomes read-only until one is added. Review the specific offer when you sign up."}
+        canceled. Whether a payment method is required to start the trial is shown at the plan step
+        when you sign up. Nothing is charged during the 7-day free trial. With a payment method on file,
+        the price of the plan you chose is first charged when the trial ends, unless you cancel
+        beforehand; without one, the trial ends without a charge and the workspace becomes read-only
+        until one is added.
       </p>
       <p>
         Cancel through Subscription settings or contact <LegalContact /> for help. Cancellation normally

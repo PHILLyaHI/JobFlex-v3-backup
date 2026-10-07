@@ -20,7 +20,7 @@ export function CtaFooter({
   cta,
   requiresCard = true,
 }: {
-  /** TRIAL_REQUIRES_CARD: the words of the trial's badge under the heading. */
+  /** signupTrialMode (lib/trialPolicyServer): the words of the trial's badge under the heading. */
   requiresCard?: boolean;
   registerHref?: string;
   /** A trade variant's primary CTA words; the default page keeps its own. */

@@ -8,5 +8,5 @@ export const LEGAL_CONTACT_EMAIL = "support@jobflex.app";
 /** "Last updated" per legal page. Bump a page's entry when its text materially changes. */
 export const LEGAL_UPDATED = {
   privacy: { iso: "2026-10-02", label: "October 2, 2026" },
-  terms: { iso: "2026-10-06", label: "October 6, 2026" },
+  terms: { iso: "2026-10-07", label: "October 7, 2026" },
 } as const;

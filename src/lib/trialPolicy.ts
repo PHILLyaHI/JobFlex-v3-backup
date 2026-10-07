@@ -16,8 +16,10 @@
 // as a prop.
 //
 // SINCE 2026-10-07 THE OWNER'S SWITCH WINS: Admin → Trials keeps one row
-// (lib/trialPolicyServer) and every door asks `trialRequiresCard()` THERE.
-// The variable below is only the default while no row has been set.
+// (lib/trialPolicyServer) and every door asks `signupTrialMode()` THERE —
+// the switch, else the variable below, plus the day's card-less ceiling.
+// The variable is only the default while no row is set (Reset to default
+// (env) on Admin → Trials removes the row).
 
 /** The deployment's default: a card up front unless TRIAL_REQUIRES_CARD=false. */
 export function trialRequiresCardEnv(): boolean {
