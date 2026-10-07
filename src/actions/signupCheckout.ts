@@ -612,7 +612,6 @@ async function finishCardlessTrial(
   | { ok: true; email: string; ticket: string | null; registrationEventId: string | null; subscriptionId: string | null }
   | { ok: false; error: string; done?: boolean; email?: string; cardHref?: string }
 > {
-  if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account." };
   const rec = await loadPending(token);
   if (!rec?.cardless) {
     const done = await loadDone(token);
