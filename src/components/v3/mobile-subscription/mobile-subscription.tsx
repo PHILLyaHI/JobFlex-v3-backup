@@ -100,7 +100,7 @@ export interface MobileUsageRow {
 /** The page's server props — one shape for both editions (subscription-load). */
 export type MobileSubscriptionProps = SubscriptionViewProps;
 
-const PROBLEM_STATUSES = ["PAST_DUE", "CANCELED", "EXPIRED"];
+const PROBLEM_STATUSES = ["PAST_DUE", "UNPAID", "CANCELED", "EXPIRED"];
 /** A cap at or past this share of its limit raises the banner. */
 const PRESSURE_ALERT = 90;
 
@@ -167,6 +167,7 @@ export function MobileSubscription({
   nextBill,
   trialEndsAt,
   cancelAtPeriodEnd,
+  cancellation,
   complimentary,
   usage,
   usageExempt,
@@ -344,12 +345,25 @@ export function MobileSubscription({
 
   /* A complimentary plan (lib/planGrant) shows when it ends, never a next
      bill — nothing is billed (owner, 2026-09-22). */
-  const billLabel = complimentary ? "Complimentary until" : isTrial ? "Trial ends" : "Next bill";
+  /* Cancelled (owner, 2026-10-07): when access ends, never a next bill. */
+  const billLabel = complimentary
+    ? "Complimentary until"
+    : cancellation
+      ? cancellation.ended
+        ? "Access ended"
+        : "Access until"
+      : isTrial
+        ? "Trial ends"
+        : "Next bill";
   const billValue = complimentary
     ? complimentary.endsAt
       ? longDate(complimentary.endsAt)
       : "No end date"
-    : isTrial
+    : cancellation
+      ? cancellation.accessUntil
+        ? longDate(cancellation.accessUntil)
+        : "—"
+      : isTrial
       ? trialEndsAt
         ? longDate(trialEndsAt)
         : "On trial"
@@ -409,8 +423,8 @@ export function MobileSubscription({
                   would collide, and here the row simply lays them out. */}
               <div className="jfms-heroHead">
                 <div className="jfms-heroMeta">Your plan</div>
-                <div className={`jfms-stamp ${complimentary ? "jfms-stOk" : stampTone(status)}`}>
-                  {complimentary ? "complimentary" : status.replace(/_/g, " ").toLowerCase()}
+                <div className={`jfms-stamp ${complimentary ? "jfms-stOk" : stampTone(cancellation ? "CANCELED" : status)}`}>
+                  {complimentary ? "complimentary" : cancellation ? "canceled" : status.replace(/_/g, " ").toLowerCase()}
                 </div>
               </div>
               <h2 className="jfms-heroName">{planName}</h2>

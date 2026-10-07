@@ -177,11 +177,14 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
   );
 
   const comp = props.complimentary;
+  const ended = props.cancellation;
   const statusLabel = comp
     ? "Complimentary"
-    : props.status
-      ? props.status.charAt(0).toUpperCase() + props.status.slice(1).toLowerCase()
-      : "—";
+    : ended
+      ? "Canceled"
+      : props.status
+        ? props.status.charAt(0).toUpperCase() + props.status.slice(1).toLowerCase().replace(/_/g, " ")
+        : "—";
   const isTrial = props.status === "TRIALING" && !comp;
   const nextCharge = props.nextCharge;
   const nextChargeItems = useMemo(() => (nextCharge ? nextChargeLines(nextCharge) : []), [nextCharge]);
@@ -279,6 +282,13 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
                   <b>{comp.after === "free" ? "Free plan" : "Choose a plan"}</b>
                 </div>
               </>
+            ) : ended ? (
+              /* Cancelled (owner, 2026-10-07): when access ends, never a
+                 next bill — nothing more is charged. */
+              <div>
+                <span>{ended.ended ? "Access ended" : "Access until"}</span>
+                <b>{ended.accessUntil ? longDate(ended.accessUntil) : "—"}</b>
+              </div>
             ) : (
               <>
                 {isTrial && props.trialEndsAt ? (

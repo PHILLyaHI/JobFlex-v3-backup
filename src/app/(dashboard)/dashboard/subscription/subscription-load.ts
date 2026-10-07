@@ -59,6 +59,10 @@ export interface SubscriptionViewProps {
   /** A cancellation is booked for the end of this cycle (billing.ts's
    *  cancelSubscription mirrors Stripe's cancel_at_period_end here). */
   cancelAtPeriodEnd: boolean;
+  /** A cancellation (owner, 2026-10-07): booked for the period's end while
+   *  the plan still runs, or done (CANCELED / EXPIRED). The page then reads
+   *  "Canceled · Access until <date>" and shows no next bill. Null otherwise. */
+  cancellation: { accessUntil: string | null; ended: boolean } | null;
   /** The plan is a complimentary grant from JobFlex (lib/planGrant): nobody
    *  pays, nothing is billed, and it ends on `endsAt` (null = no end date). */
   complimentary: { endsAt: string | null; after: "free" | "expired" } | null;
@@ -240,8 +244,15 @@ export async function loadSubscriptionData(
     .map((r) => r.rewardCents ?? perReferralCents);
   const upcoming = invoiceResult.upcoming ?? null;
   const billable = ["ACTIVE", "TRIALING", "PAST_DUE"].includes(status.toUpperCase()) && !complimentary;
+  // Cancelled: nothing more is billed, whatever Stripe's preview or the list
+  // price would say — the page shows when access ends instead.
+  const endedStatus = ["CANCELED", "EXPIRED"].includes(status.toUpperCase());
+  const cancellation =
+    !complimentary && (endedStatus || (billable && sub?.canceledAt))
+      ? { accessUntil: (sub?.currentPeriodEnd ?? sub?.trialEndsAt)?.toISOString() ?? null, ended: endedStatus }
+      : null;
   let nextCharge: NextCharge | null = null;
-  if (complimentary) {
+  if (complimentary || cancellation) {
     nextCharge = null;
   } else if (upcoming) {
     nextCharge = {
@@ -293,6 +304,7 @@ export async function loadSubscriptionData(
     nextBill: !complimentary && sub?.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
     trialEndsAt: sub?.trialEndsAt ? sub.trialEndsAt.toISOString() : null,
     cancelAtPeriodEnd: Boolean(sub?.canceledAt),
+    cancellation,
     complimentary,
     usage,
     usageUnlimited,
