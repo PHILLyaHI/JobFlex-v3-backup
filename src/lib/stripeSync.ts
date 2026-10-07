@@ -48,8 +48,10 @@ function mapStripeStatus(s: Stripe.Subscription.Status): string {
     case "trialing":
       return SubscriptionStatus.TRIALING;
     case "past_due":
-    case "unpaid":
       return SubscriptionStatus.PAST_DUE;
+    // Retries exhausted, subscription kept: the features close (lib/planStatus).
+    case "unpaid":
+      return SubscriptionStatus.UNPAID;
     case "canceled":
     case "incomplete_expired":
       return SubscriptionStatus.CANCELED;
@@ -272,7 +274,7 @@ async function carryAttributionToSubscription(opts: {
  * own forward-only rule.
  */
 const LIVE_MIRROR: string[] = [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING, SubscriptionStatus.PAST_DUE];
-const ENDED: string[] = [SubscriptionStatus.CANCELED, SubscriptionStatus.TRIAL_ENDED];
+const ENDED: string[] = [SubscriptionStatus.CANCELED, SubscriptionStatus.TRIAL_ENDED, SubscriptionStatus.UNPAID];
 
 async function mirrorAccepts(organizationId: string, externalSubId: string, status: string, createdMs: number) {
   const mirror = await db.subscription.findUnique({
@@ -508,11 +510,15 @@ export async function markSubscriptionCanceled(sub: Stripe.Subscription) {
   });
 }
 
+/** A failed charge: PAST_DUE while Stripe retries. Only a running plan is
+ *  moved — the final failure's invoice.payment_failed can arrive after the
+ *  subscription event that already ended it (UNPAID / CANCELED), and must not
+ *  reopen it. */
 export async function markSubscriptionPastDue(invoice: Stripe.Invoice) {
   const subId = invoiceSubscriptionId(invoice);
   if (!subId) return;
   await db.subscription.updateMany({
-    where: { externalSubId: subId },
+    where: { externalSubId: subId, status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIALING, SubscriptionStatus.PAST_DUE] } },
     data: { status: SubscriptionStatus.PAST_DUE },
   });
 }

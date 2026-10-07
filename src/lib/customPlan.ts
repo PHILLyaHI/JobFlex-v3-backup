@@ -164,6 +164,13 @@ export const DEFAULT_CUSTOM_TRIAL_DAYS = 7;
 
 /** The add-on hrefs a custom-plan org did NOT buy — the list every gate and
  *  nav filter blocks on. Anything not in CUSTOM_PAGES is base and never here. */
+/** A marker the blocked list carries when the org's plan has LAPSED
+ *  (lib/planStatus — cancelled, unpaid, expired, a card-less trial run out):
+ *  every add-on is closed because the plan ended, not because it was not
+ *  bought, and the gate says so (upgrade-gate). Not a page href, so the nav
+ *  and isCustomBlockedPath never match it. */
+export const PLAN_ENDED_MARK = "#plan-ended";
+
 export function blockedCustomHrefs(bought: readonly string[] | null | undefined): string[] {
   const have = new Set(normalizeCustomPages(bought));
   return CUSTOM_PAGES.filter((p) => !have.has(p.id)).map((p) => p.href);

@@ -301,6 +301,7 @@ export async function getAdminUsersData(): Promise<AdminUsersData> {
         break;
       case "CANCELED":
       case "EXPIRED":
+      case "UNPAID":
         summary.lapsed += 1;
         break;
       case "FREE":
@@ -879,8 +880,9 @@ function mapStripeSubStatus(s: Stripe.Subscription.Status): string {
     case "trialing":
       return SubscriptionStatus.TRIALING;
     case "past_due":
-    case "unpaid":
       return SubscriptionStatus.PAST_DUE;
+    case "unpaid":
+      return SubscriptionStatus.UNPAID;
     case "canceled":
     case "incomplete_expired":
       return SubscriptionStatus.CANCELED;

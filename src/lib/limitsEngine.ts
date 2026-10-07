@@ -54,6 +54,7 @@
 // is untouched: paid providers (EagleView, ReportAll …) keep their own
 // budgets and ledgers; this is the plan's caps only.
 // ─────────────────────────────────────────────────────────────────────────
+import { planLapsed } from "@/lib/planStatus";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import {
@@ -232,30 +233,14 @@ async function currentUserId(): Promise<string | null> {
   }
 }
 
-/** Tolerates renewal-webhook lag before an ACTIVE/TRIALING sub is treated as lapsed. */
-const LAPSE_GRACE_MS = 3 * 24 * 60 * 60 * 1000;
-
 /**
  * A lapsed subscription is enforced at FREE limits — this is what closes the
- * "cancel/stop paying, keep the paid quotas" hole. FREE-status subs already
- * resolve to the free plan; ACTIVE gets a 3-day grace past currentPeriodEnd
- * for webhook lag; TRIALING lapses when the trial (or period) ends; every
- * other status (PAST_DUE, CANCELED, EXPIRED, unknown) lapses immediately.
+ * "cancel/stop paying, keep the paid quotas" hole. The rule is lib/planStatus,
+ * shared with the feature tier and the page gate: PAST_DUE keeps the plan
+ * while Stripe retries (owner, 2026-10-07); CANCELED, UNPAID, EXPIRED and
+ * TRIAL_ENDED lapse at once.
  */
-function isLapsed(
-  sub: { status: string; currentPeriodEnd: Date | null; trialEndsAt: Date | null } | null,
-  now: Date,
-): boolean {
-  if (!sub || sub.status === "FREE") return false;
-  const periodOver =
-    !!sub.currentPeriodEnd && sub.currentPeriodEnd.getTime() + LAPSE_GRACE_MS < now.getTime();
-  if (sub.status === "ACTIVE") return periodOver;
-  if (sub.status === "TRIALING") {
-    const trialOver = !!sub.trialEndsAt && sub.trialEndsAt.getTime() < now.getTime();
-    return trialOver || periodOver;
-  }
-  return true;
-}
+const isLapsed = planLapsed;
 
 /**
  * Resolve the org's effective limits + the start of the current monthly window.

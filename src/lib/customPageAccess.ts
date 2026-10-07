@@ -16,21 +16,36 @@
 //   · every server action and API route of an add-on calls requirePage — the
 //     boundary. It fails CLOSED: an unreadable plan is a refusal.
 // The middleware takes no part: it is edge-runtime and cannot read the DB.
+//
+// A LAPSED PLAN CLOSES EVERY ADD-ON (owner, 2026-10-07), whatever the plan:
+// a cancelled Professional shop no longer opens the roof estimator. The rule
+// is lib/planStatus — the one the limits engine and the feature tier read;
+// PAST_DUE keeps the pages while Stripe retries the card.
 
 import { db } from "@/lib/db";
 import {
   CUSTOM_PAGES,
+  PLAN_ENDED_MARK,
   blockedCustomHrefs,
   normalizeCustomPages,
   type CustomPageId,
 } from "@/lib/customPlan";
+import { PLAN_STATUS_SELECT, planLapsed } from "@/lib/planStatus";
 
 /** The error an add-on's server code throws for an org that did not buy it. */
 export class CustomPageLockedError extends Error {
   readonly code = "CUSTOM_PAGE_LOCKED";
-  constructor(readonly page: CustomPageId) {
+  constructor(
+    readonly page: CustomPageId,
+    /** "ended": the plan lapsed (lib/planStatus), not a page left unbought. */
+    readonly reason: "not-included" | "ended" = "not-included",
+  ) {
     const label = CUSTOM_PAGES.find((p) => p.id === page)?.label ?? "This page";
-    super(`${label} isn't in your plan.`);
+    super(
+      reason === "ended"
+        ? `Your plan has ended, so ${label} is closed. Choose a plan on Subscription to open it again.`
+        : `${label} isn't in your plan.`,
+    );
     this.name = "CustomPageLockedError";
   }
 }
@@ -40,11 +55,22 @@ export function isCustomPageLockedError(err: unknown): err is CustomPageLockedEr
 }
 
 /** The org's pages: null when the org is not on the custom plan, else the
- *  pages it holds. Throws when the plan cannot be read — callers that must
- *  fail closed (requirePage) let it propagate. */
-export async function readCustomPages(organizationId: string): Promise<string[] | null> {
-  const sub = await db.subscription.findUnique({ where: { organizationId }, select: { plan: true } });
-  if ((sub?.plan ?? "").toUpperCase() !== "CUSTOM") return null;
+ *  pages it holds; `lapsed` when its plan no longer opens anything. Throws
+ *  when the plan cannot be read — callers that must fail closed (requirePage)
+ *  let it propagate. */
+async function readPageAccess(organizationId: string): Promise<{ lapsed: boolean; pages: string[] | null }> {
+  const sub = await db.subscription.findUnique({ where: { organizationId }, select: { plan: true, ...PLAN_STATUS_SELECT } });
+  if (planLapsed(sub)) return { lapsed: true, pages: [] };
+  return { lapsed: false, pages: await readCustomPages(organizationId, sub?.plan ?? null) };
+}
+
+/** The pages a custom-plan org holds (null when the org is not on it). */
+export async function readCustomPages(organizationId: string, knownPlan?: string | null): Promise<string[] | null> {
+  const plan =
+    knownPlan !== undefined
+      ? knownPlan
+      : (await db.subscription.findUnique({ where: { organizationId }, select: { plan: true } }))?.plan ?? null;
+  if ((plan ?? "").toUpperCase() !== "CUSTOM") return null;
   const row = await db.syncState.findUnique({ where: { key: `orgPages:${organizationId}` } });
   if (!row) return [];
   try {
@@ -68,27 +94,41 @@ export async function getBlockedCustomPages(
   organizationId: string | null | undefined,
 ): Promise<string[] | null> {
   if (!organizationId) return null;
-  const pages = await readCustomPages(organizationId).catch(() =>
-    readCustomPages(organizationId).catch(() => null),
+  const access = await readPageAccess(organizationId).catch(() =>
+    readPageAccess(organizationId).catch(() => null),
   );
-  return pages === null ? null : blockedCustomHrefs(pages);
+  if (!access) return null;
+  if (access.lapsed) return [...blockedCustomHrefs([]), PLAN_ENDED_MARK];
+  return access.pages === null ? null : blockedCustomHrefs(access.pages);
 }
 
-/** True when the org is on the custom plan and holds NONE of `pages`.
- *  Fails closed: an unreadable plan counts as locked (one retry first). */
+/** Why `pages` are closed to the org, or null when one of them is open:
+ *  "ended" — its plan lapsed; "not-included" — on the custom plan without
+ *  them. Fails closed: an unreadable plan counts as not included (one retry). */
+async function lockReason(
+  organizationId: string,
+  pages: CustomPageId | readonly CustomPageId[],
+): Promise<"ended" | "not-included" | null> {
+  const wanted = typeof pages === "string" ? [pages] : pages;
+  let access: { lapsed: boolean; pages: string[] | null };
+  try {
+    access = await readPageAccess(organizationId).catch(() => readPageAccess(organizationId));
+  } catch {
+    return "not-included";
+  }
+  if (access.lapsed) return "ended";
+  const owned = access.pages;
+  if (owned === null) return null;
+  return wanted.some((p) => owned.includes(p)) ? null : "not-included";
+}
+
+/** True when the org's plan has lapsed, or it is on the custom plan and holds
+ *  NONE of `pages`. Fails closed: an unreadable plan counts as locked. */
 export async function isPageLocked(
   organizationId: string,
   pages: CustomPageId | readonly CustomPageId[],
 ): Promise<boolean> {
-  const wanted = typeof pages === "string" ? [pages] : pages;
-  let owned: string[] | null;
-  try {
-    owned = await readCustomPages(organizationId).catch(() => readCustomPages(organizationId));
-  } catch {
-    return true;
-  }
-  if (owned === null) return false;
-  return !wanted.some((p) => owned!.includes(p));
+  return (await lockReason(organizationId, pages)) !== null;
 }
 
 /**
@@ -102,9 +142,8 @@ export async function requirePage(
   organizationId: string,
   pages: CustomPageId | readonly CustomPageId[],
 ): Promise<void> {
-  if (await isPageLocked(organizationId, pages)) {
-    throw new CustomPageLockedError(typeof pages === "string" ? pages : pages[0]);
-  }
+  const reason = await lockReason(organizationId, pages);
+  if (reason) throw new CustomPageLockedError(typeof pages === "string" ? pages : pages[0], reason);
 }
 
 /** For API routes: the 403 a locked add-on answers with, or null to go on. */
@@ -112,7 +151,8 @@ export async function pageLockedResponse(
   organizationId: string,
   pages: CustomPageId | readonly CustomPageId[],
 ): Promise<Response | null> {
-  if (!(await isPageLocked(organizationId, pages))) return null;
-  const err = new CustomPageLockedError(typeof pages === "string" ? pages : pages[0]);
+  const reason = await lockReason(organizationId, pages);
+  if (!reason) return null;
+  const err = new CustomPageLockedError(typeof pages === "string" ? pages : pages[0], reason);
   return Response.json({ ok: false, error: err.message, code: err.code }, { status: 403 });
 }

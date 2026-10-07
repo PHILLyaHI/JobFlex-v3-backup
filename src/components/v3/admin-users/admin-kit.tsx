@@ -329,6 +329,7 @@ export function subTone(status: string): string | false {
       return "st--sky";
     case "PAST_DUE":
       return "st--warn";
+    case "UNPAID":
     case "CANCELED":
     case "EXPIRED":
       return "st--danger";

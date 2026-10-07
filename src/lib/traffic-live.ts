@@ -584,6 +584,7 @@ export function signupPlanLabel(sub: { plan: string; subStatus: string; trialEnd
     }
     case "ACTIVE": return pretty ? `${pretty} · paying` : "Paying";
     case "PAST_DUE": return `${pretty || "Paid plan"} · payment failed`;
+    case "UNPAID": return `${pretty || "Paid plan"} · unpaid, closed`;
     case "CANCELED": return `${pretty || "Paid plan"} · canceled`;
     case "EXPIRED": return `${pretty || "Paid plan"} · expired`;
     case "FREE": return "Free plan";
@@ -634,7 +635,7 @@ export function signupState(subStatus: string): SignupState {
     case "ACTIVE": return "paying";
     // TRIAL_ENDED (2026-10-05): a card-less trial that ran out with no card.
     // It used to fall through to "no plan row" and sat under Free plan.
-    case "PAST_DUE": case "CANCELED": case "EXPIRED": case "TRIAL_ENDED": return "lapsed";
+    case "PAST_DUE": case "UNPAID": case "CANCELED": case "EXPIRED": case "TRIAL_ENDED": return "lapsed";
     case "FREE": return "free";
     default: return "unknown";
   }

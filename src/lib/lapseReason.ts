@@ -100,6 +100,7 @@ export async function lapseReasons(rows: readonly LapseInput[]): Promise<Map<str
     const reason =
       status === "TRIAL_ENDED" ? "The trial ended and they did not start paying."
       : status === "PAST_DUE" ? "A payment failed and has not been made up yet."
+      : status === "UNPAID" ? "Stripe stopped retrying a failed payment; the plan is closed until it is paid."
       : status === "EXPIRED" ? "The plan expired."
       : "Canceled — no reason on record.";
     out.set(r.orgId, { at, reason, source: "record" });

@@ -6,6 +6,7 @@
 // plan values are uppercase ("STARTER") while slugs are lowercase, and SQLite
 // has no case-insensitive query mode (same rationale as limitsEngine.ts).
 
+import { PLAN_STATUS_SELECT, planLapsed } from "@/lib/planStatus";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
@@ -125,7 +126,8 @@ export function revalidatePlanSurfaces(): void {
  * Resolve an org's plan for display + gating in one call.
  * - `tier`: boolean-feature tier — built-in slug → itself; custom slug that still
  *   exists in the catalog → ENTERPRISE (full features; quotas come from the plan's
- *   own limits); anything else → FREE. Mirrors orgPlan.getOrgPlanById.
+ *   own limits); anything else → FREE. A lapsed plan (lib/planStatus) is FREE
+ *   whatever its slug. Mirrors orgPlan.getOrgPlanById.
  * - `plan`: the catalog DTO, matched INCLUDING inactive plans on purpose —
  *   grandfathered subscribers keep seeing (and using) a deactivated plan.
  * - `rawPlan`: Subscription.plan exactly as stored (e.g. "STARTER").
@@ -137,7 +139,7 @@ export async function getOrgPlanContext(organizationId: string): Promise<{
 }> {
   const sub = await db.subscription.findUnique({
     where: { organizationId },
-    select: { plan: true },
+    select: { plan: true, ...PLAN_STATUS_SELECT },
   });
   // No subscription row → nothing to display as a plan (the Free tier is no
   // longer presented; the limits engine still enforces the internal cap-floor
@@ -146,7 +148,9 @@ export async function getOrgPlanContext(organizationId: string): Promise<{
   const rawPlan = sub.plan;
   const plan = await getPlanBySlug(rawPlan, { includeInactive: true });
   const upper = rawPlan.toUpperCase();
-  const tier: Plan = (PLAN_TIERS as readonly string[]).includes(upper)
+  const tier: Plan = planLapsed(sub)
+    ? "FREE"
+    : (PLAN_TIERS as readonly string[]).includes(upper)
     ? (upper as Plan)
     : upper === "CUSTOM"
       ? CUSTOM_PLAN_TIER

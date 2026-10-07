@@ -247,6 +247,8 @@ function statusOfStripe(s: Stripe.Subscription.Status): string {
       return SubscriptionStatus.ACTIVE;
     case "trialing":
       return SubscriptionStatus.TRIALING;
+    case "unpaid":
+      return SubscriptionStatus.UNPAID;
     case "canceled":
     case "incomplete_expired":
       return SubscriptionStatus.CANCELED;

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
 import { CUSTOM_PLAN_TIER } from "@/lib/customPlan";
+import { PLAN_STATUS_SELECT, planLapsed } from "@/lib/planStatus";
 
 /**
  * Resolve an org's effective feature tier.
@@ -11,13 +12,17 @@ import { CUSTOM_PLAN_TIER } from "@/lib/customPlan";
  * engine. When an org is assigned a custom PricingPlan, its slug won't match a
  * built-in tier — but it still means the org is on a real plan, so features are
  * unlocked here and the Limits engine (PricingPlan.limitsJson) does the metering.
+ *
+ * A LAPSED plan is FREE here whatever its name (owner, 2026-10-07): CANCELED,
+ * UNPAID, EXPIRED, TRIAL_ENDED, or a period long over — lib/planStatus. A
+ * failed renewal Stripe is still retrying (PAST_DUE) keeps its tier.
  */
 export async function getOrgPlanById(organizationId: string): Promise<Plan> {
   const sub = await db.subscription.findUnique({
     where: { organizationId },
-    select: { plan: true },
+    select: { plan: true, ...PLAN_STATUS_SELECT },
   });
-  if (!sub?.plan) return "FREE";
+  if (!sub?.plan || planLapsed(sub)) return "FREE";
 
   const upper = sub.plan.toUpperCase();
   // Built-in tier name → use it as-is.

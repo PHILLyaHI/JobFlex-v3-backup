@@ -68,7 +68,7 @@ export function statusBadge(status: string | null): Badge | null {
   if (status === "ACTIVE" || status === "TRIALING" || status === "FREE") {
     return { label, tone: "bg-ok" };
   }
-  if (status === "PAST_DUE" || status === "CANCELED" || status === "EXPIRED") {
+  if (status === "PAST_DUE" || status === "UNPAID" || status === "CANCELED" || status === "EXPIRED") {
     return { label, tone: "bg-bad" };
   }
   return { label, tone: "bg-off" };

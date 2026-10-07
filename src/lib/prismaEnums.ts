@@ -199,6 +199,9 @@ export const SubscriptionStatus = {
   TRIALING: "TRIALING",
   ACTIVE: "ACTIVE",
   PAST_DUE: "PAST_DUE",
+  /** Stripe stopped retrying a failed renewal and kept the subscription open
+   *  ("unpaid"): the plan's features close (lib/planStatus) until it is paid. */
+  UNPAID: "UNPAID",
   CANCELED: "CANCELED",
   EXPIRED: "EXPIRED",
   /** A card-less trial that reached its end with no card on file (lib/trialState):
