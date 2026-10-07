@@ -22,6 +22,7 @@ import { getPlanDisplayName } from "@/lib/planCatalogServer";
 import { DashboardAnnouncementDismiss } from "./announcement-dismiss";
 import { trialView } from "@/lib/cardlessTrial";
 import { TrialRibbon } from "@/components/v3/trial-card/trial-card";
+import { PaymentRibbon } from "@/components/v3/payment-ribbon/payment-ribbon";
 import { TrafficContext } from "@/components/providers/traffic-context";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -39,7 +40,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     activeOrgId
       ? db.subscription.findUnique({
           where: { organizationId: activeOrgId },
-          select: { plan: true },
+          select: { plan: true, status: true },
         })
       : Promise.resolve(null),
     activeOrgId
@@ -151,6 +152,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           />
           <div className="px-6 lg:px-10 py-8 max-w-[1400px] mx-auto pb-24 md:pb-8">
             {trial && <TrialRibbon view={trial} isOwner={activeRole === "OWNER"} />}
+            {/* A declined renewal Stripe is retrying (components/v3/payment-ribbon). */}
+            {!trial && subscription?.status === "PAST_DUE" && <PaymentRibbon isOwner={activeRole === "OWNER"} />}
             <DashboardAnnouncementDismiss
               announcements={announcements.map((a) => ({
                 id: a.id,

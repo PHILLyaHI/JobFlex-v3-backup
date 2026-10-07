@@ -44,6 +44,8 @@ import type { Metadata } from "next";
 import { requireOrg, isOwnerRole, NoOrgError, UnauthorizedError } from "@/lib/orgContext";
 import { loadSubscriptionData } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
 import { SubscriptionResponsive } from "./subscription-responsive";
+import { finishCardUpdate } from "@/lib/cardUpdate";
+import { CardUpdateNotice, type CardUpdateNoticeKind } from "@/components/v3/payment-ribbon/payment-ribbon";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +57,11 @@ export const metadata: Metadata = {
   description: "Plan, usage, billing history and the full plan comparison.",
 };
 
-export default async function SubscriptionPage() {
+export default async function SubscriptionPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   let organizationId: string;
   let role: string;
   try {
@@ -70,7 +76,33 @@ export default async function SubscriptionPage() {
   // invoice and referral calls assert ownership themselves.
   if (!isOwnerRole(role)) redirect("/dashboard");
 
+  // Back from the card form after a failed payment (lib/cardUpdate): the card
+  // becomes the default and what is owed is paid with it — BEFORE the page
+  // reads the plan, so it shows the outcome. The webhook does the same if
+  // this tab never comes back; both are safe to run twice.
+  const sp = await searchParams;
+  let cardNotice: { kind: CardUpdateNoticeKind; detail?: string } | null = null;
+  if (sp.card === "updated" && typeof sp.session_id === "string") {
+    const done = await finishCardUpdate(organizationId, sp.session_id).catch((err) => {
+      console.error("[subscription] finishing the card update failed:", err);
+      return { ok: false as const, error: "We couldn't confirm the card yet. Refresh in a minute." };
+    });
+    cardNotice = !done.ok
+      ? { kind: "error", detail: done.error }
+      : done.owedCents === 0
+        ? { kind: "saved" }
+        : done.paid
+          ? { kind: "paid" }
+          : { kind: "declined" };
+  } else if (sp.card === "cancelled") {
+    cardNotice = { kind: "cancelled" };
+  }
   const data = await loadSubscriptionData(organizationId);
 
-  return <SubscriptionResponsive {...data} />;
+  return (
+    <>
+      {cardNotice ? <CardUpdateNotice kind={cardNotice.kind} detail={cardNotice.detail} /> : null}
+      <SubscriptionResponsive {...data} />
+    </>
+  );
 }

@@ -1,0 +1,162 @@
+// A FAILED PAYMENT, AND THE WAY BACK (owner, 2026-10-07).
+//
+// When a renewal charge fails Stripe marks the subscription past_due and
+// retries on its own schedule; the app mirrors PAST_DUE (lib/stripeSync) and
+// keeps the plan open meanwhile (lib/planStatus) under the "Payment failed ·
+// Update your card" ribbon (components/v3/payment-ribbon). The ribbon's
+// button opens Stripe Checkout in SETUP mode for the subscription's own
+// customer — the card form, nothing charged by Checkout itself. On the way
+// back (the return URL or the webhook, whichever is first; both are safe to
+// run twice) the new card becomes the customer's and the subscription's
+// default, and whatever is still open is paid with it AT ONCE rather than at
+// Stripe's next retry. A paid invoice turns the subscription active; the
+// mirror follows here and again from the webhooks.
+//
+// The two dunning emails (the first failure, and Stripe's last try) are sent
+// from the invoice.payment_failed webhook — sendDunningEmail below.
+import type Stripe from "stripe";
+import { db } from "@/lib/db";
+import { getStripeClient } from "@/lib/sdk/stripe";
+import { invoiceSubscriptionId } from "@/lib/stripeCompat";
+import { syncSubscriptionFromStripe } from "@/lib/stripeSync";
+
+export const CARD_UPDATE_PURPOSE = "card-update";
+
+/** The Stripe Checkout (setup mode) that takes the new card, or null when the
+ *  org has no Stripe customer to put it on. */
+export async function openCardUpdate(orgId: string, origin: string): Promise<{ url: string } | null> {
+  const sub = await db.subscription.findUnique({
+    where: { organizationId: orgId },
+    select: { externalCustomerId: true, externalSubId: true, provider: true },
+  });
+  if (sub?.provider !== "STRIPE" || !sub.externalCustomerId || !sub.externalSubId) return null;
+  const { stripe } = await getStripeClient();
+  const back = `${origin}/dashboard/subscription`;
+  const meta = { organizationId: orgId, jf_purpose: CARD_UPDATE_PURPOSE, subscriptionId: sub.externalSubId };
+  const session = await stripe.checkout.sessions.create({
+    mode: "setup",
+    currency: "usd",
+    customer: sub.externalCustomerId,
+    client_reference_id: orgId,
+    metadata: meta,
+    setup_intent_data: { metadata: meta },
+    success_url: `${back}?card=updated&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${back}?card=cancelled`,
+  });
+  return session.url ? { url: session.url } : null;
+}
+
+export type CardUpdateResult =
+  | { ok: true; paid: boolean; owedCents: number; status: string }
+  | { ok: false; error: string };
+
+/**
+ * A completed card Checkout: the card becomes the default, the open invoices
+ * are paid with it, the mirror is synced. `paid` is false when the new card
+ * was declined too (the subscription stays PAST_DUE and Stripe keeps retrying).
+ */
+export async function finishCardUpdate(orgId: string, sessionOrId: string | Stripe.Checkout.Session): Promise<CardUpdateResult> {
+  const { stripe } = await getStripeClient();
+  const session =
+    typeof sessionOrId === "string"
+      ? await stripe.checkout.sessions.retrieve(sessionOrId, { expand: ["setup_intent"] })
+      : sessionOrId;
+  if (session.metadata?.organizationId !== orgId || session.metadata?.jf_purpose !== CARD_UPDATE_PURPOSE) {
+    return { ok: false, error: "That card form is not this workspace's." };
+  }
+  if (session.status !== "complete") return { ok: false, error: "The card was not saved." };
+  const subId = session.metadata?.subscriptionId;
+  const customer = typeof session.customer === "string" ? session.customer : session.customer?.id;
+  if (!subId || !customer) return { ok: false, error: "There is no subscription to put the card on." };
+  const si =
+    typeof session.setup_intent === "string" ? await stripe.setupIntents.retrieve(session.setup_intent) : session.setup_intent;
+  const pm = si && (typeof si.payment_method === "string" ? si.payment_method : si.payment_method?.id);
+  if (!pm) return { ok: false, error: "The card was not saved." };
+
+  await stripe.customers.update(customer, { invoice_settings: { default_payment_method: pm } });
+  await stripe.subscriptions.update(subId, { default_payment_method: pm });
+
+  // Pay what is owed now, with the new card.
+  const open = await stripe.invoices.list({ subscription: subId, status: "open", limit: 10 });
+  let owedCents = 0;
+  let declined = false;
+  for (const inv of open.data) {
+    owedCents += inv.amount_remaining ?? inv.amount_due ?? 0;
+    try {
+      await stripe.invoices.pay(inv.id, { payment_method: pm });
+    } catch (err) {
+      declined = true;
+      console.warn(`[card-update] ${orgId}: ${inv.id} declined on the new card:`, err instanceof Error ? err.message : err);
+    }
+  }
+  const sub = await stripe.subscriptions.retrieve(subId, { expand: ["latest_invoice"] });
+  await syncSubscriptionFromStripe(sub, stripe).catch((err) => console.warn("[card-update] sync failed:", err));
+  if (open.data.length > 0) return { ok: true, paid: !declined, owedCents, status: sub.status };
+  // Nothing open: either nothing was owed, or the other caller (the webhook,
+  // or the return page) already paid it with this card — a paid invoice newer
+  // than the card form says which.
+  const latest = typeof sub.latest_invoice === "object" ? sub.latest_invoice : null;
+  const paidNow = Boolean(latest && latest.status === "paid" && (latest.amount_paid ?? 0) > 0 && (latest.status_transitions?.paid_at ?? 0) >= session.created);
+  return { ok: true, paid: paidNow, owedCents: paidNow ? (latest?.amount_paid ?? 0) : 0, status: sub.status };
+}
+
+/* ── The dunning emails ─────────────────────────────────────────────── */
+
+const DUNNING_KEY = (invoiceId: string, which: "first" | "final") => `dunning:${invoiceId}:${which}`;
+
+async function ownerContact(orgId: string): Promise<{ email: string; name: string | null } | null> {
+  const owner = await db.membership.findFirst({
+    where: { organizationId: orgId, role: "OWNER", organization: { deletedAt: null } },
+    orderBy: { createdAt: "asc" },
+    select: { user: { select: { email: true, name: true } }, organization: { select: { billingEmail: true } } },
+  });
+  const email = owner?.organization.billingEmail || owner?.user.email;
+  return email ? { email, name: owner?.user.name ?? null } : null;
+}
+
+/**
+ * invoice.payment_failed → the owner hears about it twice at most: on the
+ * FIRST failed attempt ("update your card", with the date of Stripe's next
+ * try) and when Stripe has made its LAST attempt (no next attempt: the plan
+ * closes). The retries in between send nothing. Once per invoice each — a
+ * SyncState stamp, written before the send so a redelivered event cannot
+ * double it.
+ */
+export async function sendDunningEmail(invoice: Stripe.Invoice): Promise<"first" | "final" | null> {
+  const subId = invoiceSubscriptionId(invoice);
+  if (!subId || (invoice.amount_due ?? 0) <= 0) return null;
+  const final = !invoice.next_payment_attempt;
+  const which: "first" | "final" | null = final ? "final" : (invoice.attempt_count ?? 0) <= 1 ? "first" : null;
+  if (!which) return null;
+  const mirror = await db.subscription.findFirst({ where: { externalSubId: subId }, select: { organizationId: true, plan: true } });
+  if (!mirror) return null;
+  const key = DUNNING_KEY(invoice.id ?? "", which);
+  try {
+    await db.syncState.create({ data: { key, cursor: new Date().toISOString() } });
+  } catch {
+    return null; // already sent for this invoice
+  }
+  const to = await ownerContact(mirror.organizationId);
+  if (!to) return null;
+  const [{ appBaseUrl }, { renderEmail }, { sendEmail }, { buildPaymentFailed }, { getPlanDisplayName }] = await Promise.all([
+    import("@/lib/appUrl"),
+    import("@/lib/email/renderEmail"),
+    import("@/lib/sdk/resend"),
+    import("@/lib/email/build/billing"),
+    import("@/lib/planCatalogServer"),
+  ]);
+  const base = (await appBaseUrl()).replace(/\/$/, "");
+  const planName = await getPlanDisplayName(mirror.plan).catch(() => mirror.plan);
+  const { subject, html } = renderEmail(
+    buildPaymentFailed({
+      name: to.name,
+      planName,
+      amountCents: invoice.amount_due ?? 0,
+      nextAttemptAt: invoice.next_payment_attempt ? new Date(invoice.next_payment_attempt * 1000) : null,
+      href: `${base}/dashboard/subscription`,
+      final,
+    }),
+  );
+  await sendEmail({ to: to.email, subject, html });
+  return which;
+}

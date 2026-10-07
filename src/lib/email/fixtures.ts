@@ -10,6 +10,7 @@ import {
 } from "./build/client";
 import { buildOwnerAccepted, buildNewLead, buildLeadOffer, buildSupportTicket } from "./build/operator";
 import { buildTrialConfirm, buildTrialReminder } from "./build/trial";
+import { buildPaymentFailed } from "./build/billing";
 import { buildJobAssignment, buildWorkerInvite, buildTeamInvite } from "./build/worker";
 import {
   buildPasswordReset,
@@ -536,6 +537,18 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
     label: "18e · buildTrialReminder({ when: 'today' })",
     note: "Card-less trial, on the day it ends.",
     doc: buildTrialReminder({ name: "Jordan Rivera", planName: "Professional", price: "$79/mo", endsAt: new Date("2026-10-08T17:00:00Z"), href: "https://example.com/dashboard/trial", when: "today" }),
+  },
+  {
+    id: "b-payment-failed",
+    label: "18f · buildPaymentFailed()",
+    note: "A renewal charge was declined; Stripe will retry (webhook invoice.payment_failed, first attempt).",
+    doc: buildPaymentFailed({ name: "Jordan Rivera", planName: "Professional", amountCents: 9500, nextAttemptAt: new Date("2026-10-16T17:00:00Z"), href: "https://example.com/dashboard/subscription", final: false }),
+  },
+  {
+    id: "b-payment-failed-final",
+    label: "18g · buildPaymentFailed({ final: true })",
+    note: "Stripe's last try was declined too: the plan is closed (UNPAID or CANCELED).",
+    doc: buildPaymentFailed({ name: "Jordan Rivera", planName: "Professional", amountCents: 9500, nextAttemptAt: null, href: "https://example.com/dashboard/subscription", final: true }),
   },
   {
     id: "b-request-received",

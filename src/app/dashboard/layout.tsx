@@ -53,6 +53,7 @@ import { TrafficContext } from "@/components/providers/traffic-context";
 import { TrialWatchMount } from "@/components/v3/trial-watch/trial-watch-mount";
 import { trialView, type TrialView } from "@/lib/cardlessTrial";
 import { TrialRibbon } from "@/components/v3/trial-card/trial-card";
+import { PaymentRibbon } from "@/components/v3/payment-ribbon/payment-ribbon";
 
 /** Membership.role is a raw enum-ish string ("OWNER", "INSTALLER"). The
  *  sidebar shows it to a human, so title-case it. */
@@ -116,6 +117,9 @@ export default async function DashboardBlueprintLayout({
   // button, or "Trial ended" while the workspace is read-only. Null on every
   // other subscription; a failed read costs the ribbon, never the page.
   let trial: TrialView | null = null;
+  // A declined renewal Stripe is retrying (PAST_DUE): "Payment failed ·
+  // Update your card" over every page (components/v3/payment-ribbon).
+  let paymentFailed = false;
   try {
     const ctx = await requireOrg();
     role = ctx.role;
@@ -163,10 +167,11 @@ export default async function DashboardBlueprintLayout({
     navLimits = limitState?.counters;
     navLimitsExempt = limitState?.exempt ?? false;
     trial = await trialView(ctx.organizationId).catch(() => null);
-    plan = await db.subscription
-      .findUnique({ where: { organizationId: ctx.organizationId }, select: { plan: true } })
-      .then((sub) => sub?.plan ?? "FREE")
-      .catch(() => null);
+    const planRow = await db.subscription
+      .findUnique({ where: { organizationId: ctx.organizationId }, select: { plan: true, status: true } })
+      .catch(() => undefined);
+    plan = planRow === undefined ? null : (planRow?.plan ?? "FREE");
+    paymentFailed = planRow?.status === "PAST_DUE";
   } catch {
     // Signed out, or no membership yet. The page decides what happens next.
   }
@@ -225,12 +230,19 @@ export default async function DashboardBlueprintLayout({
       locked={lockedPages ?? undefined}
       limits={navLimits}
       limitsExempt={navLimitsExempt}
-      handheldBanner={trial && !onTrialPage ? <TrialRibbon view={trial} isOwner={role === "OWNER"} only="dock" /> : null}
+      handheldBanner={
+        trial && !onTrialPage ? (
+          <TrialRibbon view={trial} isOwner={role === "OWNER"} only="dock" />
+        ) : paymentFailed ? (
+          <PaymentRibbon isOwner={role === "OWNER"} only="dock" />
+        ) : null
+      }
       overviewNotice={announcements.length > 0 ? <DashboardAnnouncementDismiss announcements={announcements} /> : null}
     >
       <TrafficContext role={role} plan={plan} organizationId={organizationId} userId={userId} />
       {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
       {trial && !onTrialPage && <TrialRibbon view={trial} isOwner={role === "OWNER"} />}
+      {paymentFailed && !trial && <PaymentRibbon isOwner={role === "OWNER"} />}
       {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}
       {customGate ?? children}
       {canHandleLeads ? <LeadOfferPopup /> : null}

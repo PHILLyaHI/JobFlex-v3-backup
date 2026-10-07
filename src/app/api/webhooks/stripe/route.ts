@@ -19,6 +19,7 @@ import { processReferralEffectsForInvoice } from "@/lib/referralRewards";
 import { metaOnCheckoutCompleted, metaOnInvoicePaid } from "@/lib/metaSignupEvents";
 import { trackActivation } from "@/lib/activation-events";
 import { finishCardCheckout, noteCardlessTrialEnded } from "@/lib/cardlessTrial";
+import { CARD_UPDATE_PURPOSE, finishCardUpdate, sendDunningEmail } from "@/lib/cardUpdate";
 import { completeFromCheckoutSession, completeFromPaymentIntent } from "@/lib/leadCenter/purchase";
 
 export const runtime = "nodejs";
@@ -62,6 +63,14 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
       // page usually got there first; both are safe to run twice.
       const purpose = session.metadata?.jf_purpose;
       const trialOrg = session.metadata?.organizationId;
+      // A new card after a failed payment (lib/cardUpdate): made the default
+      // and the open invoice paid with it. The return page usually got there
+      // first; both are safe to run twice.
+      if (trialOrg && purpose === CARD_UPDATE_PURPOSE) {
+        const done = await finishCardUpdate(trialOrg, session.id);
+        if (!done.ok) console.warn(`[webhook] card update for ${trialOrg}: ${done.error}`);
+        break;
+      }
       if (trialOrg && (purpose === "trial-card" || purpose === "trial-restart")) {
         const done = await finishCardCheckout(trialOrg, session.id);
         if (!done.ok) console.warn(`[webhook] trial card for ${trialOrg}: ${done.error}`);
@@ -128,7 +137,10 @@ async function dispatch(event: Stripe.Event, stripe: Stripe) {
       break;
     }
     case "invoice.payment_failed": {
-      await markSubscriptionPastDue(event.data.object as Stripe.Invoice);
+      const invoice = event.data.object as Stripe.Invoice;
+      await markSubscriptionPastDue(invoice);
+      // The owner's two emails: the first failure, and Stripe's last try.
+      await sendDunningEmail(invoice).catch((err) => console.warn("[webhook] dunning email failed:", err));
       break;
     }
     case "charge.refunded": {
