@@ -4,6 +4,7 @@ import { Reveal } from "./reveal";
 import { REGISTER } from "./routes";
 import "./pricing-faq.css";
 import { TrialLine } from "./trial-line";
+import { CustomPlanBlock } from "@/components/v3/pricing-d/custom-plan-block";
 
 /* The price anchor before the footer (CRO stage 2, 2026-09-09). The plans
    are the Subscription page's own catalogue (PricingPlan, via
@@ -20,8 +21,12 @@ export function LandingPricing({
   plans,
   registerHref = REGISTER,
   requiresCard = true,
+  customOffered = false,
 }: {
   plans: PlanDTO[];
+  /** CUSTOM_PLAN_ENABLED (lib/customPlanFlag), read on the server per request:
+   *  "Build your plan" under the cards while the custom plan is on sale. */
+  customOffered?: boolean;
   registerHref?: string;
   cta?: string;
   /** TRIAL_REQUIRES_CARD: the words of the trial's badge under the title. */
@@ -43,6 +48,12 @@ export function LandingPricing({
         <Reveal delay={120} className="mt-9 sm:mt-11">
           <PricingPlans plans={sellable} registerHref={registerHref} />
         </Reveal>
+
+        {customOffered ? (
+          <div className="mt-10 sm:mt-14">
+            <CustomPlanBlock registerHref={registerHref} cta="landing-custom" delay={180} />
+          </div>
+        ) : null}
       </div>
     </section>
   );

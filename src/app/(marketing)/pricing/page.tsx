@@ -10,9 +10,13 @@ import { PricingPage } from "@/components/v3/pricing-d/pricing-page";
 import { trialRequiresCard } from "@/lib/trialPolicy";
 import { customPlanOffered } from "@/lib/customPlanFlag";
 
-// ISR backstop — instant propagation comes from revalidatePlanSurfaces() firing
-// on every admin plan write; this window only covers out-of-band DB edits.
-export const revalidate = 3600;
+// RENDERED PER REQUEST (owner, 2026-10-07). It used to be ISR (an hour), so
+// the server-side flags it reads — CUSTOM_PLAN_ENABLED (lib/customPlanFlag)
+// and TRIAL_REQUIRES_CARD (lib/trialPolicy) — were baked into the prerender
+// at build time and showed whatever the environment said THEN until the page
+// regenerated. The landing, which shows the same plans and flags, has always
+// been dynamic; this page now matches it.
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Pricing — JobFlex",

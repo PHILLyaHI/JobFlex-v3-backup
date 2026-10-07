@@ -86,6 +86,7 @@ import { Nav } from "./nav";
 import { PRICING, REGISTER } from "./routes";
 import { SmoothWheel } from "./smooth-wheel";
 import { trialRequiresCard } from "@/lib/trialPolicy";
+import { customPlanOffered } from "@/lib/customPlanFlag";
 import type { InAppBrowser } from "@/lib/inAppBrowser";
 import "./landing-e.css";
 
@@ -174,7 +175,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
     integrations: <div className="lp-cv lp-cv--integrations"><Integrations registerHref={register} /></div>,
     stats: <div className="lp-cv lp-cv--stats"><StatsSection rows={g?.stats} /></div>,
     built: <div className="lp-cv lp-cv--built"><BuiltSection jobs={g?.jobs} phoneJobs={g?.phoneJobs} /></div>,
-    pricing: <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} requiresCard={requiresCard} /></div>,
+    pricing: <div className="lp-cv lp-cv--pricing"><LandingPricing plans={plans} registerHref={register} cta={low} requiresCard={requiresCard} customOffered={customPlanOffered()} /></div>,
     faq: <div className="lp-cv lp-cv--faq"><LandingFaq variant={variant} registerHref={register} cta={low} requiresCard={requiresCard} /></div>,
     final: <CtaFooter registerHref={register} cta={low} requiresCard={requiresCard} />,
   };
