@@ -24,6 +24,8 @@ import { investorFigures, dayOf, PLATFORMS, PLATFORM_LABEL, type InvestorAssumpt
 
 export const AD_SPEND_KEY = "adSpend";
 export const INVESTOR_SETTINGS_KEY = "investorSettings";
+/** When Meta's figures were last read, and how it went (lib/metaAdSpend). */
+export const META_SPEND_STATUS_KEY = "metaAdSpendStatus";
 
 // The platform list lives in the pure model so the client page can list it.
 export { PLATFORMS, PLATFORM_LABEL, type SpendPlatform } from "@/lib/investorModel";
@@ -50,7 +52,7 @@ export interface InvestorSettings extends InvestorAssumptions {
   linkMadeAt: string | null;
 }
 
-export const DEFAULT_SETTINGS: InvestorSettings = { realisticPct: 60, spendPerDayCents: null, horizonDays: 180, trialDays: 7, sinceDate: null, linkToken: null, linkEnabled: false, linkMadeAt: null };
+export const DEFAULT_SETTINGS: InvestorSettings = { realisticPct: 60, spendPerDayCents: null, horizonDays: 180, trialDays: 7, dailyBudgetCents: null, budgetFrom: null, sinceDate: null, linkToken: null, linkEnabled: false, linkMadeAt: null };
 const MAX_ENTRIES = 3000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -117,10 +119,41 @@ export async function addAdSpend(input: AddSpendInput, by: string | null): Promi
   const fresh: AdSpendEntry[] = days.map((date) => ({ id: `${date}-${input.platform}-${randomBytes(3).toString("hex")}`, date, platform: input.platform, cents: Math.round(input.perDayCents), source: "manual", note: input.note?.trim() || undefined, by, at: now }));
   const have = await readAdSpend();
   const replaced = new Set(days);
-  const kept = have.filter((e) => !(e.source === "manual" && e.platform === input.platform && replaced.has(e.date)));
+  // A hand-typed day replaces whatever that platform had on it — Meta's own figure too, on purpose.
+  const kept = have.filter((e) => !(e.platform === input.platform && replaced.has(e.date)));
   const next = cleanEntries([...kept, ...fresh]);
   await writeKey(AD_SPEND_KEY, next);
   return next;
+}
+
+/** Meta's own spend per day (lib/metaAdSpend): on those days the Meta figure
+ *  replaces anything Meta had, typed or read earlier; other platforms stay. */
+export async function writeMetaSpend(days: Array<{ date: string; cents: number }>): Promise<AdSpendEntry[]> {
+  const now = new Date().toISOString();
+  const clean = days.filter((d) => DATE.test(d.date) && Number.isFinite(d.cents) && d.cents >= 0);
+  const replaced = new Set(clean.map((d) => d.date));
+  const fresh: AdSpendEntry[] = clean.map((d) => ({ id: `${d.date}-meta-api`, date: d.date, platform: "meta", cents: Math.round(d.cents), source: "meta", by: null, at: now }));
+  const kept = (await readAdSpend()).filter((e) => !(e.platform === "meta" && replaced.has(e.date)));
+  const next = cleanEntries([...kept, ...fresh]);
+  await writeKey(AD_SPEND_KEY, next);
+  return next;
+}
+
+export interface MetaSpendStatus { lastPulledAt: string | null; lastError: string | null; daysPulled: number }
+export async function readMetaStatus(): Promise<MetaSpendStatus> {
+  const r = (parse<Record<string, unknown>>(await readKey(META_SPEND_STATUS_KEY)) ?? {}) as Record<string, unknown>;
+  return {
+    lastPulledAt: typeof r.lastPulledAt === "string" ? r.lastPulledAt : null,
+    lastError: typeof r.lastError === "string" ? r.lastError.slice(0, 200) : null,
+    daysPulled: typeof r.daysPulled === "number" && Number.isFinite(r.daysPulled) ? Math.round(r.daysPulled) : 0,
+  };
+}
+export async function writeMetaStatus(status: MetaSpendStatus): Promise<void> {
+  await writeKey(META_SPEND_STATUS_KEY, status);
+}
+/** The two deployment variables that connect the ad account. */
+export function metaAdsConfigured(): boolean {
+  return !!(process.env.META_ADS_ACCESS_TOKEN && process.env.META_AD_ACCOUNT_ID);
 }
 
 export async function deleteAdSpend(id: string): Promise<AdSpendEntry[]> {
@@ -140,6 +173,8 @@ export function cleanSettings(raw: unknown): InvestorSettings {
     spendPerDayCents: typeof r.spendPerDayCents === "number" && Number.isFinite(r.spendPerDayCents) && r.spendPerDayCents >= 0 ? Math.round(r.spendPerDayCents) : null,
     horizonDays: Math.round(num(r.horizonDays, DEFAULT_SETTINGS.horizonDays, 30, 730)),
     trialDays: Math.round(num(r.trialDays, DEFAULT_SETTINGS.trialDays, 1, 90)),
+    dailyBudgetCents: typeof r.dailyBudgetCents === "number" && Number.isFinite(r.dailyBudgetCents) && r.dailyBudgetCents > 0 ? Math.round(r.dailyBudgetCents) : null,
+    budgetFrom: typeof r.budgetFrom === "string" && DATE.test(r.budgetFrom) && r.budgetFrom >= "2025-01-01" ? r.budgetFrom : null,
     sinceDate: typeof r.sinceDate === "string" && DATE.test(r.sinceDate) && r.sinceDate >= "2025-01-01" ? r.sinceDate : null,
     linkToken: typeof r.linkToken === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(r.linkToken) ? r.linkToken : null,
     linkEnabled: r.linkEnabled === true,
@@ -182,6 +217,8 @@ export interface InvestorReport {
   before: { paying: number; mrrCents: number };
   /** The first day a visitor arrived from an ad (utm_source or fbclid), when the analytics answered. */
   firstAdDay: string | null;
+  /** Meta's ad account: connected (the deployment has the token and account id), and the last read. */
+  meta: { configured: boolean } & MetaSpendStatus;
   /** When this was read. */
   at: string;
 }
@@ -202,7 +239,7 @@ const todayIn = (tz: string) => {
 };
 
 export async function investorReport(): Promise<InvestorReport> {
-  const [entries, settings, hidden] = await Promise.all([readAdSpend(), readInvestorSettings(), statsHiddenIds()]);
+  const [entries, settings, hidden, metaStatus] = await Promise.all([readAdSpend(), readInvestorSettings(), statsHiddenIds(), readMetaStatus()]);
   const today = todayIn(TRAFFIC_TZ);
   // The start day: the first campaign's (owner, 2026-10-06), else the live map's.
   const since = settings.sinceDate ?? TRAFFIC_SINCE;
@@ -264,5 +301,5 @@ export async function investorReport(): Promise<InvestorReport> {
     const mine = entries.filter((e) => e.platform === platform && e.date >= since && e.date <= today);
     return { platform, label: PLATFORM_LABEL[platform], cents: mine.reduce((a, e) => a + e.cents, 0), days: new Set(mine.map((e) => e.date)).size };
   }).filter((p) => p.cents > 0);
-  return { figures, settings, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, at: new Date().toISOString() };
+  return { figures, settings, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, meta: { configured: metaAdsConfigured(), ...metaStatus }, at: new Date().toISOString() };
 }

@@ -33,7 +33,7 @@ export function InvestorReportView({ report, shared = false, between }: { report
 
       {/* The numbers. */}
       <section className={s.kpis} aria-label="The figures">
-        <Kpi label="Ad spend" value={dollars(f.spend.totalCents)} note={`since ${shortDate(f.since)} · ${dollars(f.spend.perDayRecentCents)}/day lately`} tone="ink" />
+        <Kpi label="Ad spend" value={dollars(f.spend.totalCents)} note={f.spend.dailyBudgetCents !== null && f.spend.budgetFrom ? `${dollars(f.spend.dailyBudgetCents)}/day, all ads, since ${shortDate(f.spend.budgetFrom)}${f.spend.bookedDays ? ` · ${f.spend.bookedDays} booked ${f.spend.bookedDays === 1 ? "day" : "days"}` : ""}` : `since ${shortDate(f.since)} · ${dollars(f.spend.perDayRecentCents)}/day lately`} tone="ink" />
         <Kpi label="Visitors" value={f.visitors === null ? "—" : n(f.visitors)} note={f.visitors === null ? "analytics not reached" : `${money(f.unit.costPerVisitorCents)} each`} />
         <Kpi label="Signed up" value={n(f.signups)} note={`${f.unit.signupsPerDay}/day · ${pct(f.unit.visitorToSignupPct)} of visitors · ${money(f.unit.costPerSignupCents)} each`} />
         <Kpi label="On free trial" value={n(f.trials.count)} note={`${dollars(f.trials.maxMrrCents)}/mo if all pay`} tone="trial" />
@@ -45,7 +45,7 @@ export function InvestorReportView({ report, shared = false, between }: { report
 
       <section className={s.card}>
         <h2 className={s.h2}>Ad spend against revenue</h2>
-        <PaybackChart curve={f.curve} today={f.today} breakEven={be.date} />
+        <PaybackChart curve={f.curve} today={f.today} breakEven={be.date} horizonDays={a.horizonDays} />
       </section>
 
       <div className={s.twoUp}>
@@ -92,7 +92,7 @@ export function InvestorReportView({ report, shared = false, between }: { report
         <h2 className={s.h2}>How these are figured</h2>
         <ul>
           <li>Counting from {longDate(f.since)}, the day the first campaign went live — only what happened from that day on. Visitors are unique people on www.jobflex.app, bots and previews out.{report.before.paying > 0 ? ` ${report.before.paying} ${report.before.paying === 1 ? "account" : "accounts"} paying from before that day (${dollars(report.before.mrrCents)}/mo) ${report.before.paying === 1 ? "is" : "are"} not counted.` : ""}</li>
-          <li>Ad spend is the budget booked per day{shared ? "" : " (typed in on this page; Meta's own figures once its API token is connected)"}. Days with no entry count as zero.</li>
+          <li>Ad spend is {f.spend.dailyBudgetCents !== null && f.spend.budgetFrom ? `the daily budget — ${dollars(f.spend.dailyBudgetCents)} for all ads together — counted as spent every day since ${longDate(f.spend.budgetFrom)}${f.spend.bookedDays ? `, with ${f.spend.bookedDays} ${f.spend.bookedDays === 1 ? "day" : "days"} at the figure booked for it` : ""}` : "what was booked per day; a day with nothing booked counts as zero"}{shared ? "" : " (set on this page; Meta's own figures per day once its API token is connected)"}. Tomorrow on it is projected at {dollars(f.spend.perDayProjectedCents)} a day.</li>
           <li>A trial is worth its plan&apos;s monthly list price: a yearly plan as a twelfth, a custom plan by its pages. Discounts, taxes and churn are not modelled.</li>
           <li>The realistic share is {a.realisticPct}% of trials paying, set by the owner; &ldquo;by behaviour&rdquo; reads each account&apos;s activity instead and is shown beside it.</li>
           <li>The curve: each paying account earns a thirtieth of its monthly price a day from the day it started paying; a trial from the day it ends; signups still to come arrive at the recent pace ({f.unit.signupsPerDay}/day), at the average trial price ({dollars(f.trials.avgMonthlyCents)}/mo), and pay after a {a.trialDays}-day trial. Spend continues at {dollars(f.spend.perDayProjectedCents)}/day for {a.horizonDays} days.</li>

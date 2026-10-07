@@ -40,8 +40,32 @@
 .strong .num { color: var(--rep-blue); }
 
 /* The curve */
+.chartWrap { min-width: 0; }
+.chartBar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1.5px solid var(--rep-ink); border-radius: 2px; overflow: hidden; background: #fff; }
+.seg button { padding: 7px 11px; min-height: 34px; border: 0; border-right: 1px solid var(--rep-line); background: #fff; font: 700 10.5px var(--rep-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--rep-soft); cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--rep-ink); color: #fff; }
+.hintLine { margin: 0 0 10px; font-size: 12.5px; line-height: 1.5; color: var(--rep-muted); max-width: 90ch; }
 .chart { margin: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-.chart svg { display: block; width: 100%; height: auto; }
+.chartInner { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; touch-action: pan-y; outline: none; }
+.chart svg:focus-visible { outline: 2px solid var(--rep-blue); outline-offset: 2px; }
+.cursor { stroke: var(--rep-ink); stroke-width: 1; opacity: .45; }
+.tip { position: absolute; top: 10px; z-index: 2; min-width: 230px; max-width: 300px; padding: 9px 11px; margin-left: 12px; background: #fff; border: 1.5px solid var(--rep-ink); border-radius: 2px; box-shadow: 4px 4px 0 rgba(10,10,10,.08); font: 600 11.5px/1.5 var(--rep-mono); pointer-events: none; }
+.tipLeft { margin-left: -12px; transform: translateX(-100%); }
+.tipDate { font-weight: 900; font-size: 12px; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 10px; }
+.tipTag { font-weight: 700; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--rep-muted); }
+.tipRow { display: flex; justify-content: space-between; gap: 14px; }
+.tipRow b { font-variant-numeric: tabular-nums; }
+.tipMuted { color: var(--rep-muted); margin-top: 3px; }
+.readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.reading { padding: 10px 12px 11px; background: var(--rep-paper); border: 1px solid var(--rep-line); border-radius: 2px; min-width: 0; }
+.reading[data-reading="break-even"] { border-color: var(--rep-blue); box-shadow: inset 3px 0 0 var(--rep-blue); }
+.readingHead { font: 700 10.5px var(--rep-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--rep-muted); }
+.readingBig { margin-top: 4px; font-size: 22px; font-weight: 900; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; color: var(--rep-blue); }
+.readingBig span { font: 600 11px var(--rep-mono); letter-spacing: .04em; color: var(--rep-muted); }
+.readingRows { display: grid; gap: 2px; margin-top: 7px; font: 600 11px/1.45 var(--rep-mono); color: var(--rep-soft); }
 .rule { stroke: var(--rep-line); stroke-width: 1; }
 .base { stroke: var(--rep-ink); stroke-width: 1.5; }
 .axis { font: 600 11px var(--rep-mono); fill: var(--rep-muted); }
@@ -52,12 +76,15 @@
 .lineReal { fill: none; stroke: var(--rep-blue); stroke-width: 2.5; stroke-linejoin: round; }
 .lineAll { fill: none; stroke: var(--rep-blue); stroke-width: 1.5; stroke-dasharray: 5 4; opacity: .55; stroke-linejoin: round; }
 .mark { fill: #fff; stroke: var(--rep-blue); stroke-width: 3; }
+/* After the line classes on purpose: a cursor dot borrows its line's colour but not its dash or fade. */
+.dot { fill: #fff; stroke-width: 2.5; stroke-dasharray: none; opacity: 1; }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 10px; font: 600 11px var(--rep-mono); color: var(--rep-soft); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { display: inline-block; width: 18px; height: 0; border-top: 3px solid; }
-.swSpend { border-color: var(--rep-ink); }
-.swReal { border-color: var(--rep-blue); }
-.swAll { border-top-style: dashed !important; border-color: var(--rep-blue); opacity: .6; }
+/* A swatch borrows its line's class: the stroke colour becomes the border colour. */
+.sw.lineSpend { border-color: var(--rep-ink); }
+.sw.lineReal { border-color: var(--rep-blue); }
+.sw.lineAll { border-top-style: dashed; border-color: var(--rep-blue); opacity: .6; }
 .legendNote { color: var(--rep-muted); }
 
 .method { padding: 16px 20px; border: 1px solid var(--rep-line); border-radius: 2px; background: #fff; }
@@ -78,7 +105,10 @@
   .kpiValue { font-size: 22px; }
   .twoUp { grid-template-columns: minmax(0, 1fr); }
   .card { padding: 14px; }
-  .chart svg { min-width: 640px; }
+  .chartInner { min-width: 640px; }
+  .readings { grid-template-columns: minmax(0, 1fr); }
+  .chartBar .seg { flex: 1 1 100%; }
+  .seg button { flex: 1 1 auto; min-height: 40px; }
   .tbl td:first-child { white-space: normal; }
   .sub { display: block; }
 }
