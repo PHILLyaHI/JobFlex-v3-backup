@@ -17,25 +17,59 @@ export async function clearDueCommissions() {
   return { cleared: res.count };
 }
 
+/** A subscription that names an organization which no longer exists. */
+export type ReconcileSkip = { subscription: string; status: string; organizationId: string | null };
+/** One row that threw; the run carried on past it. */
+export type ReconcileFailure = { id: string; error: string };
+
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err)).replace(/\s+/g, " ").slice(0, 300);
+
 // Bounded recent sweep (last 100 subscriptions + 100 paid invoices). Enough as a
 // backstop for dropped webhooks; widen / paginate via SyncState if volume grows.
+//
+// ONE ROW NEVER STOPS THE RUN. Each subscription and each invoice is synced in
+// its own try/catch: a subscription whose organization was deleted is skipped
+// and listed, any other failure is logged and listed, and the rest still sync.
 export async function reconcileStripe() {
   if (!isStripeEnabled()) return { skipped: "stripe-disabled", subscriptions: 0, invoices: 0 };
   const stripe = getStripe();
 
   let subscriptions = 0;
   let invoices = 0;
+  const missingOrganization: ReconcileSkip[] = [];
+  const failed: ReconcileFailure[] = [];
 
   const subList = await stripe.subscriptions.list({ limit: 100, status: "all" });
   for (const sub of subList.data) {
-    await syncSubscriptionFromStripe(sub, stripe);
-    subscriptions++;
+    try {
+      const res = await syncSubscriptionFromStripe(sub, stripe);
+      if (!res.synced && res.reason === "organization-missing") {
+        missingOrganization.push({ subscription: sub.id, status: sub.status, organizationId: res.organizationId });
+        continue;
+      }
+      subscriptions++;
+    } catch (err) {
+      console.error(`[reconcile] subscription ${sub.id} failed:`, err);
+      failed.push({ id: sub.id, error: errorText(err) });
+    }
   }
 
   const invList = await stripe.invoices.list({ limit: 100, status: "paid" });
   for (const inv of invList.data) {
-    await accrueForInvoice(inv, undefined, stripe);
-    invoices++;
+    try {
+      await accrueForInvoice(inv, undefined, stripe);
+      invoices++;
+    } catch (err) {
+      console.error(`[reconcile] invoice ${inv.id} failed:`, err);
+      failed.push({ id: inv.id ?? "invoice", error: errorText(err) });
+    }
+  }
+
+  if (missingOrganization.length) {
+    console.warn(
+      `[reconcile] skipped ${missingOrganization.length} subscription(s) whose organization no longer exists: ` +
+        missingOrganization.map((s) => `${s.subscription} (${s.status}) → ${s.organizationId}`).join(", "),
+    );
   }
 
   await db.syncState.upsert({
@@ -44,5 +78,5 @@ export async function reconcileStripe() {
     create: { key: "reconcile-stripe", cursor: String(Math.floor(Date.now() / 1000)) },
   });
 
-  return { subscriptions, invoices };
+  return { subscriptions, invoices, missingOrganization, failed };
 }

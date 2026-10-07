@@ -292,7 +292,14 @@ async function mirrorAccepts(organizationId: string, externalSubId: string, stat
 // ── subscription lifecycle → Subscription mirror + Attribution ──
 /** `stripe` reads what a clover payload leaves as ids (the discounts, a
  *  coupon's metadata); every production caller passes the client it holds. */
-export async function syncSubscriptionFromStripe(sub: Stripe.Subscription, stripe?: Stripe | null) {
+export type SubscriptionSyncResult =
+  | { synced: true; organizationId: string }
+  | { synced: false; reason: "unmapped" | "organization-missing"; organizationId: string | null };
+
+export async function syncSubscriptionFromStripe(
+  sub: Stripe.Subscription,
+  stripe?: Stripe | null,
+): Promise<SubscriptionSyncResult> {
   const externalSubId = sub.id;
   const customerId = idOf(sub.customer);
   const metaOrg = sub.metadata?.organizationId ?? null;
@@ -313,7 +320,18 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription, strip
     const byCustomer = await db.subscription.findFirst({ where: { externalCustomerId: customerId } });
     organizationId = byCustomer?.organizationId ?? null;
   }
-  if (!organizationId) return; // can't map — leave for reconciliation once metadata is present
+  if (!organizationId) return { synced: false, reason: "unmapped", organizationId: null }; // can't map — leave for reconciliation once metadata is present
+
+  // THE ORGANIZATION CAN BE GONE. A deleted account (deleteMyAccount, the
+  // 30-day purge) leaves its cancelled subscription in Stripe with
+  // metadata.organizationId still naming it; the mirror upsert below would
+  // then fail the foreign key, and that one subscription took the whole
+  // reconcile run down with it every six hours. Nothing is left to mirror.
+  const orgExists = await db.organization.findUnique({ where: { id: organizationId }, select: { id: true } });
+  if (!orgExists) {
+    console.warn(`[stripe-sync] ${externalSubId} (${sub.status}) names organization ${organizationId}, which no longer exists — skipped`);
+    return { synced: false, reason: "organization-missing", organizationId };
+  }
 
   const stripePriceId = sub.items.data[0]?.price?.id ?? null;
   const planSlug = await planSlugForPrice(stripePriceId);
@@ -492,6 +510,7 @@ export async function syncSubscriptionFromStripe(sub: Stripe.Subscription, strip
       }
     }
   }
+  return { synced: true, organizationId };
 }
 
 export async function markSubscriptionCanceled(sub: Stripe.Subscription) {
