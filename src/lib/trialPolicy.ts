@@ -14,9 +14,13 @@
 // organization's own card-less record (lib/trialState), not this switch.
 // Read on the server only; pages hand the answer to their client components
 // as a prop.
+//
+// SINCE 2026-10-07 THE OWNER'S SWITCH WINS: Admin → Trials keeps one row
+// (lib/trialPolicyServer) and every door asks `trialRequiresCard()` THERE.
+// The variable below is only the default while no row has been set.
 
-/** True when signup takes a card up front (the default). */
-export function trialRequiresCard(): boolean {
+/** The deployment's default: a card up front unless TRIAL_REQUIRES_CARD=false. */
+export function trialRequiresCardEnv(): boolean {
   return process.env.TRIAL_REQUIRES_CARD?.trim().toLowerCase() !== "false";
 }
 

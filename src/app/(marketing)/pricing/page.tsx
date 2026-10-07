@@ -7,7 +7,7 @@
 import type { Metadata } from "next";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
 import { PricingPage } from "@/components/v3/pricing-d/pricing-page";
-import { trialRequiresCard } from "@/lib/trialPolicy";
+import { trialRequiresCard } from "@/lib/trialPolicyServer";
 import { customPlanOffered } from "@/lib/customPlanFlag";
 
 // ISR backstop — instant propagation comes from revalidatePlanSurfaces() firing
@@ -25,7 +25,7 @@ export default async function Page() {
   return (
     <PricingPage
       plans={plans}
-      requiresCard={trialRequiresCard()}
+      requiresCard={await trialRequiresCard()}
       customOffered={customPlanOffered()}
     />
   );

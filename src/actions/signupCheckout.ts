@@ -49,7 +49,7 @@ import { fbcFromFbclid, sendMetaEvent, type MetaSignupContext } from "@/lib/meta
 import { metaStartTrial } from "@/lib/metaSignupEvents";
 import { sendWelcomeFirstEstimate } from "@/lib/email/welcome";
 import { trackActivation } from "@/lib/activation-events";
-import { trialRequiresCard } from "@/lib/trialPolicy";
+import { trialRequiresCard } from "@/lib/trialPolicyServer";
 import { createCardlessSubscription, nameOrgOnSubscription } from "@/lib/cardlessTrial";
 import { writeCardlessRecord } from "@/lib/trialState";
 import { cardlessTrialRefusal, markCardlessTrialUsed, trialRequestsPerIpHour } from "@/lib/trialGuard";
@@ -524,7 +524,7 @@ export async function requestCardlessTrial(
   token: string,
   planSlug: string,
 ): Promise<{ ok: true; email: string; resendAt: number } | { ok: false; error: string; resendAt?: number; requiresCard?: true }> {
-  if (trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account.", requiresCard: true };
+  if (await trialRequiresCard()) return { ok: false, error: "Choose a plan to finish creating your account.", requiresCard: true };
   if (planSlug === CUSTOM_PLAN_SLUG && !customPlanOffered()) return { ok: false, error: CUSTOM_PLAN_OFF_SALE };
   const rec = await loadPending(token);
   if (!rec) return { ok: false, error: "That signup expired. Start again." };

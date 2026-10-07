@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { LegalContact, LegalPage } from "@/components/legal/legal-page";
 import { LEGAL_OPERATOR_NAME, LEGAL_UPDATED } from "@/lib/legal";
-import { trialRequiresCard } from "@/lib/trialPolicy";
+import { trialRequiresCard } from "@/lib/trialPolicyServer";
 
 export const metadata: Metadata = {
   title: "JobFlex · Terms of service",
@@ -10,11 +10,11 @@ export const metadata: Metadata = {
   alternates: { canonical: "/terms" },
 };
 
-export default function TermsPage() {
+export default async function TermsPage() {
   // The trial sentence follows TRIAL_REQUIRES_CARD (lib/trialPolicy): a card
   // up front by default (2026-10-06); the card-less trial, with the flag off,
   // asks for no payment method, so then the terms do not say it does.
-  const requiresCard = trialRequiresCard();
+  const requiresCard = await trialRequiresCard();
   return (
     <LegalPage title="Terms of service" number="02" summary="The agreement for your workspace, subscriptions, business documents, and connected services." updated={LEGAL_UPDATED.terms}>
       <p>

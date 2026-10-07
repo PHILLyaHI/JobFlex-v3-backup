@@ -18,7 +18,7 @@ import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { readPendingSignup, sendSignupInitiateCheckout } from "@/actions/signupCheckout";
 import { resolveSignupDiscount, resolveSignupPrice } from "@/lib/signupPricing";
 import { customMetadata } from "@/lib/customBilling";
-import { trialRequiresCard } from "@/lib/trialPolicy";
+import { trialRequiresCard } from "@/lib/trialPolicyServer";
 import { cardlessTrialsPaused } from "@/lib/trialDailyCap";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
 import { CUSTOM_PLAN_SLUG } from "@/lib/customPlan";
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   // the plan step starts the card-less trial instead (lib/cardlessTrial) —
   // unless the day's card-less ceiling is reached (lib/trialDailyCap), when
   // the trial takes a card here exactly as with the flag on.
-  if (!trialRequiresCard() && !(await cardlessTrialsPaused())) {
+  if (!(await trialRequiresCard()) && !(await cardlessTrialsPaused())) {
     return NextResponse.json({ error: "Start the free trial from the plan step." }, { status: 409 });
   }
   if (!isStripeEnabled()) {
