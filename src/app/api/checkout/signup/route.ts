@@ -12,10 +12,10 @@
 //   · the customer email is taken from the INTENT, never from the request body;
 //   · `client_reference_id` carries the token, which is what
 //     `completePendingSignup` checks the returned session against.
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
-import { readPendingSignup } from "@/actions/signupCheckout";
+import { readPendingSignup, sendSignupInitiateCheckout } from "@/actions/signupCheckout";
 import { resolveSignupDiscount, resolveSignupPrice } from "@/lib/signupPricing";
 import { customMetadata } from "@/lib/customBilling";
 import { trialRequiresCard } from "@/lib/trialPolicy";
@@ -116,6 +116,12 @@ export async function POST(req: Request) {
       success_url: `${origin}/auth/register?signup=${encodeURIComponent(String(token))}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/auth/register?signup=${encodeURIComponent(String(token))}&checkout=cancelled`,
     });
+    // Meta InitiateCheckout, the server copy of the browser's (same event_id).
+    after(() =>
+      sendSignupInitiateCheckout(String(token), { planSlug: planLabel, cents }).catch((err) =>
+        console.warn("[meta:capi] InitiateCheckout failed", err),
+      ),
+    );
     return NextResponse.json({ url: session.url });
   } catch (err) {
     console.error("[checkout/signup] failed:", err);

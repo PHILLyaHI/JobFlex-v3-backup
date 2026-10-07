@@ -399,23 +399,27 @@ export function RegisterContent({
       /* storage blocked — a fresh id, the server's copy is not deduplicated */
     }
   }, [ret?.token]);
+  /* Meta InitiateCheckout fires as a start button opens Stripe Checkout
+     (onStartTrial, owner 2026-10-06), not on reaching the plan step; the
+     server's copy (/api/checkout/signup) carries the same event_id. */
   const initiateSent = React.useRef(false);
-  React.useEffect(() => {
-    if (requiresCard && step === 3 && !initiateSent.current && !ret?.sessionId) {
-      initiateSent.current = true;
-      metaTrack("InitiateCheckout", { content_category: industry ?? "default" }, metaIds.current.checkout);
-    }
-  }, [step, industry, ret?.sessionId, requiresCard]);
   const leadSent = React.useRef(false);
   const registrationSent = React.useRef(false);
   /** Step 1's outcome for the analyst: passed, or refused and why. */
   const step1Outcome = (outcome: "continue" | "error", reason = "") => trackTraffic(TRAFFIC_EVENTS.signupStep1, { outcome, reason, variant: "e" });
+  /* CompleteRegistration, the browser's copy. On the return from Checkout
+     the page mounts straight on step 4 — before the consent provider has
+     loaded the pixel, so an effect keyed on the step fired into nothing
+     (found 2026-10-06). That return sends it once the account exists
+     (fireRegistration below); this effect covers the skip path. */
+  const fireRegistration = React.useCallback(() => {
+    if (registrationSent.current) return;
+    registrationSent.current = true;
+    metaTrack("CompleteRegistration", { content_name: industry ?? "default", status: "true" }, metaIds.current.registration);
+  }, [industry]);
   React.useEffect(() => {
-    if (step === 4 && !registrationSent.current) {
-      registrationSent.current = true;
-      metaTrack("CompleteRegistration", { content_name: industry ?? "default", status: "true" }, metaIds.current.registration);
-    }
-  }, [step, industry]);
+    if (step === 4 && !ret?.sessionId) fireRegistration();
+  }, [step, ret?.sessionId, fireRegistration]);
   const trialDays =
     planSlug === CUSTOM_PLAN_SLUG
       ? customTrialDays
@@ -692,6 +696,12 @@ export function RegisterContent({
       ? customTrialDays
       : plans.find((p) => p.slug === slug)?.trialDays ?? 0;
     trackTraffic(TRAFFIC_EVENTS.attempt, { plan: slug, interval, intent: clickedTrialDays > 0 ? "trial" : "purchase", flow: trafficFlow });
+    if (!initiateSent.current) {
+      initiateSent.current = true;
+      const plan = plans.find((p) => p.slug === slug);
+      const cents = slug === CUSTOM_PLAN_SLUG ? customPriceCents(customPages, interval) : interval === "YEAR" ? (plan?.yearlyPriceCents ?? 0) : (plan?.priceCents ?? 0);
+      metaTrack("InitiateCheckout", { content_category: industry ?? "default", plan: slug, value: cents / 100, currency: "USD" }, metaIds.current.checkout);
+    }
     setPayBusy(true);
     setStartingSlug(slug);
     setPlansErr(null);
@@ -887,6 +897,7 @@ export function RegisterContent({
           setStep(3);
           return;
         }
+        fireRegistration();
         if (!res.ticket) {
           setSignedIn(false);
           setDoneNote(`Your workspace is ready for ${res.email}. Sign in to open it.`);
@@ -911,7 +922,7 @@ export function RegisterContent({
         setStep(3);
       })
       .finally(() => setPayBusy(false));
-  }, [ret, router]);
+  }, [ret, router, fireRegistration]);
 
   // Tick the countdown down on the success step, then leave — TO SIGN-IN. In
   // the pay-first flow nobody at step 4 holds a session (the account was

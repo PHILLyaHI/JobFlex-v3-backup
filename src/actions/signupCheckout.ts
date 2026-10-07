@@ -134,6 +134,8 @@ type PendingRecord = z.infer<typeof pendingSchema> extends infer T
       /** Set by requestCardlessTrial: the plan the card-less trial is for, and
        *  when the confirmation link went out (the intent then lives 24 hours). */
       cardless?: { planSlug: string; requestedAt: number };
+      /** When Meta's InitiateCheckout went out (sendSignupInitiateCheckout). */
+      checkoutSentAt?: number;
     }
   : never;
 
@@ -229,28 +231,9 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
     update: { cursor: JSON.stringify(record) },
     create: { key: key(token), cursor: JSON.stringify(record) },
   });
-  // Meta InitiateCheckout — the server copy of the event the browser fires as
-  // this answer moves it to the plan step (same event_id, so the pair is one).
-  const meta = record.meta;
-  if (meta?.checkoutEventId) {
-    const checkoutEventId = meta.checkoutEventId;
-    after(() =>
-      sendMetaEvent({
-        eventName: "InitiateCheckout",
-        eventId: checkoutEventId,
-        sourceUrl: meta.sourceUrl ?? null,
-        consent: meta.consent,
-        user: { email: record.email, phone: record.companyPhone ?? null, fbp: meta.fbp, fbc: meta.fbc, clientIp: meta.clientIp, userAgent: meta.userAgent },
-        custom: {
-          content_category: record.landingIndustry ?? "default",
-          utm_source: record.utm?.utm_source,
-          utm_medium: record.utm?.utm_medium,
-          utm_campaign: record.utm?.utm_campaign,
-          utm_content: record.utm?.utm_content,
-        },
-      }),
-    );
-  }
+  // Meta InitiateCheckout is not sent here any more (2026-10-06): it belongs
+  // to the moment Stripe Checkout opens — sendSignupInitiateCheckout, from
+  // /api/checkout/signup — not to reaching the plan step.
   return { ok: true, token };
 }
 
@@ -270,6 +253,43 @@ export async function readPendingSignup(token: string): Promise<{
         attribution: rec.attribution ?? null,
       }
     : null;
+}
+
+/**
+ * Meta InitiateCheckout, the server copy (owner, 2026-10-06: "when the person
+ * goes to Checkout"). Called by /api/checkout/signup once Stripe has handed
+ * back the session for the picked plan; the browser fires the same event_id
+ * (meta.checkoutEventId) as the start button is pressed, so the pair is one.
+ * Once per signup: the intent is stamped, so a second checkout (cancelled and
+ * opened again) sends nothing more.
+ */
+export async function sendSignupInitiateCheckout(
+  token: string,
+  checkout: { planSlug: string; cents: number },
+): Promise<void> {
+  const rec = await loadPending(token);
+  const meta = rec?.meta;
+  if (!rec || !meta?.checkoutEventId || rec.checkoutSentAt) return;
+  await db.syncState
+    .update({ where: { key: key(token) }, data: { cursor: JSON.stringify({ ...rec, checkoutSentAt: Date.now() }) } })
+    .catch(() => {});
+  await sendMetaEvent({
+    eventName: "InitiateCheckout",
+    eventId: meta.checkoutEventId,
+    sourceUrl: meta.sourceUrl ?? null,
+    consent: meta.consent,
+    value: checkout.cents / 100,
+    currency: "USD",
+    user: { email: rec.email, phone: rec.companyPhone ?? null, fbp: meta.fbp, fbc: meta.fbc, clientIp: meta.clientIp, userAgent: meta.userAgent },
+    custom: {
+      content_category: rec.landingIndustry ?? "default",
+      plan: checkout.planSlug,
+      utm_source: rec.utm?.utm_source,
+      utm_medium: rec.utm?.utm_medium,
+      utm_campaign: rec.utm?.utm_campaign,
+      utm_content: rec.utm?.utm_content,
+    },
+  });
 }
 
 /* THE RELOAD PROBLEM. The intent is spent by its first completion, so a

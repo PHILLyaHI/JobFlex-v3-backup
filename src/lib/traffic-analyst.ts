@@ -430,7 +430,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
   if (enough && n >= 30 && done.length === 0) {
     add({ id: "no-signups", tone: "bad", title: `No signups from ${n} ad visits`,
       evidence: `${pct(stats.bounce)} left the landing without a second page, ${pressed.length} pressed a button, ${form.length} opened the form, ${attempted.length} started a trial.`,
-      action: leak ? `Fix the biggest leak first — ${leak.from} → ${leak.to} loses ${pct(1 - leak.b / leak.a)}.` : "Get people to the form first: a clear price and a 'free trial, no card' button in the first screen.", n });
+      action: leak ? `Fix the biggest leak first — ${leak.from} → ${leak.to} loses ${pct(1 - leak.b / leak.a)}.` : "Get people to the form first: a clear price and a '7-day free trial' button in the first screen.", n });
   }
 
   // The phones that reported their first screen (landing_timing): the hero's
@@ -451,7 +451,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
       evidence: `${Math.round(bounce * n)} of ${n}; ${pct(fastShare)} of all visits were gone inside 5 seconds without scrolling${inAppBounce !== null && browserBounce !== null ? `; Facebook's in-app browser bounces ${pct(inAppBounce)} vs ${pct(browserBounce)} in a real browser` : ""}. Median time on the landing ${secs(stats.dwellMedian)}.`,
       action: slowScreen ? `The first screen is slow before it is anything else: on phones the headline shows ${secsMs(heroMedian)} after the tap (the first-screen finding). Fix that first, then judge the words.`
         : quick ? "Most of these never looked: accidental taps or a slow first screen in the in-app browser. Optimise the ad set for landing-page views (not link clicks), keep the first screen light, and check the hero loads under 2 s on 4G."
-        : "They looked and left: the ad's promise is not in the first screen. Put the ad's exact claim, the trade, the price and 'free trial, no card' in the hero, above the fold.", n });
+        : "They looked and left: the ad's promise is not in the first screen. Put the ad's exact claim, the trade, the price and '7-day free trial' in the hero, above the fold.", n });
   }
 
   // THE FIRST SCREEN AS THE PHONES DREW IT (landing_timing, 2026-10-04). The
@@ -591,7 +591,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
     const top = placements.slice(0, 2).map((p) => `${p.placement} (${p.n})`).join(", ");
     add({ id: "reading", tone: "warn", title: "They read, but they don't press",
       evidence: `${pct(engaged)} stay 30 s or scroll past half the page; only ${pct(ctaRate)} press any button${top ? ` — the presses: ${top}` : ""}.`,
-      action: "The offer is not clear enough to act on: say the price and 'free trial, no card needed' on the hero button itself, and repeat that button after the estimator section.", n });
+      action: "The offer is not clear enough to act on: say the price and '7-day free trial' on the hero button itself, and repeat that button after the estimator section.", n });
   }
 
   // Pressed, never saw the form.
@@ -607,7 +607,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
     const trans = [
       { from: 1, to: 2, a: s1.length, b: s2.length, action: "Step 1 asks for name, email and two passwords, and the Google button is hidden inside Facebook's browser. Ask for the email alone first; set the password after the trial starts. (Step-1 errors — 'email already registered' — are not tracked yet.)" },
       { from: 2, to: 3, a: s2.length, b: s3.length, action: "Step 2 wants the business name, the address and the trades, all required. Make the company step optional — ask inside the app on the first proposal — or keep only the business name." },
-      { from: 3, to: 4, a: s3.length, b: attempted.length, action: "The plan sheet stops them. Pre-select the plan the ad promised, and say 'Start free trial · no card' on the button; show the price per month next to it." },
+      { from: 3, to: 4, a: s3.length, b: attempted.length, action: "The plan sheet stops them. Pre-select the plan the ad promised, and say 'Start free trial' on the button; show the price per month next to it." },
     ].filter((t) => t.a >= 8).map((t) => ({ ...t, loss: 1 - t.b / t.a })).sort((x, y) => y.loss - x.loss);
     const worst = trans[0];
     if (worst && worst.loss >= 0.4) add({ id: "step", tone: worst.loss >= 0.6 ? "bad" : "warn",
