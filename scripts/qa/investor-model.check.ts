@@ -27,7 +27,7 @@ const base: ModelInput = {
     { createdAt: "2026-10-06", endsAt: null, monthlyCents: null, chance: 0.15 },
   ],
   lapsed: 1,
-  assumptions: { realisticPct: 60, spendPerDayCents: null, horizonDays: 180, trialDays: 7 },
+  assumptions: { realisticPct: 60, spendPerDayCents: null, horizonDays: 180, trialDays: 7, dailyBudgetCents: null, budgetFrom: null },
   visitors: 700,
 };
 
@@ -38,7 +38,22 @@ check("a pace over the last seven days (or since the launch when younger)", near
 const f = investorFigures(base);
 console.log("── spend");
 check("spend since the launch only: $700 over 7 days, $100 a day", f.spend.totalCents === 70000 && f.spend.daysWithSpend === 7 && f.spend.perDayRecentCents === 10000 && f.spend.perDayProjectedCents === 10000 && f.spend.lastDate === "2026-10-06");
-check("a set daily budget projects instead of the recent average", investorFigures({ ...base, assumptions: { ...base.assumptions, spendPerDayCents: 5000 } }).spend.perDayProjectedCents === 5000);
+check("a set projected figure projects instead of the recent average", investorFigures({ ...base, assumptions: { ...base.assumptions, spendPerDayCents: 5000 } }).spend.perDayProjectedCents === 5000);
+console.log("── the daily budget");
+const budgetOnly = investorFigures({ ...base, spend: [], assumptions: { ...base.assumptions, dailyBudgetCents: 5000, budgetFrom: "2026-10-01" } });
+check("a $50 daily budget since Oct 1 with nothing booked: six days spent, $300, projected at $50", budgetOnly.spend.totalCents === 30000 && budgetOnly.spend.budgetDays === 6 && budgetOnly.spend.bookedDays === 0 && budgetOnly.spend.perDayProjectedCents === 5000 && budgetOnly.curve[1].spendSource === "budget" && budgetOnly.curve[0].spendSource === "none" && budgetOnly.curve[7].spendDayCents === 5000 && budgetOnly.curve[7].spendSource === "projected");
+const budgetAndBooked = investorFigures({ ...base, assumptions: { ...base.assumptions, dailyBudgetCents: 5000, budgetFrom: "2026-10-01" } });
+check("a booked day overrides the budget: all seven days booked, still $700, no budget days", budgetAndBooked.spend.totalCents === 70000 && budgetAndBooked.spend.budgetDays === 0 && budgetAndBooked.spend.bookedDays === 7 && budgetAndBooked.curve[3].spendSource === "booked");
+const budgetEarly = investorFigures({ ...base, spend: [], assumptions: { ...base.assumptions, dailyBudgetCents: 5000, budgetFrom: "2026-09-01" } });
+check("a budget from before the start day counts from the start day: 7 days, $350", budgetEarly.spend.totalCents === 35000 && budgetEarly.spend.budgetFrom === "2026-09-30" && budgetEarly.spend.budgetDays === 7);
+check("the owner's projected figure beats the budget for tomorrow on", investorFigures({ ...base, spend: [], assumptions: { ...base.assumptions, dailyBudgetCents: 5000, budgetFrom: null, spendPerDayCents: 8000 } }).spend.perDayProjectedCents === 8000);
+console.log("── the curve's run-rate and accounts");
+const t0 = f.curve[6];
+check("today: MRR $158 (two paying, no trial ended), 2 paying, 6 signed up (trial or paying)", t0.mrrRealisticCents === 15800 && t0.mrrAllPayCents === 15800 && t0.payingRealistic === 2 && t0.payingAllPay === 2 && t0.signups === 6);
+const t11 = f.curve.find((p) => p.date === "2026-10-11")!;
+check("Oct 11: the first trial counts as 0.6 of a paying account realistically, 1 if all pay; MRR all-pay $237", t11.payingAllPay === 3 && t11.payingRealistic === 2.6 && t11.mrrAllPayCents === 15800 + 7900 && t11.mrrRealisticCents === Math.round(15800 + 7900 * 0.6));
+const tEnd = f.curve.at(-1)!;
+check("at the horizon: signups grew at 0.86 a day, realistic paying under all-pay, MRR grew", tEnd.signups > 6 + 0.86 * 179 && tEnd.payingRealistic < tEnd.payingAllPay && tEnd.mrrRealisticCents > t0.mrrRealisticCents, `${tEnd.signups} signups, ${tEnd.payingRealistic}/${tEnd.payingAllPay} paying, MRR ${tEnd.mrrRealisticCents}`);
 
 console.log("── trials and paying");
 check("4 trials, 3 priced: $307 if all pay, $184 realistic at 60%, average $102", f.trials.count === 4 && f.trials.priced === 3 && f.trials.maxMrrCents === 30700 && f.trials.realisticMrrCents === 18420 && f.trials.avgMonthlyCents === 10233);
@@ -74,7 +89,7 @@ check("at 100% the realistic line is the all-pay line and break-even comes soone
 const heavy = investorFigures({ ...base, assumptions: { ...base.assumptions, spendPerDayCents: 100000 } });
 check("$1,000 a day with this revenue never breaks even in the horizon, and the sentence says so", !heavy.breakEven.withinHorizon && /do not pay for themselves/.test(paybackSentence(heavy)));
 const none = investorFigures({ ...base, spend: [] });
-check("no spend: nothing to recover, no unit costs", none.spend.totalCents === 0 && none.unit.costPerSignupCents === null && none.unit.paybackMonths === null && /No ad spend/.test(paybackSentence(none)));
+check("no spend: nothing to recover, no unit costs", none.spend.totalCents === 0 && none.unit.costPerSignupCents === null && none.unit.paybackMonths === null && /No ad spend is set yet/.test(paybackSentence(none)));
 const covered = investorFigures({ ...base, spend: [{ date: "2026-09-30", cents: 500 }] });
 check("$5 of spend is already covered: the sentence says so", /already covered/.test(paybackSentence(covered)));
 check("the sentence names the pace, the share and the date", /\$100 a day on ads, 0\.86 signups a day, 60% of trials paying/.test(paybackSentence(f)) && /on [A-Z][a-z]+ \d+, 202\d\./.test(paybackSentence(f)), paybackSentence(f));

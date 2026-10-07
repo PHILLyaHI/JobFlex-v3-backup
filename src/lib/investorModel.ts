@@ -52,6 +52,12 @@ export interface InvestorAssumptions {
   horizonDays: number;
   /** A trial's length, days. */
   trialDays: number;
+  /** The daily ad budget, ALL ads together (owner, 2026-10-06: "we have a per-day
+   *  budget set and it's getting used") — counted as spent every day from
+   *  `budgetFrom` to today on which nothing was booked by hand; null = none. */
+  dailyBudgetCents: number | null;
+  /** The day the budget started; null = the start day. */
+  budgetFrom: string | null;
 }
 export interface ModelInput {
   since: string;
@@ -68,18 +74,40 @@ export interface ModelInput {
 
 export interface CurvePoint {
   date: string;
+  /** Running totals from the start day. */
   spendCents: number;
   allPayCents: number;
   realisticCents: number;
   /** Past today: projected, not booked. */
   projected: boolean;
+  /** That day alone. */
+  spendDayCents: number;
+  spendSource: "booked" | "budget" | "projected" | "none";
+  /** The monthly run-rate on that day: what a month brings at that day's accounts. */
+  mrrAllPayCents: number;
+  mrrRealisticCents: number;
+  /** Accounts: paying (expected, fractional past today), and signed up so far (trial or paying). */
+  payingAllPay: number;
+  payingRealistic: number;
+  signups: number;
 }
 
 export interface InvestorFigures {
   since: string;
   today: string;
   daysLive: number;
-  spend: { totalCents: number; perDayRecentCents: number; perDayProjectedCents: number; daysWithSpend: number; lastDate: string | null };
+  spend: {
+    totalCents: number;
+    perDayRecentCents: number;
+    perDayProjectedCents: number;
+    daysWithSpend: number;
+    lastDate: string | null;
+    /** The daily budget in force, from when, and how many days it filled vs were booked by hand. */
+    dailyBudgetCents: number | null;
+    budgetFrom: string | null;
+    budgetDays: number;
+    bookedDays: number;
+  };
   visitors: number | null;
   signups: number;
   trials: { count: number; priced: number; maxMrrCents: number; realisticMrrCents: number; byBehaviourMrrCents: number; byBehaviourPct: number | null; avgMonthlyCents: number };
@@ -128,15 +156,24 @@ export function investorFigures(input: ModelInput): InvestorFigures {
   const trialDays = Math.max(1, Math.min(90, Math.round(a.trialDays) || 7));
   const daysLive = Math.max(1, daysBetween(since, today) + 1);
 
-  // ── spend
-  const spendByDay = new Map<string, number>();
-  for (const s of input.spend) if (s.date >= since && s.date <= today && s.cents > 0) spendByDay.set(s.date, (spendByDay.get(s.date) ?? 0) + s.cents);
+  // ── spend: the days booked by hand (or by Meta), then the daily budget on every other day
+  const booked = new Map<string, number>();
+  for (const s of input.spend) if (s.date >= since && s.date <= today && s.cents > 0) booked.set(s.date, (booked.get(s.date) ?? 0) + s.cents);
+  const dailyBudget = a.dailyBudgetCents !== null && Number.isFinite(a.dailyBudgetCents) && a.dailyBudgetCents > 0 ? r0(a.dailyBudgetCents) : null;
+  const budgetFrom = dailyBudget !== null ? (a.budgetFrom && a.budgetFrom > since ? a.budgetFrom : since) : null;
+  const spendByDay = new Map<string, number>(booked);
+  const spendSource = new Map<string, "booked" | "budget">([...booked.keys()].map((d) => [d, "booked" as const]));
+  let budgetDays = 0;
+  if (dailyBudget !== null && budgetFrom !== null) {
+    for (let d = budgetFrom; d <= today; d = addDays(d, 1)) if (!booked.has(d)) { spendByDay.set(d, dailyBudget); spendSource.set(d, "budget"); budgetDays++; }
+  }
   const totalSpend = [...spendByDay.values()].reduce((x, y) => x + y, 0);
   const recentFrom = addDays(today, -6);
   const recentDays = Math.min(7, daysLive);
   const recentSpend = [...spendByDay].filter(([d]) => d >= recentFrom).reduce((x, [, c]) => x + c, 0);
   const perDayRecent = r0(recentSpend / recentDays);
-  const perDayProjected = a.spendPerDayCents !== null && Number.isFinite(a.spendPerDayCents) ? Math.max(0, r0(a.spendPerDayCents)) : perDayRecent;
+  // Tomorrow on: the owner's projected figure, else the budget, else the recent pace.
+  const perDayProjected = a.spendPerDayCents !== null && Number.isFinite(a.spendPerDayCents) ? Math.max(0, r0(a.spendPerDayCents)) : dailyBudget ?? perDayRecent;
   const spendDates = [...spendByDay.keys()].sort();
 
   // ── trials and paying
@@ -163,23 +200,40 @@ export function investorFigures(input: ModelInput): InvestorFigures {
   let allRun = 0;
   let realRun = 0;
   const last = addDays(today, horizon);
+  const signupDates = [...trials.map((t) => dayOf(t.createdAt)), ...input.paying.map((p) => dayOf(p.startedAt))].sort();
   const futureCohorts: number[] = []; // monthly cents paying from each future day, all-pay basis
   for (let d = since; d <= last; d = addDays(d, 1)) {
     const projected = d > today;
-    spendRun += projected ? perDayProjected : (spendByDay.get(d) ?? 0);
+    const spendDay = projected ? perDayProjected : (spendByDay.get(d) ?? 0);
+    spendRun += spendDay;
     let allDay = 0;
     let realDay = 0;
-    for (const p of input.paying) if (dayOf(p.startedAt) <= d) { allDay += p.monthlyCents; realDay += p.monthlyCents; }
-    for (const t of priced) if (trialEnd(t) <= d) { allDay += t.monthlyCents ?? 0; realDay += (t.monthlyCents ?? 0) * pct; }
+    let payAll = 0;
+    let payReal = 0;
+    for (const p of input.paying) if (dayOf(p.startedAt) <= d) { allDay += p.monthlyCents; realDay += p.monthlyCents; payAll += 1; payReal += 1; }
+    for (const t of trials) if (trialEnd(t) <= d) {
+      payAll += 1;
+      payReal += pct;
+      if (t.monthlyCents !== null) { allDay += t.monthlyCents; realDay += t.monthlyCents * pct; }
+    }
+    let signupsSoFar = signupDates.filter((x) => x <= d).length;
     if (projected) {
       // Signups keep arriving at the recent pace; each day's cohort pays from the day its trial ends.
       futureCohorts.push(signupsPerDay * avgTrialMonthly);
       const payingCohorts = futureCohorts.length - trialDays;
       for (let i = 0; i < payingCohorts; i++) { allDay += futureCohorts[i]; realDay += futureCohorts[i] * pct; }
+      if (payingCohorts > 0) { payAll += payingCohorts * signupsPerDay; payReal += payingCohorts * signupsPerDay * pct; }
+      signupsSoFar += futureCohorts.length * signupsPerDay;
     }
     allRun += allDay / 30;
     realRun += realDay / 30;
-    curve.push({ date: d, spendCents: r0(spendRun), allPayCents: r0(allRun), realisticCents: r0(realRun), projected });
+    const r1 = (n: number) => Math.round(n * 10) / 10;
+    curve.push({
+      date: d, spendCents: r0(spendRun), allPayCents: r0(allRun), realisticCents: r0(realRun), projected,
+      spendDayCents: r0(spendDay), spendSource: projected ? "projected" : (spendSource.get(d) ?? "none"),
+      mrrAllPayCents: r0(allDay), mrrRealisticCents: r0(realDay),
+      payingAllPay: r1(payAll), payingRealistic: r1(payReal), signups: r1(signupsSoFar),
+    });
   }
   const cross = totalSpend > 0 ? curve.find((p) => p.realisticCents >= p.spendCents && p.date >= today) ?? null : null;
   const breakEven = cross
@@ -194,7 +248,7 @@ export function investorFigures(input: ModelInput): InvestorFigures {
     since,
     today,
     daysLive,
-    spend: { totalCents: totalSpend, perDayRecentCents: perDayRecent, perDayProjectedCents: perDayProjected, daysWithSpend: spendDates.length, lastDate: spendDates.at(-1) ?? null },
+    spend: { totalCents: totalSpend, perDayRecentCents: perDayRecent, perDayProjectedCents: perDayProjected, daysWithSpend: spendDates.length, lastDate: spendDates.at(-1) ?? null, dailyBudgetCents: dailyBudget, budgetFrom, budgetDays, bookedDays: booked.size },
     visitors: input.visitors,
     signups,
     trials: { count: trials.length, priced: priced.length, maxMrrCents: maxMrr, realisticMrrCents: realisticMrr, byBehaviourMrrCents: byBehaviour, byBehaviourPct: maxMrr > 0 ? Math.round((byBehaviour / maxMrr) * 100) : null, avgMonthlyCents: avgTrialMonthly },
@@ -224,7 +278,7 @@ export function dollars(cents: number): string {
 
 /** One sentence investors read first: when the ads pay for themselves. */
 export function paybackSentence(f: InvestorFigures): string {
-  if (f.spend.totalCents === 0) return "No ad spend is booked yet, so there is nothing to recover.";
+  if (f.spend.totalCents === 0) return "No ad spend is set yet — set the daily budget, or book the days — so there is nothing to recover.";
   const run = dollars(f.projected.mrrRealisticCents);
   if (f.breakEven.date && f.breakEven.daysFromToday !== null) {
     if (f.breakEven.daysFromToday <= 0) return `The ad spend to date (${dollars(f.spend.totalCents)}) is already covered by revenue at list price; the run rate is ${run} a month.`;

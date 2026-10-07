@@ -67,7 +67,7 @@ export function InvestorPdfDocument({ report }: { report: InvestorReport }) {
         </View>
         <View style={s.grid}>
           {[
-            ["Ad spend", dollars(f.spend.totalCents), `${dollars(f.spend.perDayRecentCents)}/day lately`],
+            ["Ad spend", dollars(f.spend.totalCents), f.spend.dailyBudgetCents !== null && f.spend.budgetFrom ? `${dollars(f.spend.dailyBudgetCents)}/day, all ads, since ${longDate(f.spend.budgetFrom)}` : `${dollars(f.spend.perDayRecentCents)}/day lately`],
             ["Visitors", f.visitors === null ? "—" : f.visitors.toLocaleString("en-US"), f.visitors === null ? "analytics not reached" : `${money(f.unit.costPerVisitorCents)} each`],
             ["Signed up", String(f.signups), `${f.unit.signupsPerDay}/day · ${pct(f.unit.visitorToSignupPct)} of visitors`],
             ["On free trial", String(f.trials.count), `${dollars(f.trials.maxMrrCents)}/mo if all pay`],
@@ -114,6 +114,7 @@ export function InvestorPdfDocument({ report }: { report: InvestorReport }) {
         <View wrap={false}>
         <Text style={s.h2}>How these are figured</Text>
         <Text style={s.li}>· Counting from {longDate(f.since)}, the day the first campaign went live — only what happened from that day on. Visitors are unique people on www.jobflex.app, bots and previews out.{report.before.paying > 0 ? ` ${report.before.paying} account(s) paying from before that day (${dollars(report.before.mrrCents)}/mo) not counted.` : ""}</Text>
+        <Text style={s.li}>· Ad spend is {f.spend.dailyBudgetCents !== null && f.spend.budgetFrom ? `the daily budget, ${dollars(f.spend.dailyBudgetCents)} for all ads together, counted as spent every day since ${longDate(f.spend.budgetFrom)}` : "what was booked per day"}; tomorrow on it is projected at {dollars(f.spend.perDayProjectedCents)} a day.</Text>
         <Text style={s.li}>· A trial is worth its plan&apos;s monthly list price (a yearly plan as a twelfth, a custom plan by its pages). Discounts, taxes and churn are not modelled.</Text>
         <Text style={s.li}>· The realistic share is {a.realisticPct}% of trials paying; &quot;by behaviour&quot; reads each account&apos;s activity instead.</Text>
         <Text style={s.li}>· The curve: a paying account earns a thirtieth of its monthly price a day from the day it started paying, a trial from the day it ends; new signups arrive at {f.unit.signupsPerDay}/day at {dollars(f.trials.avgMonthlyCents)}/mo and pay after a {a.trialDays}-day trial; spend continues at {dollars(f.spend.perDayProjectedCents)}/day for {a.horizonDays} days.</Text>

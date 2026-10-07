@@ -61,6 +61,10 @@ export async function saveInvestorSettingsAction(input: Record<string, unknown> 
   else if (typeof input.spendPerDayDollars === "number") patch.spendPerDayCents = Math.round(input.spendPerDayDollars * 100);
   if (typeof input.horizonDays === "number") patch.horizonDays = input.horizonDays;
   if (typeof input.trialDays === "number") patch.trialDays = input.trialDays;
+  if (input.dailyBudgetDollars === null) patch.dailyBudgetCents = null;
+  else if (typeof input.dailyBudgetDollars === "number" && Number.isFinite(input.dailyBudgetDollars) && input.dailyBudgetDollars > 0) patch.dailyBudgetCents = Math.round(input.dailyBudgetDollars * 100);
+  if (input.budgetFrom === null) patch.budgetFrom = null;
+  else if (typeof input.budgetFrom === "string" && DATE.test(input.budgetFrom)) patch.budgetFrom = input.budgetFrom;
   if (input.sinceDate === null) patch.sinceDate = null;
   else if (typeof input.sinceDate === "string" && DATE.test(input.sinceDate)) patch.sinceDate = input.sinceDate;
   try {
@@ -68,6 +72,15 @@ export async function saveInvestorSettingsAction(input: Record<string, unknown> 
   } catch {
     return { ok: false, error: "The settings could not be saved. Try again." };
   }
+  return fresh();
+}
+
+/** Meta's own spend per day, the last 30 days, now (lib/metaAdSpend). */
+export async function pullMetaSpendAction(): Promise<Result> {
+  await requirePlatformAdmin();
+  const { pullMetaSpend } = await import("@/lib/metaAdSpend");
+  const pulled = await pullMetaSpend(30);
+  if (!pulled.ok) return { ok: false, error: pulled.error ?? "Meta did not answer." };
   return fresh();
 }
 
