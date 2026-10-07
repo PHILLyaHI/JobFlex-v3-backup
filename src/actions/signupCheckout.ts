@@ -179,29 +179,41 @@ async function metaContextFor(meta: z.infer<typeof pendingSchema>["meta"]): Prom
   return ctx;
 }
 
-export async function startPendingSignup(raw: unknown): Promise<{ ok: true; token: string }> {
-  const data = pendingSchema.parse(raw);
-  await enforceRateLimit(`signup-start:${await clientIp()}`, 5, HOUR, "sign-ups");
+/**
+ * Step 2's "Create account". Every refusal is RETURNED, never thrown: a
+ * production build withholds a server action's thrown message (only a digest
+ * crosses), so step 2 read "Minified React error #441" instead of the brake's
+ * "Too many sign-ups. Try again in 34 minutes." (prod, 2026-10-07).
+ */
+export async function startPendingSignup(raw: unknown): Promise<{ ok: true; token: string } | { ok: false; error: string }> {
+  const parsed = pendingSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message || "Check this step and try again." };
+  const data = parsed.data;
+  try {
+    await enforceRateLimit(`signup-start:${await clientIp()}`, 5, HOUR, "sign-ups");
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Too many sign-ups. Try again later." };
+  }
 
   // Google-backed: the address is the one Google verified, whatever the form
   // says, and there is no password to hash.
   let google: { email: string; image: string | null } | null = null;
   if (data.googleToken) {
     const g = await readGoogleSignup(data.googleToken);
-    if (!g) throw new Error("Your Google sign-in expired. Continue with Google again.");
+    if (!g) return { ok: false, error: "Your Google sign-in expired. Continue with Google again." };
     google = { email: g.email, image: g.image };
     data.email = g.email;
   } else if (!data.password) {
-    throw new Error("Choose a password, or continue with Google.");
+    return { ok: false, error: "Choose a password, or continue with Google." };
   }
   // Step 1 refused a throwaway inbox already; this is the server's own word.
-  if (isDisposableEmail(data.email)) throw new Error(DISPOSABLE_EMAIL_MESSAGE);
+  if (isDisposableEmail(data.email)) return { ok: false, error: DISPOSABLE_EMAIL_MESSAGE };
 
   // Same answer as registration gives, at the same point in the flow: you
   // cannot hide that an address is taken when the next step would collide.
   const existing = await db.user.findUnique({ where: { email: data.email }, select: { id: true } });
   if (existing) {
-    throw new Error("That email is already registered. Try signing in instead.");
+    return { ok: false, error: "That email is already registered. Try signing in instead." };
   }
 
   const token = randomUUID();

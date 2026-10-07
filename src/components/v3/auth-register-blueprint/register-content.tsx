@@ -89,6 +89,12 @@ type Step = 1 | 2 | 3 | 4;
 /** Fallback trial length, used only until the catalog answers. */
 const DEFAULT_TRIAL_DAYS = TRIAL_DAYS;
 
+/** What a step says when its server action THREW. A production build withholds
+ *  a thrown message (the visitor read "Minified React error #441", 2026-10-07),
+ *  so a refusal the visitor should read is returned by the action, and a throw
+ *  means our side failed. */
+const SERVER_TROUBLE = "Something went wrong on our side. Try again in a minute.";
+
 // How long the "Your shop is live" panel holds before it hands over to the
 // dashboard. Shared by both register surfaces.
 export const REDIRECT_SECONDS = 5;
@@ -1010,8 +1016,8 @@ export function RegisterContent({
         step1Outcome("error", /Google/.test(msg) ? "email_google" : /temporary|throwaway|disposable/i.test(msg) ? "email_disposable" : /Too many/.test(msg) ? "rate_limited" : /valid email/.test(msg) ? "email_invalid" : "email_taken");
         return;
       }
-    } catch (err: unknown) {
-      setErr1(err instanceof Error ? err.message : "Couldn't check that email. Try again.");
+    } catch {
+      setErr1(SERVER_TROUBLE);
       step1Outcome("error", "check_failed");
       return;
     } finally {
@@ -1098,6 +1104,11 @@ export function RegisterContent({
           sourceUrl: typeof window !== "undefined" ? window.location.origin + window.location.pathname : undefined,
         },
       });
+      if (!res.ok) {
+        setErr2(res.error);
+        toast.error("Couldn't continue", res.error);
+        return;
+      }
       try {
         sessionStorage.setItem("jf_meta_reg:" + res.token, metaIds.current.registration);
       } catch {
@@ -1105,10 +1116,9 @@ export function RegisterContent({
       }
       setToken(res.token);
       setStep(3);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Couldn't continue.";
-      setErr2(msg);
-      toast.error("Couldn't continue", msg);
+    } catch {
+      setErr2(SERVER_TROUBLE);
+      toast.error("Couldn't continue", SERVER_TROUBLE);
     } finally {
       setCreating(false);
     }

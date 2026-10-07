@@ -14,17 +14,12 @@
 // are removed after. Rebuilds first when src/ is newer than the build (a few minutes).
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/mobile-sweep.check.ts
 // The full sweep (every route, every identity, every sheet) is .cache/mobile-sweep/run.sh.
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import net from "node:net";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
+import { ensureBuild, playwright, startServer, stopServer } from "./_prod-server";
 import { db, makeCrewWorld } from "./_crewWorld";
 import { localDayKey } from "../../src/lib/jobProgressShared";
 
-const ROOT = path.resolve(__dirname, "..", "..");
-const DIST = ".cache/next-sweep";
 const PORT = Number(process.env.QA_SWEEP_PORT || 3311);
 const BASE = `http://localhost:${PORT}`;
 process.env.QA_BASE_URL = BASE; // ./_qa reads it once, on load
@@ -37,66 +32,6 @@ let bad = 0;
 const check = (name: string, ok: boolean, extra = "") => { if (!ok) bad++; console.log(`${ok ? "ok  " : "FAIL"} ${name}${extra ? " — " + extra : ""}`); };
 const note = (name: string, extra = "") => console.log(`note ${name}${extra ? " — " + extra : ""}`);
 
-/** Playwright: here, in the root, on NODE_PATH, or in an npx cache — and made resolvable by
- *  name for ./_qa, which requires it itself. */
-function playwright() {
-  let dir: string | null = null;
-  for (const from of [__dirname, ROOT]) { try { dir = path.dirname(req.resolve("playwright/package.json", { paths: [from] })); break; } catch { /* next */ } }
-  const cache = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "npm-cache", "_npx");
-  if (!dir && fs.existsSync(cache)) for (const d of fs.readdirSync(cache)) { const p = path.join(cache, d, "node_modules", "playwright"); if (fs.existsSync(path.join(p, "package.json"))) { dir = p; break; } }
-  if (!dir) throw new Error("playwright is not installed — `npm install` in scripts/qa (README)");
-  process.env.NODE_PATH = [path.dirname(dir), process.env.NODE_PATH].filter(Boolean).join(path.delimiter);
-  req("module").Module._initPaths();
-  return req(dir);
-}
-
-/** The newest source file, to know whether the build is current. */
-function newest(dir: string): number {
-  let t = 0;
-  for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, f.name);
-    t = Math.max(t, f.isDirectory() ? newest(p) : fs.statSync(p).mtimeMs);
-  }
-  return t;
-}
-/** The environment for next build / next start. Prisma, imported above, has loaded .env into
- *  this process — and .env's NEXTAUTH_SECRET is not .env.local's, so a server started with it
- *  rejects the session every other server on this machine accepts (the dev server answered the
- *  compare with its sign-in page). Next reads the env files itself, in its own order. */
-function serverEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  try {
-    for (const line of fs.readFileSync(path.join(ROOT, ".env"), "utf8").split(/\r?\n/)) {
-      const m = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/);
-      if (m) delete env[m[1]];
-    }
-  } catch { /* no .env */ }
-  return env;
-}
-function ensureBuild() {
-  const id = path.join(ROOT, DIST, "BUILD_ID");
-  const src = Math.max(newest(path.join(ROOT, "src")), fs.statSync(path.join(ROOT, "next.config.ts")).mtimeMs);
-  if (fs.existsSync(id) && fs.statSync(id).mtimeMs > src) return note("production build", `${DIST} is current`);
-  note("production build", `${DIST} is older than src/ — building (next build, a few minutes)`);
-  // `next build` adds its dist dir's types to tsconfig.json; that is not a change anyone made.
-  const tsconfig = fs.readFileSync(path.join(ROOT, "tsconfig.json"));
-  try {
-    const r = spawnSync(process.execPath, ["node_modules/next/dist/bin/next", "build"], { cwd: ROOT, env: { ...serverEnv(), JOBFLEX_DIST_DIR: DIST }, encoding: "utf8", maxBuffer: 64 << 20 });
-    if (r.status !== 0) throw new Error("next build failed:\n" + (r.stdout + r.stderr).split("\n").slice(-25).join("\n"));
-  } finally { fs.writeFileSync(path.join(ROOT, "tsconfig.json"), tsconfig); }
-}
-const listening = (port: number) => new Promise<boolean>((res) => { const s = net.connect(port, "127.0.0.1"); s.once("connect", () => { s.destroy(); res(true); }); s.once("error", () => res(false)); });
-async function startServer(): Promise<ChildProcess> {
-  if (await listening(PORT)) throw new Error(`port ${PORT} is taken — set QA_SWEEP_PORT`);
-  const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(PORT)], { cwd: ROOT, env: { ...serverEnv(), JOBFLEX_DIST_DIR: DIST, AUTH_TRUST_HOST: "true" }, stdio: "ignore" });
-  for (let i = 0; i < 120; i++) { if (await listening(PORT)) { await sleep(800); return child; } await sleep(500); }
-  throw new Error("next start did not come up");
-}
-function stopServer(child: ChildProcess | null) {
-  if (!child || child.pid === undefined) return;
-  if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
-  else child.kill("SIGTERM");
-}
 async function devBase(): Promise<string | null> {
   const list = process.env.QA_DEV_URL ? [process.env.QA_DEV_URL] : ["http://localhost:3001", "http://localhost:3000"];
   for (const u of list) { try { const r = await fetch(u + "/auth/login", { signal: AbortSignal.timeout(4000) }); if (r.status < 500) return u.replace(/\/$/, ""); } catch { /* not this one */ } }
@@ -154,10 +89,10 @@ async function withCrew(run: (crew: Awaited<ReturnType<typeof makeCrewWorld>>) =
 
 async function main() {
   const pw = playwright();
-  ensureBuild();
+  ensureBuild(note);
   let server: ChildProcess | null = null;
   try {
-    server = await startServer();
+    server = await startServer(PORT, {}, "QA_SWEEP_PORT");
     // ./_world first (it clears QA Co's jobs on its way up), then the crew world on top of it.
     await qa.withWorld(() => withCrew(async (crew) => {
       // The portal's job page wants an open day to show Close day — made by hand, nothing started.

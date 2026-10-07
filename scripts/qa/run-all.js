@@ -1,8 +1,9 @@
 // The whole QA set, one verdict line each:   node scripts/qa/run-all.js [--checks | --pages]
 //  · checks — every *.check.ts (plus the three older data-level harnesses): no browser, no
 //    network; the few that write to the dev database do it in throwaway organisations.
-//    The one exception is mobile-sweep.check.ts: a phone (WebKit) over its own production
-//    build on localhost — see its header.
+//    The two exceptions drive a browser over a production build on localhost (./_prod-server):
+//    mobile-sweep.check.ts (a phone, WebKit) and signup-flow.check.ts (landing → step 1 → 2 →
+//    Stripe test Checkout for every industry) — see their headers.
 //  · pages  — the Playwright passes. They sign in as qa@acme.test, work ONLY in QA Co, make
 //    the records they need there (./_world, seed-phone) and remove them. Needs the dev server
 //    on localhost:$QA_PORT (default 3000; or QA_BASE_URL in full) and `playwright` resolvable
@@ -23,8 +24,8 @@ const PAGES = [
   ["ann-test.js"], ["sub-test.js"], ["fence-test.js"], ["roof-test.js", "seed-roof.js"],
 ];
 const run = (cmd, args, cwd, timeout = 300000) => spawnSync(cmd, args, { cwd, encoding: "utf8", shell: process.platform === "win32", timeout, maxBuffer: 64 << 20 });
-// The phone sweep drives a browser over a production build (and rebuilds it when src/ moved on): its own clock.
-const SLOW = { "mobile-sweep.check.ts": 30 * 60_000 };
+// The browser checks over a production build (rebuilt when src/ moved on): their own clock.
+const SLOW = { "mobile-sweep.check.ts": 30 * 60_000, "signup-flow.check.ts": 20 * 60_000 };
 const rows = [];
 
 // Before anything runs — a check, a seed, a browser: a local dev database, and qa@acme.test in
