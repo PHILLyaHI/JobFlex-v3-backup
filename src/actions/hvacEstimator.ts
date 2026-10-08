@@ -306,18 +306,22 @@ export async function readHvacNameplate(raw: unknown): Promise<{ ok: true; read:
 
 // ── catalog ─────────────────────────────────────────────────────────────────
 
-/** The org's catalog, or the starter ladder when it has none (or the table is
- *  not pushed yet). `own` says which. */
-export async function listHvacCatalog(): Promise<{ items: CatalogItem[]; own: boolean }> {
+/** The org's catalog; with none (or the table not pushed yet), the built-in
+ *  US list — real brands and model numbers, priced from the rate card until
+ *  the shop imports its costs (2026-10-08, owner: "make sure you offer models
+ *  and brands"; before this a shop with no rows saw a synthetic "Starter"
+ *  ladder). The starter ladder remains only for a build whose US list is
+ *  empty. `own` says whether the rows are the shop's; `source` which list. */
+export async function listHvacCatalog(): Promise<{ items: CatalogItem[]; own: boolean; source: "shop" | "us" | "starter" }> {
   const { organizationId } = await requireEstimatorOrManager();
   await requirePage(organizationId, "hvac-estimator");
   try {
     const rows = await db.hvacCatalogItem.findMany({ where: { organizationId }, orderBy: [{ kind: "asc" }, { brand: "asc" }, { model: "asc" }] });
-    if (rows.length) return { items: rows.map((r) => JSON.parse(r.itemJson) as CatalogItem), own: true };
+    if (rows.length) return { items: rows.map((r) => JSON.parse(r.itemJson) as CatalogItem), own: true, source: "shop" };
   } catch {
     /* table not pushed yet */
   }
-  return { items: STARTER_CATALOG, own: false };
+  return US_CATALOG.length ? { items: US_CATALOG, own: false, source: "us" } : { items: STARTER_CATALOG, own: false, source: "starter" };
 }
 
 export async function importHvacCatalogCsv(raw: unknown): Promise<{ ok: true; imported: number; errors: string[]; note?: string } | { ok: false; error: string }> {

@@ -77,6 +77,9 @@ export interface ExistingSystem {
   seer?: number;
   afue?: number;
   yearMade?: number;
+  /** Did it keep up on the hottest days? The one load check no table beats
+   *  (2026-10-08): "yes" says the house is no bigger than the old unit. */
+  keptUp?: "yes" | "no";
 }
 
 export interface Electrical {
@@ -100,6 +103,13 @@ export interface Ducts {
   /** Measured total external static pressure, inches of water column. */
   measuredTespInWc?: number;
   supplyRegisters?: number;
+  /** The supply trunk at the plenum, as typed: "16" (a round, inches) or
+   *  "20x8" (rectangular) — lib/hvac/ductCalc reads it (2026-10-08). */
+  supplyTrunk?: string;
+  /** The return duct — not the grille — the same way. */
+  returnDuct?: string;
+  /** The branch runs' diameter, inches (6 in most houses). */
+  branchIn?: number;
 }
 
 export interface Gas {
@@ -126,6 +136,15 @@ export interface Room {
   exteriorWalls?: FootprintEdge[];
   windowSqft?: number;
   source: Source;
+}
+
+export interface InputConflict {
+  /** The field, as a provenance path ("conditionedSqft", "storeys"). */
+  path: string;
+  /** The record's value, kept. */
+  kept: string;
+  /** What the walk said. */
+  walk: string;
 }
 
 export interface BuildingModel {
@@ -155,12 +174,20 @@ export interface BuildingModel {
   shading: Shading;
   occupants: number;
 
+  /** A whole-house ventilation fan (exhaust, supply, HRV / ERV). Unset = the
+   *  era rule (tight, or built 2012 or later, runs one); false = none, so no
+   *  ventilation load; true = one is there (2026-10-08). */
+  ventilationFan?: boolean;
+
   existing: ExistingSystem;
   electrical: Electrical;
   ducts: Ducts;
   gas: Gas;
   preferences: Preferences;
   rooms?: Room[];
+  /** Where the walk's transcribed figure disagreed with a high-confidence
+   *  record and the record was kept (2026-10-08): the card says "confirm". */
+  conflicts?: InputConflict[];
 
   provenance: ProvenanceMap;
 }
@@ -332,6 +359,20 @@ export interface SelectionResult {
   perSystem?: { coolingTotalBtuh: number; heatingBtuh: number };
 }
 
+/** Whether the ducts were held against the airflow, and what they carry
+ *  (lib/hvac/ductCalc, 2026-10-08). */
+export interface AirflowVerdict {
+  /** The airflow the chosen unit (or, with none, the load) moves, CFM. */
+  targetCfm: number;
+  /** "static": a measured static reading; "sizes": the duct sizes; "none": nothing measured yet. */
+  verifiedBy: "static" | "sizes" | "none";
+  /** What the measured ducts carry, when sizes were entered. */
+  capacityCfm?: number;
+  limitedBy?: string;
+  /** The chosen unit was stepped down to what the ducts carry. */
+  sizedToDucts?: boolean;
+}
+
 export interface EngineResult {
   /** The job the engine ran for (src/lib/hvac/jobs.ts). */
   job: string;
@@ -347,5 +388,7 @@ export interface EngineResult {
   checks: CheckResult[];
   /** Everything a customer could ask about, with its date. */
   notes: Array<{ kind: "code" | "incentive" | "assumption" | "contractor"; text: string }>;
+  /** The ducts against the airflow; absent on a result saved before 2026-10-08. */
+  airflow?: AirflowVerdict;
   engineVersion: string;
 }

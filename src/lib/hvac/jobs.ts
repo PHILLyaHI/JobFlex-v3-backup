@@ -16,7 +16,7 @@ export type JobKind =
   | "ducts"
   | "service";
 
-export type CheckId = "return" | "static" | "duct-cond" | "duct-ins" | "ducts-none" | "service" | "gas" | "refrigerant" | "efficiency" | "code";
+export type CheckId = "return" | "static" | "duct-size" | "sizing" | "duct-cond" | "duct-ins" | "ducts-none" | "service" | "gas" | "refrigerant" | "efficiency" | "code";
 
 export interface JobDef {
   id: JobKind;
@@ -43,7 +43,7 @@ export const JOBS: JobDef[] = [
     needs: { load: true, existing: true, electrical: true, ducts: true, gas: true, zone: false, waterHeater: false },
     selection: "system",
     kinds: ["air-conditioner", "heat-pump", "package"],
-    checks: ["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "gas", "refrigerant", "efficiency", "code"],
+    checks: ["return", "static", "duct-size", "sizing", "duct-cond", "duct-ins", "ducts-none", "service", "gas", "refrigerant", "efficiency", "code"],
     shots: [1, 2, 3, 4, 5, 6, 7],
   },
   {
@@ -53,7 +53,7 @@ export const JOBS: JobDef[] = [
     needs: { load: true, existing: true, electrical: true, ducts: false, gas: false, zone: false, waterHeater: false },
     selection: "outdoor",
     kinds: ["air-conditioner", "heat-pump"],
-    checks: ["service", "refrigerant", "efficiency", "code", "static"],
+    checks: ["service", "refrigerant", "efficiency", "code", "static", "duct-size", "sizing"],
     shots: [1, 2, 3, 6],
   },
   {
@@ -65,7 +65,7 @@ export const JOBS: JobDef[] = [
     kinds: ["furnace"],
     // "service": an electric furnace is a 240 V heat kit on the panel; a gas
     // furnace's 120 V circuit passes the count trivially.
-    checks: ["return", "static", "duct-cond", "gas", "service", "code"],
+    checks: ["return", "static", "duct-size", "duct-cond", "gas", "service", "code"],
     shots: [2, 4, 5, 6],
   },
   {
@@ -75,7 +75,7 @@ export const JOBS: JobDef[] = [
     needs: { load: true, existing: true, electrical: true, ducts: true, gas: false, zone: false, waterHeater: false },
     selection: "cooling-add",
     kinds: ["air-conditioner"],
-    checks: ["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "refrigerant", "efficiency", "code"],
+    checks: ["return", "static", "duct-size", "sizing", "duct-cond", "duct-ins", "ducts-none", "service", "refrigerant", "efficiency", "code"],
     shots: [2, 3, 4, 6],
   },
   {
@@ -85,7 +85,7 @@ export const JOBS: JobDef[] = [
     needs: { load: true, existing: true, electrical: true, ducts: true, gas: true, zone: false, waterHeater: false },
     selection: "heat-pump",
     kinds: ["heat-pump"],
-    checks: ["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "refrigerant", "efficiency", "code"],
+    checks: ["return", "static", "duct-size", "sizing", "duct-cond", "duct-ins", "ducts-none", "service", "refrigerant", "efficiency", "code"],
     shots: [1, 2, 3, 4, 6, 7],
   },
   {
@@ -115,7 +115,7 @@ export const JOBS: JobDef[] = [
     needs: { load: true, existing: false, electrical: false, ducts: true, gas: false, zone: false, waterHeater: false },
     selection: "none",
     kinds: [],
-    checks: ["return", "static", "duct-cond", "duct-ins", "ducts-none", "code"],
+    checks: ["return", "static", "duct-size", "duct-cond", "duct-ins", "ducts-none", "code"],
     shots: [4, 6],
   },
   {

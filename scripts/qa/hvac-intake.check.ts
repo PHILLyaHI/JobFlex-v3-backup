@@ -128,7 +128,8 @@ ok("Furnace plate → 60k input", m2.existing.btuInput === 60000, `${m2.existing
 ok("Furnace plate assumes gas fuel, low confidence", m2.existing.fuel === "gas" && m2.provenance["existing.fuel"].confidence === "low");
 const m3 = modelFromSite(site);
 applyNameplate(m3, { kind: "outdoor", brand: "Carrier", model: "24ACC636A003", tons: 4, confidence: "low" });
-ok("Plate's own tons beat the decode", m3.existing.tons === 4);
+// 2026-10-08: the model number's decode beats the plate reader's figure; the badge keeps the disagreement.
+ok("The model number's decode beats the plate reader's tons (a 036 is 3 t), and the badge says the reader disagreed", m3.existing.tons === 3 && /plate reader said 4 t — confirm/.test(m3.provenance["existing.tons"].note ?? ""), `${m3.existing.tons} · ${m3.provenance["existing.tons"].note}`);
 // Regex guards: negation, preference and dimension products.
 const obs = (texts: string[], meas: WalkthroughAnalysis["measurements"] = []) => { const mm = modelFromSite({ address: "x", state: "TX", footprintSqft: 2000, storeys: 1, yearBuilt: 1998, sources: {} }); applyWalkthrough(mm, { ...analysis, measurements: meas, observations: texts, transcriptHighlights: [] }); return mm; };
 ok("\"No basement\" leaves the foundation alone", obs(["No basement under the house."]).provenance.foundation.source === "default");
@@ -136,6 +137,40 @@ ok("\"Interested in a heat pump\" is a preference, not the existing kind", (() =
 ok("\"No noise complaints\" is not noise sensitivity", obs(["No noise complaints from the neighbours."]).preferences.noiseSensitive === undefined);
 ok("\"Wants it quiet\" is", obs(["She wants it quiet, the old one is too loud."]).preferences.noiseSensitive === true);
 ok("Return grille 20x25 → 500 sq in", obs([], [{ label: "Return grille size", value: "20x25", unit: "in", confidence: "high", source: "spoken" }]).ducts.returnGrilleSqIn === 500);
+// the duct calculator's inputs and the kept-up answer (2026-10-08)
+ok("Supply trunk 20x8 lands as typed", obs([], [{ label: "Supply trunk", value: "20x8", unit: "in", confidence: "high", source: "visual" }]).ducts.supplyTrunk === "20x8");
+ok("Return duct 16 lands; a return GRILLE does not become a duct", (() => { const m = obs([], [{ label: "Return duct", value: "16", unit: "in", confidence: "high", source: "visual" }, { label: "Return grille", value: "20x25", unit: "in", confidence: "high", source: "visual" }]); return m.ducts.returnDuct === "16" && m.ducts.returnGrilleSqIn === 500; })());
+ok("Branch runs 6 in", obs([], [{ label: "Branch run size", value: "6", unit: "in", confidence: "medium", source: "visual" }]).ducts.branchIn === 6);
+ok("'couldn't keep up in August' → keptUp no", obs(["The old unit couldn't keep up in August"]).existing.keptUp === "no");
+ok("'kept up fine on the hottest days' → keptUp yes", obs(["The old 3 ton kept up fine on the hottest days"]).existing.keptUp === "yes");
+ok("'never kept up' is not a yes", obs(["It never kept up on hot afternoons"]).existing.keptUp === "no");
+// the 2026-10-08 fixes: the walk reader's own label, the fan, records over speech, decode over the plate reader
+ok("'Outdoor unit tons or BTU: 3' is 3 tons, not a furnace input", (() => { const m = obs([], [{ label: "Outdoor unit tons or BTU", value: "3", confidence: "high", source: "visual" }]); return m.existing.tons === 3 && !m.existing.btuInput; })());
+ok("'Outdoor unit tons or BTU: 36000' is 3 tons", obs([], [{ label: "Outdoor unit tons or BTU", value: "36000", confidence: "high", source: "visual" }]).existing.tons === 3);
+ok("'Furnace BTU input: 80000' is still the furnace input", (() => { const m = obs([], [{ label: "Furnace BTU input", value: "80000", confidence: "high", source: "visual" }]); return m.existing.btuInput === 80000 && !m.existing.tons; })());
+ok("'there's an ERV in the utility room' → a fan", obs(["There's an ERV in the utility room"]).ventilationFan === true);
+ok("'no whole-house fan' → none", obs(["No whole-house fan, just bath fans"]).ventilationFan === false);
+ok("'Ventilation: none' as a reading → none", obs([], [{ label: "Ventilation", value: "none", confidence: "medium", source: "spoken" }]).ventilationFan === false);
+{
+  // a spoken figure against the assessor's living area (read / high): the record stays, the disagreement is kept
+  const rec = modelFromSite({ address: "x", state: "TX", footprintSqft: 1850, storeys: 1, yearBuilt: 1998, livingSqft: 1850, sources: { living: "county assessor" } });
+  const r = applyWalkthrough(rec, { ...analysis, measurements: [{ label: "Square footage", value: "2,400", confidence: "high", source: "spoken" }], observations: [], transcriptHighlights: [] });
+  ok("records beat transcribed speech: the assessor's 1,850 stays", rec.conditionedSqft === 1850 && rec.provenance.conditionedSqft.source === "read", `${rec.conditionedSqft} ${rec.provenance.conditionedSqft.source}`);
+  ok("…the disagreement is kept for the contractor", r.conflicts.length === 1 && r.conflicts[0].path === "conditionedSqft" && r.conflicts[0].walk === "2400" && rec.conflicts?.length === 1 && /the walk said 2400 — confirm/.test(rec.provenance.conditionedSqft.note ?? ""), JSON.stringify(r.conflicts));
+  const agree = modelFromSite({ address: "x", state: "TX", footprintSqft: 1850, storeys: 1, yearBuilt: 1998, livingSqft: 1850, sources: { living: "county assessor" } });
+  const r2 = applyWalkthrough(agree, { ...analysis, measurements: [{ label: "Square footage", value: "1,900", confidence: "high", source: "spoken" }], observations: [], transcriptHighlights: [] });
+  ok("a figure within 10% of the record is no conflict", r2.conflicts.length === 0, String(r2.conflicts.length));
+}
+{
+  // the plate reader says 4 t, the model number decodes to 3 t: the decode stands, the badge says confirm
+  const m = modelFromSite({ address: "x", state: "TX", footprintSqft: 2000, storeys: 1, yearBuilt: 1998, sources: {} });
+  applyNameplate(m, { kind: "outdoor", brand: "Carrier", model: "24ACC636A003", tons: 4, confidence: "high" });
+  ok("the model number's decode beats the plate reader's tons", m.existing.tons === 3, String(m.existing.tons));
+  ok("…and the badge says the reader disagreed", /plate reader said 4 t — confirm/.test(m.provenance["existing.tons"].note ?? "") && m.provenance["existing.tons"].confidence === "medium", m.provenance["existing.tons"].note);
+  const m2 = modelFromSite({ address: "x", state: "TX", footprintSqft: 2000, storeys: 1, yearBuilt: 1998, sources: {} });
+  applyNameplate(m2, { kind: "outdoor", brand: "Acme", model: "ZZ-UNKNOWN", tons: 4, confidence: "high" });
+  ok("with no decode the plate reader's tons stand", m2.existing.tons === 4);
+}
 ok("\"Packaged shingles\" is not a package unit", obs(["Packaged shingles stacked by the garage."]).existing.kind === "split-ac-furnace");
 const m4 = modelFromSite({ address: "x", state: "TX", footprintSqft: 1500, storeys: 1, sources: {} });
 applyWalkthrough(m4, { ...analysis, measurements: [{ label: "Square footage", value: "about 1,600", confidence: "low", source: "inferred" }] });

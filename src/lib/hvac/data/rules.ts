@@ -187,8 +187,10 @@ export function efficiencyFloor(state: string, kind: "air-conditioner" | "heat-p
   return {
     seer2: big ? 13.8 : 14.3,
     eer2: big ? 11.2 : 11.7,
-    eer2IfHighSeer: 9.8,
-    text: big ? "Southwest, 45,000 BTU/h and up: 13.8 SEER2 and 11.2 EER2 (9.8 EER2 if the unit is certified at 15.2 SEER2 or higher)." : "Southwest: 14.3 SEER2 and 11.7 EER2 (9.8 EER2 if the unit is certified at 15.2 SEER2 or higher).",
+    // DOE 2023: the lower floor for a high-SEER2 unit is 9.8 under 45,000
+    // BTU/h and 9.5 from 45,000 up (fixed 2026-10-08; both classes read 9.8).
+    eer2IfHighSeer: big ? 9.5 : 9.8,
+    text: big ? "Southwest, 45,000 BTU/h and up: 13.8 SEER2 and 11.2 EER2 (9.5 EER2 if the unit is certified at 15.2 SEER2 or higher)." : "Southwest: 14.3 SEER2 and 11.7 EER2 (9.8 EER2 if the unit is certified at 15.2 SEER2 or higher).",
     source,
   };
 }

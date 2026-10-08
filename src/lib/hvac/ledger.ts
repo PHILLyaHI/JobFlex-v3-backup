@@ -52,6 +52,8 @@ export interface HvacRateCard {
     gasConnect: number;
     ventingPerFt: number;
     returnUpsize: number;
+    /** Cut in a larger trunk section and plenum take-off so the ducts carry the new airflow (2026-10-08). */
+    trunkUpsize: number;
     ductSealPerRegister: number;
     ductRunReplace: number;
     ductTrunkLot: number;
@@ -87,6 +89,7 @@ export interface HvacRateCard {
     breakerAndWirePerFt: number;
     breaker: number;
     returnGrilleUpsize: number;
+    trunkUpsize: number;
     ductSealKit: number;
     ductRunEach: number;
     ductTrunkLot: number;
@@ -156,6 +159,7 @@ export const DEFAULT_RATE_CARD: HvacRateCard = {
     gasConnect: 150,
     ventingPerFt: 12,
     returnUpsize: 600,
+    trunkUpsize: 650,
     ductSealPerRegister: 45,
     ductRunReplace: 220,
     ductTrunkLot: 1400,
@@ -182,6 +186,7 @@ export const DEFAULT_RATE_CARD: HvacRateCard = {
     breakerAndWirePerFt: 4.5,
     breaker: 60,
     returnGrilleUpsize: 220,
+    trunkUpsize: 480,
     ductSealKit: 180,
     ductRunEach: 95,
     ductTrunkLot: 900,
@@ -596,6 +601,12 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
     stock("m-brk", "2-pole breaker for the new circuit", n, "each", card.materials.breaker);
   }
   if (check("return") === "fix") stock("m-return", "Return grille and duct upsize", 1, "each", card.materials.returnGrilleUpsize, engine.checks.find((c) => c.id === "return")?.detail);
+  // The ducts as measured will not carry the unit's air (lib/hvac/ductCalc,
+  // 2026-10-08): the trunk or return section that will is on the job.
+  if (check("duct-size") === "fix") {
+    stock("m-trunk-up", "Supply trunk / return duct upsize to carry the airflow", 1, "each", card.materials.trunkUpsize, engine.checks.find((c) => c.id === "duct-size")?.detail);
+    task("l-trunk-up", "Cut in the larger trunk section and plenum take-off", 1, "each", card.labor.trunkUpsize);
+  }
   if (check("duct-cond") === "fix" || (m.ducts.condition === "poor" && job !== "replace-outdoor" && job !== "ductless")) stock("m-seal", "Duct sealing (mastic, tape, collars)", 1, "lot", card.materials.ductSealKit);
 
   // ── labor, by the task ────────────────────────────────────────────────────
@@ -649,6 +660,12 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
   if (newFurnace && furnaceRow && furnaceRow.maxTons === undefined && (job === "replace-system" || job === "replace-furnace")) assumptions.push(`The furnace cabinet is chosen by airflow, not BTU: its blower must move ${engine.load.coolingCfm.toLocaleString("en-US")} CFM at 0.5 in. w.c. for the ${tons}-ton coil — check the blower table.`);
   if (noGasHouse && job === "replace-furnace") assumptions.push("No gas at the property: a gas service is the utility's quote and is not on this estimate — or price an electric furnace or a heat pump instead.");
   if (dualFuel) assumptions.push("Dual fuel: the existing furnace stays as backup and the dual-fuel thermostat switches to gas below the balance point.");
+  // Nothing measured on the ducts: said on the estimate and in the proposal (2026-10-08).
+  const airflowLine = job === "ductless" || !engine.airflow ? ""
+    : engine.airflow.verifiedBy === "none" ? "Airflow to be verified before install: total external static measured on the existing system (or the supply trunk and return duct sizes); if the ducts cannot carry the new blower's air, the duct correction is quoted separately."
+    : engine.airflow.sizedToDucts && engine.airflow.capacityCfm ? `Sized to the ducts in the house, which carry about ${engine.airflow.capacityCfm.toLocaleString("en-US")} CFM.`
+    : "";
+  if (airflowLine && engine.airflow?.verifiedBy === "none") assumptions.push(airflowLine);
 
   const subtotal = r2([...mat, ...lab].reduce((a, l) => a + l.quantity * l.unitPrice, 0));
   const c = engine.conditions;
@@ -684,7 +701,7 @@ function systemLedger(job: JobKind, engine: EngineResult, m: BuildingModel, card
     ductless: `Ductless mini-split, ${heads} head${heads === 1 ? "" : "s"}`,
     "water-heater": "", ducts: "", service: "",
   };
-  return { title: `${titles[job]} — ${m.address.split(",")[0]}`, scope: [what[job], loadLine, includes[job]].join(" "), materials: mat, labor: lab, assumptions, subtotal };
+  return { title: `${titles[job]} — ${m.address.split(",")[0]}`, scope: [what[job], loadLine, includes[job], airflowLine].filter(Boolean).join(" "), materials: mat, labor: lab, assumptions, subtotal };
 }
 
 /** A2L outdoor unit on an older coil: the coil and line set change. */
@@ -862,6 +879,10 @@ function ductsLedger(engine: EngineResult, m: BuildingModel, card: HvacRateCard,
   if (!noDucts && (check("return") === "fix" || check("static") === "fix")) {
     mat.push({ id: "m-return", name: "Return grille and duct upsize", quantity: 1, unitPrice: mk(card.materials.returnGrilleUpsize), unit: "each", basis: "estimated", note: engine.checks.find((c) => c.id === (check("return") === "fix" ? "return" : "static"))?.detail });
     lab.push({ id: "l-return", name: "Cut in and duct the larger return", quantity: 1, unitPrice: L.returnUpsize, unit: "each", basis: "estimated" });
+  }
+  if (!noDucts && check("duct-size") === "fix") {
+    mat.push({ id: "m-trunk-up", name: "Supply trunk / return duct upsize to carry the airflow", quantity: 1, unitPrice: mk(card.materials.trunkUpsize), unit: "each", basis: "estimated", note: engine.checks.find((c) => c.id === "duct-size")?.detail });
+    lab.push({ id: "l-trunk-up", name: "Cut in the larger trunk section and plenum take-off", quantity: 1, unitPrice: L.trunkUpsize, unit: "each", basis: "estimated" });
   }
   // Replaced runs come insulated; only kept runs get wrapped.
   if (!replace && check("duct-ins") === "fix") {

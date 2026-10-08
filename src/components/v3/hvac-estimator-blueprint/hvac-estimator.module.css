@@ -134,6 +134,8 @@
 :global(.jf-blueprint .content) .hero-cell:last-child { border-right: none; }
 :global(.jf-blueprint .content) .hero-v { margin-top: 8px; font-size: 28px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.015em; white-space: nowrap; }
 :global(.jf-blueprint .content) .hero-v.accent { color: var(--blueprint); }
+/* the airflow cell when nothing was measured on the ducts (2026-10-08) */
+:global(.jf-blueprint .content) .hero-h.hero-warn { color: var(--danger); white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
 :global(.jf-blueprint .content) .hero-v small { font-size: 13px; font-weight: 700; letter-spacing: 0; color: var(--muted); margin-left: 4px; }
 :global(.jf-blueprint .content) .hero-h { margin-top: 7px; font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

@@ -112,7 +112,10 @@ export function computeBlockLoad(m: BuildingModel, c: DesignConditions, opts: { 
   // whole-house fan the code requires, and Manual J (Section 11) adds that
   // air to the load: ASHRAE 62.2, 0.03 CFM per sq ft plus 7.5 CFM per person.
   // Not on a ductless zone — one room does not carry the house's fan.
-  const ventilated = !opts.zone && (m.tightness === "tight" || m.tightness === "very-tight" || (m.yearBuilt ?? 0) >= 2012);
+  // The contractor's answer about the fan wins (2026-10-08); the era rule
+  // stands in only while nobody has said.
+  const fanByRule = m.tightness === "tight" || m.tightness === "very-tight" || (m.yearBuilt ?? 0) >= 2012;
+  const ventilated = !opts.zone && (typeof m.ventilationFan === "boolean" ? m.ventilationFan : fanByRule);
   // Air at altitude is thinner: the 1.1 / 0.68 constants are sea-level, and
   // Manual J's altitude correction (about 0.83 at 5,000 ft) scales them.
   const acf = Math.max(0.6, Math.pow(1 - 6.8754e-6 * Math.max(0, c.elevationFt ?? 0), 5.2559));
@@ -146,8 +149,11 @@ export function computeBlockLoad(m: BuildingModel, c: DesignConditions, opts: { 
   const ventCfm = ventilated ? 0.03 * area + 7.5 * (m.occupants > 0 ? m.occupants : 3) : 0;
   if (ventCfm > 0) {
     push(`Ventilation · ${Math.round(ventCfm)} CFM (ASHRAE 62.2 whole-house fan)`, SENS * ventCfm * dtHeat, SENS * ventCfm * dtCool, LAT * ventCfm * grains);
-    assumptions.push(`Mechanical ventilation ${Math.round(ventCfm)} CFM (ASHRAE 62.2: 0.03 CFM/sq ft + 7.5 CFM per person) is in the load — a tight house runs its whole-house fan. Drop it if the house has none.`);
+    assumptions.push(typeof m.ventilationFan === "boolean"
+      ? `Mechanical ventilation ${Math.round(ventCfm)} CFM (ASHRAE 62.2: 0.03 CFM/sq ft + 7.5 CFM per person) is in the load — the house has a whole-house fan.`
+      : `Mechanical ventilation ${Math.round(ventCfm)} CFM (ASHRAE 62.2: 0.03 CFM/sq ft + 7.5 CFM per person) is in the load — a tight house runs its whole-house fan. Set "Whole-house ventilation fan" to No if the house has none.`);
   }
+  if (!opts.zone && m.ventilationFan === false && fanByRule) assumptions.push("No whole-house ventilation fan, as answered — no ventilation load, although the era rule would have added one.");
   if (acf < 0.97) assumptions.push(`Air at ${Math.round(c.elevationFt ?? 0).toLocaleString("en-US")} ft is ${Math.round((1 - acf) * 100)}% thinner: infiltration and ventilation loads carry Manual J's altitude factor ${acf.toFixed(2)}.`);
   push(`People and appliances · ${occupants} occupants`, 0, occupants * OCCUPANT_SENSIBLE + appliances, occupants * OCCUPANT_LATENT);
 

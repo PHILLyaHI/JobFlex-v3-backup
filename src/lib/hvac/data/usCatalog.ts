@@ -11,6 +11,7 @@
 // US_CATALOG_VERIFIED_ON; each family names its source URL.
 
 import type { CatalogItem } from "../types";
+import { HEAT_PUMP_DERATE } from "./defaults";
 
 export const US_CATALOG_VERIFIED_ON = "2026-09-16";
 
@@ -115,8 +116,9 @@ export function expandFamily(f: UsFamily): CatalogItem[] {
       if (f.kind === "heat-pump" || f.kind === "ductless") {
         // Nominal heating at 47 °F ≈ the cooling nominal; the colder points
         // are the family's read share or the rule of thumb (see UsFamily).
-        const r17 = f.ratio17 ?? (f.coldClimate ? 0.85 : 0.62);
-        const r5 = f.ratio5 ?? (f.coldClimate ? 0.7 : 0.48);
+        const derate = f.coldClimate ? HEAT_PUMP_DERATE.coldClimate : HEAT_PUMP_DERATE.standard;
+        const r17 = f.ratio17 ?? derate.r17;
+        const r5 = f.ratio5 ?? derate.r5;
         item.heat47Btuh = Math.round(size * 12000);
         item.heat17Btuh = Math.round(size * 12000 * r17);
         item.heat5Btuh = Math.round(size * 12000 * r5);

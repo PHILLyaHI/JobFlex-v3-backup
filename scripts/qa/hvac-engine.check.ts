@@ -8,7 +8,10 @@
 // twenty-real-jobs gate in the plan.
 import { computeBlockLoad, heatingLoadAt } from "../../src/lib/hvac/load";
 import { balancePointF, evaluateItem, heatPumpCapacityAt, selectSystem } from "../../src/lib/hvac/select";
-import { ductChecks, electricalCheck, gasCheck, complianceChecks } from "../../src/lib/hvac/checks";
+import { ductChecks, electricalCheck, gasCheck, complianceChecks, sizingCheck } from "../../src/lib/hvac/checks";
+import { ductCapacity, equivalentRoundIn, parseDuctSize, roundDuctCfm, staticAtAirflow } from "../../src/lib/hvac/ductCalc";
+import { runEngine } from "../../src/lib/hvac/engine";
+import { buildLedger, DEFAULT_RATE_CARD, STARTER_CATALOG } from "../../src/lib/hvac/ledger";
 import { decodeModelNumber, decodeSerialYear } from "../../src/lib/hvac/nameplate";
 import { efficiencyFloor, incentivesFor, refrigerantRule } from "../../src/lib/hvac/data/rules";
 import type { BuildingModel, CatalogItem, DesignConditions } from "../../src/lib/hvac/types";
@@ -111,7 +114,16 @@ const hp = (tons: number, over: Partial<CatalogItem> = {}): CatalogItem => ({ id
   ok("variable capacity gets Manual S latitude to 125%", !vari.disqualified || (vari.coolingRatio ?? 0) > 1.25, `ratio ${vari.coolingRatio}`);
   const right = evaluateItem(hp(3.5), load, dallas, house());
   const also = evaluateItem(hp(3), load, dallas, house());
-  ok("the closer size scores higher", !right.disqualified && !also.disqualified && Math.abs((right.coolingRatio ?? 0) - 1.05) < Math.abs((also.coolingRatio ?? 0) - 1.05) ? right.score >= also.score : also.score >= right.score);
+  // Lean small (2026-10-08): the size nearest the load ranks first, an
+  // undersize inside the window costing less than the same oversize.
+  const miss = (r: number) => (r >= 1 ? (r - 1) * 100 : (1 - r) * 80);
+  ok("the size nearest the load scores higher, leaning small", !right.disqualified && !also.disqualified && (miss(right.coolingRatio ?? 0) < miss(also.coolingRatio ?? 0) ? right.score >= also.score : also.score >= right.score), `3.5 t ${Math.round((right.coolingRatio ?? 0) * 100)}% → ${right.score}; 3 t ${Math.round((also.coolingRatio ?? 0) * 100)}% → ${also.score}`);
+  {
+    const l = { ...load, coolingTotalBtuh: 33000, coolingTons: 2.75 };
+    const under = evaluateItem(hp(2.5), l, dallas, house());
+    const over = evaluateItem(hp(3), l, dallas, house());
+    ok("95%-ish beats 110%-ish: 2.5 t at 91% outranks 3 t at 109% on a 33,000 load", !under.disqualified && !over.disqualified && under.score > over.score, `${under.score} vs ${over.score}`);
+  }
   const ny = evaluateItem(hp(3.5, { refrigerant: "R-410A" }), load, dallas, house({ state: "NY" }));
   ok("R-410A is disqualified in New York", !!ny.disqualified);
   const tx410 = evaluateItem(hp(3.5, { refrigerant: "R-410A" }), load, dallas, house());
@@ -206,6 +218,91 @@ const hp = (tons: number, over: Partial<CatalogItem> = {}): CatalogItem => ({ id
   ok("Carrier serial 1219E12345 → 2019", decodeSerialYear("Carrier", "1219E12345").year === 2019);
   ok("Goodman serial 1904123456 → 2019", decodeSerialYear("Goodman", "1904123456").year === 2019);
   ok("unknown brand serial → no year", decodeSerialYear("Mystery", "ABC123").year === undefined);
+}
+
+// ── the ducts that are there (2026-10-08) ──
+{
+  ok("'20x8' reads as a rectangular duct", JSON.stringify(parseDuctSize("20x8")) === JSON.stringify({ kind: "rect", widthIn: 20, heightIn: 8 }));
+  ok("'16 in' reads as a round duct", parseDuctSize("16 in")?.kind === "round" && (parseDuctSize("16 in") as { diameterIn: number }).diameterIn === 16);
+  ok("nonsense is not a size", parseDuctSize("big") === null && parseDuctSize("1") === null && parseDuctSize("") === null);
+  const r16 = roundDuctCfm(16);
+  ok("a 16 in. round carries about 1,290 CFM at 0.08 in/100 ft", between(r16, 1250, 1330), String(Math.round(r16)));
+  ok("a 6 in. run carries about 97 CFM rigid", between(roundDuctCfm(6), 90, 105), String(Math.round(roundDuctCfm(6))));
+  ok("20×8 is about a 13.5 in. round", between(equivalentRoundIn({ kind: "rect", widthIn: 20, heightIn: 8 }), 13.2, 13.8), equivalentRoundIn({ kind: "rect", widthIn: 20, heightIn: 8 }).toFixed(1));
+  const cap = ductCapacity({ location: "attic", condition: "fair", supplyTrunk: "16", returnDuct: "14", supplyRegisters: 8, branchIn: 6 }, 400);
+  ok("the least part is the capacity: 8 × 6 in. runs (~700) under a 16 in. trunk and a 14 in. return", !!cap && cap.limitedBy === "branch runs" && between(cap.capacityCfm, 650, 740), `${cap?.capacityCfm} by ${cap?.limitedBy}`);
+  ok("…and says the parts", !!cap && cap.parts.length === 3 && /16 in\. round supply trunk/.test(cap.parts[0]), cap?.parts.join(" | "));
+  ok("nothing measured → no capacity (a register count alone is a guess)", ductCapacity({ location: "attic", condition: "fair", supplyRegisters: 8 }, 400) === null);
+  ok("static 0.45 on a 3-ton is about 0.77 on a 4-ton through the same ducts", between(staticAtAirflow(0.45, 1200, 1600), 0.74, 0.8), staticAtAirflow(0.45, 1200, 1600).toFixed(2));
+
+  // the checks: a reading taken on the old 3-ton, a 4-ton going in
+  const l44 = { ...load, coolingTotalBtuh: 44000, coolingTons: 3.67 };
+  const four = evaluateItem(hp(4), l44, dallas, house());
+  const scaledStatic = ductChecks(l44, house({ existing: { kind: "split-ac-furnace", tons: 3, fuel: "gas" }, ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 800, measuredTespInWc: 0.45 } }), four).find((x) => x.id === "static")!;
+  ok("0.45 measured on the old 3-ton is a fix for a 4-ton: the same ducts read ~0.77", scaledStatic.status === "fix" && /measured on the 3-ton/.test(scaledStatic.detail), scaledStatic.detail);
+  const likeForLike = ductChecks(l44, house({ existing: { kind: "split-ac-furnace", tons: 4, fuel: "gas" }, ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 800, measuredTespInWc: 0.45 } }), four).find((x) => x.id === "static")!;
+  ok("…and like for like it passes", likeForLike.status === "pass", likeForLike.detail);
+  const target = 3 * load.cfmPerTon;
+  const three = evaluateItem(hp(3), { ...load, coolingTotalBtuh: 34000 }, dallas, house());
+  const shortTrunk = ductChecks({ ...load, coolingTotalBtuh: 34000 }, house({ ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 600, supplyTrunk: "12" } }), three);
+  const sizeRow = shortTrunk.find((x) => x.id === "duct-size")!;
+  ok(`a 12 in. trunk (~630 CFM) is a fix under a 3-ton's ${target} CFM`, sizeRow.status === "fix" && /supply trunk/.test(sizeRow.detail) && /size the system to the ducts/.test(sizeRow.detail), sizeRow.detail);
+  ok("with sizes but no static, the static row only asks for a start-up reading", /confirm with a static reading/.test(shortTrunk.find((x) => x.id === "static")!.detail));
+  const bigTrunk = ductChecks({ ...load, coolingTotalBtuh: 34000 }, house({ ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 600, supplyTrunk: "18", returnDuct: "20x10" } }), three).find((x) => x.id === "duct-size")!;
+  ok("an 18 in. trunk and a 20×10 return pass for the 3-ton", bigTrunk.status === "pass", bigTrunk.detail);
+  const nothing = ductChecks(load, house({ ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 600 } }), three).find((x) => x.id === "static")!;
+  ok("nothing measured → 'Airflow not verified', one plain row", nothing.title === "Airflow not verified" && nothing.status === "verify" && /before the install is sold/.test(nothing.detail));
+
+  // the ranking: the ducts hold a bigger size back; so does the old unit that kept up
+  const plain = evaluateItem(hp(3), { ...load, coolingTotalBtuh: 34000 }, dallas, house());
+  const held = evaluateItem(hp(3), { ...load, coolingTotalBtuh: 34000 }, dallas, house(), { ductCfm: 630 });
+  ok("a size the measured ducts cannot carry loses 25 points and says so", held.score === plain.score - 25 && held.reasons.some((r) => /ducts as measured carry about 630/.test(r)), held.reasons.find((r) => /ducts/.test(r)));
+  const kept = evaluateItem(hp(3.5), { ...load, coolingTotalBtuh: 40000 }, dallas, house(), { keptUpTons: 3 });
+  ok("bigger than the 3-ton that kept up: 12 points off, said", kept.score === evaluateItem(hp(3.5), { ...load, coolingTotalBtuh: 40000 }, dallas, house()).score - 12 && kept.reasons.some((r) => /kept up on the hottest days/.test(r)));
+  const sz = sizingCheck({ ...load, coolingTotalBtuh: 44000 }, house({ existing: { kind: "split-ac-furnace", tons: 3, fuel: "gas", keptUp: "yes" } }), four);
+  ok("the old 3-ton kept up and the design says 4: a verify that questions the load", sz?.status === "verify" && /inputs are padded/.test(sz.detail) && /82%/.test(sz.detail), sz?.detail);
+  ok("no kept-up answer → no sizing row", sizingCheck(load, house(), four) === null);
+
+  // the whole run: the engine, the airflow verdict, the ledger's lines and scope
+  const gasHouse = (over: Partial<BuildingModel> = {}) => house({ existing: { kind: "split-ac-furnace", tons: 3.5, fuel: "gas", refrigerant: "R-410A" }, ...over });
+  const unverified = runEngine(gasHouse({ ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 700 } }), { catalog: STARTER_CATALOG });
+  ok("engine: nothing measured → airflow 'none' and the row among the checks", unverified.airflow?.verifiedBy === "none" && unverified.checks.some((c) => c.title === "Airflow not verified"), `${unverified.airflow?.verifiedBy}`);
+  const lu = buildLedger(unverified, gasHouse({ ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 700 } }), DEFAULT_RATE_CARD, STARTER_CATALOG);
+  ok("ledger: the proposal's scope carries the one plain line", /Airflow to be verified before install/.test(lu.scope) && lu.assumptions.some((a) => /Airflow to be verified/.test(a)));
+  const shortHouse = gasHouse({ ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 700, supplyTrunk: "12" } });
+  const shortRun = runEngine(shortHouse, { catalog: STARTER_CATALOG });
+  const ls = buildLedger(shortRun, shortHouse, DEFAULT_RATE_CARD, STARTER_CATALOG);
+  ok("engine: a 12 in. trunk → airflow by sizes, the duct-size fix", shortRun.airflow?.verifiedBy === "sizes" && shortRun.checks.some((c) => c.id === "duct-size" && c.status === "fix"), `${shortRun.airflow?.verifiedBy} · ${shortRun.selection.chosen?.item.tons} t`);
+  ok("ledger: the trunk upsize is priced, materials and labor", ls.materials.some((l) => l.id === "m-trunk-up") && ls.labor.some((l) => l.id === "l-trunk-up"));
+  ok("…and the unverified line is gone from the scope", !/Airflow to be verified/.test(ls.scope));
+  const measured = gasHouse({ ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 700, measuredTespInWc: 0.4 } });
+  ok("engine: a static reading → airflow 'static'", runEngine(measured, { catalog: STARTER_CATALOG }).airflow?.verifiedBy === "static");
+  // stepping down: a trunk that carries the smaller of two in-window sizes
+  const stepHouse = gasHouse({ ducts: { location: "attic", condition: "fair", insulated: true, returnGrilleSqIn: 700, supplyTrunk: "14" } });
+  const l35 = { ...computeBlockLoad(stepHouse, dallas), coolingTotalBtuh: 33000, coolingTons: 2.75 };
+  const stepped = selectSystem([hp(3), hp(2.5)], l35, dallas, stepHouse, { ductCfm: 910 });
+  ok("the ducts choose: 2.5 t (875 CFM) over 3 t (1,050) on a 14 in. trunk", stepped.chosen?.item.tons === 2.5 && stepped.runnerUp?.item.tons === 3 && stepped.runnerUp.reasons.some((r) => /ducts as measured/.test(r)), `${stepped.chosen?.item.tons} then ${stepped.runnerUp?.item.tons}`);
+}
+
+// ── the 2026-10-08 fixes: the Southwest EER2 floor, a missing EER2, one derate table, the fan switch ──
+{
+  ok("Southwest, 48,000 BTU/h, high-SEER2 unit: the EER2 floor is 9.5 (was 9.8)", efficiencyFloor("AZ", "air-conditioner", 48000).eer2IfHighSeer === 9.5 && efficiencyFloor("AZ", "air-conditioner", 36000).eer2IfHighSeer === 9.8);
+  const az = house({ state: "AZ", county: "Maricopa" });
+  const noEer = evaluateItem(hp(3.5, { kind: "air-conditioner", eer2: undefined }), load, dallas, az);
+  ok("a Southwest row with no EER2 is marked, not passed in silence", !noEer.disqualified && noEer.reasons.some((r) => /EER2 not on the catalog row/.test(r)), noEer.reasons.join(" | "));
+  const noEerCheck = complianceChecks(az, hp(3.5, { kind: "air-conditioner", eer2: undefined }), { touchesRefrigerant: true, touchesDucts: false, newConstruction: false }).find((c) => c.id === "efficiency")!;
+  ok("…and the efficiency check reads verify for it", noEerCheck.status === "verify", noEerCheck.status);
+  const withEer = complianceChecks(az, hp(3.5, { kind: "air-conditioner", eer2: 12 }), { touchesRefrigerant: true, touchesDucts: false, newConstruction: false }).find((c) => c.id === "efficiency")!;
+  ok("…while a row with 12 EER2 passes", withEer.status === "pass", withEer.status);
+  const plain = hp(3);
+  ok("one derate table: a standard unit with no published points holds 62% at 17 °F and 48% at 5 °F", Math.round(heatPumpCapacityAt(plain, 17)) === Math.round(36000 * 0.62) && Math.round(heatPumpCapacityAt(plain, 5)) === Math.round(36000 * 0.48), `${heatPumpCapacityAt(plain, 17)} / ${heatPumpCapacityAt(plain, 5)}`);
+  const tight = house({ tightness: "tight", yearBuilt: 2020 });
+  const withFan = computeBlockLoad(tight, dallas);
+  const noFan = computeBlockLoad({ ...tight, ventilationFan: false }, dallas);
+  const leakyFan = computeBlockLoad(house({ tightness: "leaky", yearBuilt: 1975, ventilationFan: true }), dallas);
+  ok("a tight 2020 house carries the ventilation term by the era rule", withFan.components.some((c) => /Ventilation/.test(c.name)));
+  ok("'no whole-house fan' takes it off and says so", !noFan.components.some((c) => /Ventilation/.test(c.name)) && noFan.heatingBtuh < withFan.heatingBtuh && noFan.assumptions.some((a) => /No whole-house ventilation fan/.test(a)), `${withFan.heatingBtuh} → ${noFan.heatingBtuh}`);
+  ok("'yes' on a leaky 1975 house adds it", leakyFan.components.some((c) => /Ventilation/.test(c.name)));
 }
 
 console.log(`\n${passes} passed, ${failures} failed`);

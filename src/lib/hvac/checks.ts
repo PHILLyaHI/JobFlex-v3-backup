@@ -5,6 +5,7 @@
 import type { BuildingModel, CatalogItem, CheckResult, DesignConditions, LoadResult, SelectionCandidate } from "./types";
 import { coastalSite, CODE_FLAGS, efficiencyFloor, refrigerantRule, ultraLowNoxNeeded } from "./data/rules";
 import { ratedCoolingBtuh } from "./select";
+import { ductCapacity, FRICTION_RATE, SHORT_BELOW, staticAtAirflow } from "./ductCalc";
 
 /** Return grille free area the airflow needs: 200 sq in per nominal ton. */
 export const RETURN_SQIN_PER_TON = 200;
@@ -33,15 +34,40 @@ export function ductChecks(load: LoadResult, m: BuildingModel, chosen: Selection
   } else {
     out.push({ id: "return", title: "Return air", status: "verify", detail: `Measure the return grille: a ${tons}-ton system wants about ${needSqIn} sq in of free area for ${targetCfm} CFM.`, rule: `${RETURN_SQIN_PER_TON} sq in per ton` });
   }
-  // Static pressure.
+  // Static pressure. A reading taken on the old system is a reading at the
+  // old unit's airflow: the same ducts at the new unit's airflow show more,
+  // as the 1.9th power of the ratio (2026-10-08) — a 0.45 on the old 3-ton is
+  // about a 0.77 once a 4-ton pushes a third more air through them.
   const rated = chosen?.item.ratedStaticInWc ?? DEFAULT_RATED_STATIC;
+  const ducts = ductCapacity(m.ducts, load.cfmPerTon);
+  const cfmWords = targetCfm.toLocaleString("en-US");
   if (typeof m.ducts.measuredTespInWc === "number") {
-    const tesp = m.ducts.measuredTespInWc;
-    if (tesp <= rated) out.push({ id: "static", title: "Static pressure", status: "pass", detail: `Measured ${tesp.toFixed(2)} in. w.c. is within the ${rated.toFixed(2)} in. w.c. the equipment is rated for.`, rule: "TESP vs rated static" });
-    else if (tesp <= rated * 1.3) out.push({ id: "static", title: "Static pressure", status: "verify", detail: `Measured ${tesp.toFixed(2)} in. w.c. is above the ${rated.toFixed(2)} rating: check the filter and the return before the new blower is asked to push it.`, rule: "TESP vs rated static" });
-    else out.push({ id: "static", title: "Static pressure", status: "fix", detail: `Measured ${tesp.toFixed(2)} in. w.c. is far above the ${rated.toFixed(2)} rating: the ducts will not carry the ${chosen ? "new system's" : "system's"} airflow without a return and trunk fix.`, rule: "TESP vs rated static" });
+    const measured = m.ducts.measuredTespInWc;
+    const oldCfm = m.existing.tons && m.existing.tons > 0 ? m.existing.tons * load.cfmPerTon : 0;
+    const scaled = oldCfm > 0 && Math.abs(oldCfm - targetCfm) >= 50;
+    const tesp = scaled ? staticAtAirflow(measured, oldCfm, targetCfm) : measured;
+    const how = scaled
+      ? `${measured.toFixed(2)} in. w.c. measured on the ${m.existing.tons}-ton; the same ducts at the ${cfmWords} CFM a ${tons}-ton moves read about ${tesp.toFixed(2)}`
+      : `Measured ${tesp.toFixed(2)} in. w.c.`;
+    if (tesp <= rated) out.push({ id: "static", title: "Static pressure", status: "pass", detail: `${how}, within the ${rated.toFixed(2)} in. w.c. the equipment is rated for.`, rule: "TESP vs rated static" });
+    else if (tesp <= rated * 1.3) out.push({ id: "static", title: "Static pressure", status: "verify", detail: `${how}, above the ${rated.toFixed(2)} rating: check the filter and the return before the new blower is asked to push it.`, rule: "TESP vs rated static" });
+    else out.push({ id: "static", title: "Static pressure", status: "fix", detail: `${how}, far above the ${rated.toFixed(2)} rating: the ducts will not carry the ${chosen ? "new system's" : "system's"} airflow without a return and trunk fix.`, rule: "TESP vs rated static" });
+  } else if (ducts) {
+    out.push({ id: "static", title: "Static pressure", status: "verify", detail: `Not measured; the duct sizes say the ducts carry about ${ducts.capacityCfm.toLocaleString("en-US")} CFM — confirm with a static reading at start-up.`, rule: "TESP vs rated static" });
   } else {
-    out.push({ id: "static", title: "Static pressure", status: "verify", detail: chosen ? "Measure total external static on the existing system before install; the new blower needs the ducts to pass its airflow." : "Measure total external static on the system; the blower is rated for 0.50 in. w.c. and the ducts must let it breathe.", rule: "TESP vs rated static" });
+    // Nothing measured on the ducts: said once, plainly, and carried onto the
+    // design card and the proposal (2026-10-08).
+    out.push({ id: "static", title: "Airflow not verified", status: "verify", detail: `Nothing measured on the ducts yet. A ${tons}-ton moves ${cfmWords} CFM and the ducts in this house have to carry it: measure total external static on the existing system, or the supply trunk and return duct sizes, before the install is sold.`, rule: "TESP vs rated static · Manual D" });
+  }
+  // The ducts as measured against the airflow (lib/hvac/ductCalc, 2026-10-08).
+  if (ducts) {
+    const share = ducts.capacityCfm / Math.max(1, targetCfm);
+    const capWords = ducts.capacityCfm.toLocaleString("en-US");
+    const parts = `${ducts.parts.join("; ")}.`;
+    const rule = `Manual D equal friction at ${FRICTION_RATE} in. w.c. per 100 ft`;
+    if (share >= 1) out.push({ id: "duct-size", title: "Duct capacity", status: "pass", detail: `The ducts carry about ${capWords} CFM (the ${ducts.limitedBy} is the limit) — the ${cfmWords} CFM a ${tons}-ton moves fits. ${parts}`, rule });
+    else if (share >= SHORT_BELOW) out.push({ id: "duct-size", title: "Duct capacity", status: "verify", detail: `The ducts carry about ${capWords} CFM (the ${ducts.limitedBy} is the limit) against the ${cfmWords} CFM a ${tons}-ton moves: tight. Set the blower tap and read the static after install; a return or trunk upsize is the fix if it runs high. ${parts}`, rule });
+    else out.push({ id: "duct-size", title: "Duct capacity", status: "fix", detail: `The ducts carry about ${capWords} CFM (the ${ducts.limitedBy} is the limit) and a ${tons}-ton moves ${cfmWords}: upsize the ${ducts.limitedBy}, or size the system to the ducts (about ${ducts.capacityTons} tons). ${parts}`, rule });
   }
   // Condition and insulation.
   if (m.ducts.condition === "poor") out.push({ id: "duct-cond", title: "Duct condition", status: "fix", detail: "Ducts read poor: seal or replace, then test leakage.", rule: "duct leakage" });
@@ -51,6 +77,27 @@ export function ductChecks(load: LoadResult, m: BuildingModel, chosen: Selection
     out.push({ id: "duct-ins", title: "Duct insulation", status: "fix", detail: `Uninsulated ducts in the ${m.ducts.location}: insulate to R-8 (attic) or the code minimum.`, rule: "IECC R403.3" });
   }
   return out;
+}
+
+/** The house as a load check (2026-10-08): the old unit that kept up on the
+ *  hottest days is the one measurement no table beats, and the one that says
+ *  a bigger design has padded inputs. */
+export function sizingCheck(load: LoadResult, m: BuildingModel, chosen: SelectionCandidate | null): CheckResult | null {
+  const kept = m.existing.keptUp;
+  const old = m.existing.tons;
+  if (!kept || !old || old <= 0) return null;
+  const cap = chosen ? ratedCoolingBtuh(chosen.item) : 0;
+  if (!(cap > 0)) return null;
+  const newTons = Math.round((cap / 12000) * 2) / 2;
+  const oldShare = Math.round(((old * 12000) / Math.max(1, load.coolingTotalBtuh)) * 100);
+  const rule = "ACCA Manual S · the house as a load check";
+  if (kept === "yes" && newTons > old) {
+    return { id: "sizing", title: "Old unit kept up", status: "verify", detail: `The old ${old}-ton kept up on the hottest days and the design calls for ${newTons} tons (${load.coolingTotalBtuh.toLocaleString("en-US")} BTU/h). The house is telling you the inputs are padded: recheck insulation, windows, duct location and tightness before upsizing — the ${old}-ton is ${oldShare}% of this load${oldShare < 90 ? ", under Manual S's 90%, so it is the load to question, not the unit" : ", inside Manual S's window"}.`, rule };
+  }
+  if (kept === "no" && newTons <= old) {
+    return { id: "sizing", title: "Old unit couldn't keep up", status: "verify", detail: `The old ${old}-ton couldn't keep up and the design calls for ${newTons} tons — the same size or smaller. Before matching it, confirm the old unit's trouble was charge, a dirty coil or leaking ducts, not size; if the house really needs more, the load's inputs are light.`, rule };
+  }
+  return null;
 }
 
 /**
@@ -167,7 +214,9 @@ export function complianceChecks(m: BuildingModel, chosen: CatalogItem | null, o
       const okSeer = (!chosen.seer2 || chosen.seer2 >= floor.seer2) && okEer;
       const okHspf = !floor.hspf2 || !chosen.hspf2 || chosen.hspf2 >= floor.hspf2;
       const ok = okSeer && okHspf;
-      const missingHspf = !!floor.hspf2 && !chosen.hspf2;
+      // A floor the row cannot answer (no HSPF2 on a heat pump, no EER2 where
+      // the region has an EER2 floor) is a verify, never a silent pass (2026-10-08).
+      const missingHspf = (!!floor.hspf2 && !chosen.hspf2) || (!!eerFloor && !chosen.eer2);
       out.push({ id: "efficiency", title: "Efficiency floor", status: ok ? (chosen.seer2 && !missingHspf ? "pass" : "verify") : "fix", detail: `${floor.text}${chosen.seer2 ? ` This unit: ${chosen.seer2} SEER2${chosen.hspf2 ? `, ${chosen.hspf2} HSPF2` : ""}.` : " SEER2 not on the catalog row."}${!okHspf ? " Below the HSPF2 floor." : ""}`, rule: floor.source });
     }
   }

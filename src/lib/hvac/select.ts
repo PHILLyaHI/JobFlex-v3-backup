@@ -9,6 +9,7 @@
 // No price enters here — the ranking is fit, and the ledger prices it.
 
 import type { EquipmentKind, BuildingModel, CapacityPoint, CatalogItem, DesignConditions, LoadResult, SelectionCandidate, SelectionResult } from "./types";
+import { HEAT_PUMP_DERATE } from "./data/defaults";
 import { heatingLoadAt } from "./load";
 import { efficiencyFloor, refrigerantRule, ultraLowNoxNeeded } from "./data/rules";
 
@@ -33,9 +34,9 @@ export function ratedCoolingBtuh(item: CatalogItem): number {
 export function heatPumpCapacityAt(item: CatalogItem, outdoorF: number): number {
   const base = item.heat47Btuh && item.heat47Btuh > 0 ? item.heat47Btuh : ratedCoolingBtuh(item);
   if (base <= 0) return 0;
-  const cc = !!item.coldClimate;
-  const p17 = item.heat17Btuh && item.heat17Btuh > 0 ? item.heat17Btuh : base * (cc ? 0.8 : 0.65);
-  const p5 = item.heat5Btuh && item.heat5Btuh > 0 ? item.heat5Btuh : base * (cc ? 0.72 : 0.52);
+  const derate = item.coldClimate ? HEAT_PUMP_DERATE.coldClimate : HEAT_PUMP_DERATE.standard;
+  const p17 = item.heat17Btuh && item.heat17Btuh > 0 ? item.heat17Btuh : base * derate.r17;
+  const p5 = item.heat5Btuh && item.heat5Btuh > 0 ? item.heat5Btuh : base * derate.r5;
   if (outdoorF >= 47) return base;
   if (outdoorF >= 17) return p17 + ((base - p17) * (outdoorF - 17)) / 30;
   if (outdoorF >= 5) return p5 + ((p17 - p5) * (outdoorF - 5)) / 12;
@@ -65,7 +66,7 @@ export function capacityCurve(item: CatalogItem, load: LoadResult, c: DesignCond
   return out;
 }
 
-export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignConditions, m: BuildingModel, opts: { wantsHeatPump?: boolean; keepsIndoor?: boolean } = {}): SelectionCandidate {
+export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignConditions, m: BuildingModel, opts: { wantsHeatPump?: boolean; keepsIndoor?: boolean; ductCfm?: number; keptUpTons?: number } = {}): SelectionCandidate {
   const reasons: string[] = [];
   let score = 100;
   const out: SelectionCandidate = { item, score, reasons };
@@ -131,6 +132,9 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
     // The Southwest EER2 floor drops for a unit already certified high on SEER2.
     const eerFloor = floor.eer2IfHighSeer && (item.seer2 ?? 0) >= 15.2 ? floor.eer2IfHighSeer : floor.eer2;
     if (eerFloor && item.eer2 && item.eer2 < eerFloor) return fail(`${item.eer2} EER2 is below the ${eerFloor} EER2 minimum for this region.`);
+    // The Southwest's EER2 floor cannot be checked on a row that carries no
+    // EER2 (2026-10-08): said, not passed in silence.
+    if (eerFloor && !item.eer2) { score -= 5; reasons.push(`EER2 not on the catalog row — the region's ${eerFloor} EER2 floor could not be checked; confirm it on the AHRI certificate.`); }
     if (floor.hspf2 && item.hspf2 && item.hspf2 < floor.hspf2) return fail(`${item.hspf2} HSPF2 is below the ${floor.hspf2} HSPF2 minimum for a heat pump.`);
     if (!item.seer2) { score -= 5; reasons.push("SEER2 not on the catalog row — confirm it meets the regional minimum."); }
     const ratio = load.coolingTotalBtuh > 0 ? cap / load.coolingTotalBtuh : 0;
@@ -145,11 +149,21 @@ export function evaluateItem(item: CatalogItem, load: LoadResult, c: DesignCondi
     const pct = Math.round(ratio * 100);
     if (pct < 90) return fail(`Cooling capacity is ${pct}% of the load; Manual S wants at least 90%.`);
     if (pct > Math.round(upper * 100)) return fail(`Cooling capacity is ${pct}% of the load; Manual S allows up to ${Math.round(upper * 100)}% for this equipment.`);
-    // Closest to a touch over the load scores best: 100–110% ideal. Where
+    // Lean small (2026-10-08, on a contractor's word that load calcs
+    // oversize): the size nearest the load ranks first, and an undersize
+    // inside the window costs less than the same oversize — 95% beats 110%.
+    // Manual S's 90% floor already guards the hottest afternoon. Where
     // heating governs the cooling fit is a bound, not the ranking: the heat
     // carried at the design temperature ranks the sizes (below).
-    score -= heatingGoverns && !keepsGas ? Math.round(Math.abs(ratio - 1.05) * 20) : Math.round(Math.abs(ratio - 1.05) * 100);
+    const miss = ratio >= 1 ? (ratio - 1) * 100 : (1 - ratio) * 80;
+    score -= heatingGoverns && !keepsGas ? Math.round(miss * 0.2) : Math.round(miss);
     reasons.push(`Cooling ${Math.round(ratio * 100)}% of the ${load.coolingTotalBtuh.toLocaleString("en-US")} BTU/h load${heatingGoverns ? " — heating governs, so Manual S allows up to " + Math.round(upper * 100) + "%" : ""}.`);
+    // The ducts that are there (lib/hvac/ductCalc, 2026-10-08): a size whose
+    // airflow the measured ducts cannot carry drops behind a size they can;
+    // the old unit that kept up on the hottest days holds a bigger one back.
+    const needCfm = (cap / 12000) * (load.cfmPerTon || 400);
+    if (opts.ductCfm && needCfm > opts.ductCfm) { score -= 25; reasons.push(`Moves about ${(Math.round(needCfm / 10) * 10).toLocaleString("en-US")} CFM; the ducts as measured carry about ${Math.round(opts.ductCfm).toLocaleString("en-US")} — a trunk or return upsize goes with this size.`); }
+    if (opts.keptUpTons && cap / 12000 > opts.keptUpTons + 0.01) { score -= 12; reasons.push(`Bigger than the ${opts.keptUpTons}-ton that kept up on the hottest days.`); }
     if (item.staging === "variable") { score += 6; reasons.push("Variable capacity: better humidity control and part-load efficiency."); }
     else if (item.staging === "two-stage") { score += 3; }
     if (c.humidity === "humid" && item.staging === "single" && ratio > 1.1) { score -= 6; reasons.push("Single-stage and oversized in a humid climate: short cycles, poor dehumidification."); }
@@ -241,6 +255,10 @@ export interface SelectOptions {
   minTons?: number;
   /** Furnace jobs: the coil the new furnace is set under — its blower must carry these tons. */
   coilTons?: number;
+  /** What the ducts as measured carry, CFM (lib/hvac/ductCalc): a size needing more ranks behind one they carry. */
+  ductCfm?: number;
+  /** The old unit that kept up on the hottest days: a bigger one ranks behind. */
+  keptUpTons?: number;
 }
 
 export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: DesignConditions, m: BuildingModel, opts: SelectOptions = {}): SelectionResult {
@@ -251,7 +269,7 @@ export function selectSystem(catalog: CatalogItem[], load: LoadResult, c: Design
   const allowed = opts.kinds?.length ? new Set(opts.kinds) : null;
   const pool = allowed ? catalog.filter((i) => allowed.has(i.kind)) : catalog;
   const model = m;
-  const scorer = { wantsHeatPump: opts.wantsHeatPump, keepsIndoor: opts.keepsIndoor };
+  const scorer = { wantsHeatPump: opts.wantsHeatPump, keepsIndoor: opts.keepsIndoor, ductCfm: opts.ductCfm, keptUpTons: opts.keptUpTons };
   const candidates = pool.map((item) => evaluateItem(item, load, c, model, scorer)).sort((a, b) => b.score - a.score);
   // An electric furnace is an air handler with a heat kit: the cabinet must
   // carry the coil it serves AND move the kit's air. A kit is rated at a

@@ -9,7 +9,8 @@
 // better source replaces an earlier, weaker one.
 
 import type { WalkthroughAnalysis } from "@/lib/estimate/video-schema";
-import type { BuildingModel, Confidence, ExistingKind, FootprintEdge, Fuel, Provenance, Source } from "./types";
+import { parseDuctSize } from "./ductCalc";
+import type { BuildingModel, Confidence, ExistingKind, FootprintEdge, Fuel, InputConflict, Provenance, Source } from "./types";
 import { DEFAULTS_SOURCE, eraDefaults } from "./data/defaults";
 import { decodeModelNumber, decodeSerialYear } from "./nameplate";
 
@@ -168,10 +169,19 @@ const LABELS: Array<{ re: RegExp; apply: (m: BuildingModel, v: string, p: Proven
   { re: /main breaker|service size|panel|service amps/i, apply: (m, v, p) => { const n = num(v); if (n && [60, 100, 125, 150, 200, 225, 400].includes(n)) setNested(m, "electrical.mainAmps", n, p); } },
   { re: /free .*slots?|open .*slots?|spare/i, apply: (m, v, p) => { const n = num(v); if (n !== undefined && n >= 0 && n <= 40) setNested(m, "electrical.freeSlots", n, p); } },
   { re: /static/i, apply: (m, v, p) => { const n = num(v); if (n !== undefined && n > 0 && n < 3) setNested(m, "ducts.measuredTespInWc", n, p); } },
+  // The ducts as measured (lib/hvac/ductCalc, 2026-10-08): "Supply trunk: 20x8", "Return duct: 16", "Branch runs: 6".
+  { re: /supply trunk|trunk (size|duct)|main trunk|plenum take-?off/i, apply: (m, v, p) => { if (parseDuctSize(v)) setNested(m, "ducts.supplyTrunk", v.trim(), p); } },
+  { re: /return (duct|trunk|drop)/i, apply: (m, v, p) => { if (parseDuctSize(v)) setNested(m, "ducts.returnDuct", v.trim(), p); } },
+  { re: /branch (run|duct)|run (size|diameter)|flex (size|runs?)/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 3 && n <= 14) setNested(m, "ducts.branchIn", n, p); } },
+  { re: /keep up|kept up|hottest days|comfort on hot days/i, apply: (m, v, p) => { const t = v.trim(); if (/^(no|not|never|couldn|didn|struggl|barely)/i.test(t)) setNested(m, "existing.keptUp", "no", p); else if (/^(yes|fine|kept|ok|always|yep)/i.test(t)) setNested(m, "existing.keptUp", "yes", p); } },
   { re: /return (grille|air)/i, apply: (m, v, p) => { const n = area(v); if (n && n > 40 && n < 4000) setNested(m, "ducts.returnGrilleSqIn", n, p); } },
   // A BTU/h figure is a furnace input whatever the label says ("Furnace
   // capacity: 80,000 BTU"); tons are tons; a bare 12,000–120,000 under a
   // cooling label is BTU/h of cooling and reads as tons.
+  // The walk reader's own label "Outdoor unit tons or BTU" (and any cooling
+  // label naming tons) reads as tons, before the BTU rule below can take it
+  // for a furnace input (2026-10-08): a bare "3" is 3 tons, "36000" is 3 tons.
+  { re: /tons? or btu|tons?\s*\/\s*btu|outdoor unit tons|cooling (tons|capacity)|condenser (tons|size|capacity)|heat pump (tons|size|capacity)/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 1 && n <= 10) setNested(m, "existing.tons", n, p); else if (n && n >= 12000 && n <= 120000) setNested(m, "existing.tons", Math.round((n / 12000) * 2) / 2, p); } },
   { re: /btu|furnace input|heating capacity|furnace capacity|input rating/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 20000 && n <= 200000) setNested(m, "existing.btuInput", Math.round(n), p); else if (n && n >= 1 && n <= 10 && /cooling|ac\b|condenser|heat pump/i.test(v)) setNested(m, "existing.tons", n, p); } },
   { re: /tons?|tonnage|capacity/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 1 && n <= 10) setNested(m, "existing.tons", n, p); else if (n && n >= 12000 && n <= 120000 && !/btu/i.test(v)) setNested(m, "existing.tons", Math.round((n / 12000) * 2) / 2, p); else if (n && n >= 20000 && n <= 200000) setNested(m, "existing.btuInput", Math.round(n), p); } },
   { re: /seer/i, apply: (m, v, p) => { const n = num(v); if (n && n >= 8 && n <= 30) setNested(m, "existing.seer", n, p); } },
@@ -184,6 +194,8 @@ const LABELS: Array<{ re: RegExp; apply: (m: BuildingModel, v: string, p: Proven
   { re: /brand|manufacturer|make/i, apply: (m, v, p) => { setNested(m, "existing.brand", v.trim(), p); } },
   { re: /gas (pipe|line) size|pipe size/i, apply: (m, v, p) => { const n = num(v); if (n && n > 0 && n <= 2) setNested(m, "gas.pipeIn", n, p); } },
   { re: /refrigerant/i, apply: (m, v, p) => { const r = refrigerantIn(v); if (r) setNested(m, "existing.refrigerant", r, p); } },
+  // "Whole-house fan: yes / none / ERV" (2026-10-08).
+  { re: /ventilation|whole[- ]house fan|fresh[- ]air|\b(erv|hrv)\b/i, apply: (m, v, p) => { const t = v.trim(); if (/^(no|none|not|without|n\/a)/i.test(t)) setFact(m, "ventilationFan", false, p); else if (/^(yes|erv|hrv|exhaust|supply|balanced|present|installed|has)/i.test(t)) setFact(m, "ventilationFan", true, p); } },
 ];
 
 /** An R-value on the walk to the nearest bucket the load tables carry. */
@@ -238,6 +250,13 @@ const OBSERVATIONS: Array<{ re: RegExp; apply: (m: BuildingModel, text: string, 
   { re: /ducts? .*(fair|older|some wear)/i, apply: (m, _t, p) => setNested(m, "ducts.condition", "fair", p) },
   { re: /ducts? .*(good|new|sealed|tight)/i, apply: (m, _t, p) => setNested(m, "ducts.condition", "good", p) },
   { re: /ducts? .*(uninsulated|no insulation|bare)/i, apply: (m, _t, p) => setNested(m, "ducts.insulated", false, p) },
+  // A whole-house ventilation fan, seen or said (2026-10-08): "no" first.
+  { re: /\b(no|without|isn'?t an?|no such)\b[^.,;]{0,20}(ventilation|whole[- ]house fan|fresh[- ]air|erv|hrv)/i, apply: (m, _t, p) => setFact(m, "ventilationFan", false, p) },
+  { re: /\b(erv|hrv|energy recovery|heat recovery|whole[- ]house fan|fresh[- ]air (fan|system|intake)|ventilation (fan|system))\b/i, apply: (m, t, p) => { if (!/\b(no|without|isn'?t an?|no such)\b[^.,;]{0,20}(ventilation|whole[- ]house fan|fresh[- ]air|erv|hrv)/i.test(t)) setFact(m, "ventilationFan", true, p); } },
+  // Did the old unit keep up on the hottest days? The "no" rule runs first;
+  // the "yes" rule steps aside for it (2026-10-08).
+  { re: /(couldn'?t|could not|didn'?t|did not|never|barely|can'?t|cannot|doesn'?t|does not) (keep|kept) up|struggl|ran all day|never shut off|never caught up/i, apply: (m, _t, p) => setNested(m, "existing.keptUp", "no", p) },
+  { re: /\b(kept|keeps|keep) up\b|kept the house (cool|comfortable)|no trouble on (the )?hot(test)? days/i, apply: (m, t, p) => { if (!/(couldn'?t|could not|didn'?t|did not|never|barely|can'?t|cannot|doesn'?t|does not) (keep|kept)|struggl/i.test(t)) setNested(m, "existing.keptUp", "yes", p); } },
   { re: /crawl ?space/i, apply: (m, t, p) => { if (!negated(t, /crawl ?space/)) setFact(m, "foundation", "crawl-vented", p); } },
   { re: /basement/i, apply: (m, t, p) => { if (!negated(t, /basement/)) setFact(m, "foundation", /finished|conditioned|heated/i.test(t) ? "basement-conditioned" : "basement-unconditioned", p); } },
   { re: /\bslab\b/i, apply: (m, t, p) => { if (!negated(t, /slab/)) setFact(m, "foundation", "slab", p); } },
@@ -271,16 +290,53 @@ const OBSERVATIONS: Array<{ re: RegExp; apply: (m: BuildingModel, text: string, 
 /** Fold a walkthrough reading into the model. Spoken figures count as stated
  *  by the contractor; things seen on a frame as read; inferences as defaults
  *  that any better source overrides. */
-export function applyWalkthrough(m: BuildingModel, a: WalkthroughAnalysis): { applied: string[] } {
+/** A value read off a record or an instrument at high confidence: the
+ *  assessor's living area, a parcel's year built, a measured size. */
+const isRecord = (p: Provenance | undefined) => !!p && !p.entered && (p.source === "read" || p.source === "measured") && p.confidence === "high";
+const readPath = (m: BuildingModel, path: string): unknown => {
+  const [g, f] = path.split(".");
+  const obj = m as unknown as Record<string, unknown>;
+  return f ? (obj[g] as Record<string, unknown> | undefined)?.[f] : obj[g];
+};
+const differs = (a: unknown, b: unknown) => {
+  if (typeof a === "number" && typeof b === "number") return Math.abs(a - b) > Math.max(1, Math.abs(a) * 0.1);
+  return String(a) !== String(b);
+};
+
+export function applyWalkthrough(m: BuildingModel, a: WalkthroughAnalysis): { applied: string[]; conflicts: InputConflict[] } {
   const applied: string[] = [];
+  const conflicts: InputConflict[] = [];
   for (const meas of a.measurements) {
     const p: Provenance = { source: srcOf(meas.source), confidence: conf(meas.confidence), note: `walkthrough: ${meas.label} = ${meas.value}${meas.unit ? " " + meas.unit : ""}` };
     const rule = LABELS.find((r) => r.re.test(meas.label));
     if (!rule) continue;
+    // Records beat transcribed speech (2026-10-08): the rule runs on a copy
+    // first, and a field that a high-confidence record already holds keeps
+    // the record when the walk's figure disagrees — the disagreement is kept
+    // beside it for the contractor to confirm. Against a default, an
+    // estimate or a medium-confidence reading the walk still wins.
+    const probe = structuredClone(m);
+    rule.apply(probe, meas.value, p);
+    const touched = Object.keys(probe.provenance).filter((k) => probe.provenance[k] !== m.provenance[k]);
+    let blocked = false;
+    for (const path of touched) {
+      const cur = m.provenance[path];
+      const next = readPath(probe, path);
+      const have = readPath(m, path);
+      if (p.source === "stated" && isRecord(cur) && differs(have, next)) {
+        blocked = true;
+        const kept = String(have);
+        const walk = String(next);
+        if (!conflicts.some((c) => c.path === path)) conflicts.push({ path, kept, walk });
+        m.provenance[path] = { ...cur, note: `${cur.note ?? cur.source} · the walk said ${walk} — confirm` };
+      }
+    }
+    if (blocked) continue;
     const before = JSON.stringify(m);
     rule.apply(m, meas.value, p);
     if (JSON.stringify(m) !== before) applied.push(meas.label);
   }
+  if (conflicts.length) m.conflicts = [...(m.conflicts ?? []).filter((c) => !conflicts.some((n) => n.path === c.path)), ...conflicts];
   for (const text of [...a.observations, ...a.transcriptHighlights]) {
     const p: Provenance = { source: "read", confidence: "medium", note: `walkthrough: "${text.slice(0, 90)}"` };
     for (const rule of OBSERVATIONS) {
@@ -290,7 +346,7 @@ export function applyWalkthrough(m: BuildingModel, a: WalkthroughAnalysis): { ap
       if (JSON.stringify(m) !== before) applied.push(text.slice(0, 40));
     }
   }
-  return { applied };
+  return { applied, conflicts };
 }
 
 /** What the vision model reads off one nameplate photo. */
@@ -323,11 +379,17 @@ export function applyNameplate(m: BuildingModel, r: NameplateRead): { applied: s
   set("existing.brand", r.brand);
   set("existing.model", r.model);
   set("existing.serial", r.serial);
+  // The model number decodes deterministically; the plate reader's own figure
+  // fills in only where the decode has nothing, and a disagreement between
+  // the two is written on the badge for the contractor to settle (2026-10-08;
+  // until then the reader's figure silently beat the decode).
   const decoded = decodeModelNumber(r.model, r.kind === "furnace" ? "furnace" : r.kind === "outdoor" ? "cooling" : undefined);
-  const tons = r.tons ?? decoded.tons;
-  const btu = r.btuInput ?? decoded.btuInput;
-  if (tons) set("existing.tons", tons, { ...base, confidence: r.tons ? r.confidence : decoded.confidence, note: r.tons ? base.note : `${base.note}: ${decoded.notes.join(" ")}` });
-  if (btu) set("existing.btuInput", btu, { ...base, confidence: r.btuInput ? r.confidence : decoded.confidence });
+  const tons = decoded.tons ?? r.tons;
+  const btu = decoded.btuInput ?? r.btuInput;
+  const tonsClash = !!(decoded.tons && r.tons && Math.abs(decoded.tons - r.tons) >= 0.5);
+  const btuClash = !!(decoded.btuInput && r.btuInput && Math.abs(decoded.btuInput - r.btuInput) > 5000);
+  if (tons) set("existing.tons", tons, { ...base, confidence: tonsClash ? "medium" : decoded.tons ? decoded.confidence : r.confidence, note: decoded.tons ? `${base.note}: ${decoded.notes.join(" ")}${tonsClash ? ` · the plate reader said ${r.tons} t — confirm` : ""}` : base.note });
+  if (btu) set("existing.btuInput", btu, { ...base, confidence: btuClash ? "medium" : decoded.btuInput ? decoded.confidence : r.confidence, note: btuClash ? `${base.note} · the plate reader said ${r.btuInput} BTU/h — confirm` : base.note });
   if (r.seer) set("existing.seer", r.seer);
   if (r.afue) set("existing.afue", r.afue > 1 ? r.afue / 100 : r.afue);
   const refr = refrigerantIn(r.refrigerant ?? "") ?? decoded.refrigerantHint;

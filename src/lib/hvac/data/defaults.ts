@@ -109,3 +109,10 @@ export const GRAINS: Record<HumidityClass, number> = { humid: 45, moderate: 28, 
 
 /** Airflow per nominal ton the climate wants: dry air moves more, wet air less. */
 export const CFM_PER_TON: Record<HumidityClass, number> = { humid: 350, moderate: 400, dry: 450 };
+
+/** A heat pump's capacity at 17 °F and 5 °F as a share of its 47 °F rating when
+ *  the row has no published points: a cold-climate (NEEP-listed) unit holds
+ *  most of it, a standard single-stage unit about three fifths at 17 °F and
+ *  under half at 5 °F. One table (2026-10-08) — the catalog expander and the
+ *  selection used to carry two that disagreed. */
+export const HEAT_PUMP_DERATE = { coldClimate: { r17: 0.85, r5: 0.7 }, standard: { r17: 0.62, r5: 0.48 } } as const;

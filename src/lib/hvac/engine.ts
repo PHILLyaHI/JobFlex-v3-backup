@@ -8,8 +8,9 @@ import { waterHeaterChecks, waterHeaterPlan } from "./waterHeater";
 import { fuelChecks, resolveUlnCheck } from "./checks";
 import { companionFurnace, keepsGas } from "./ledger";
 import { computeBlockLoad, ENGINE_VERSION } from "./load";
-import { selectSystem } from "./select";
-import { allChecks, defaultedFields, gasCheck } from "./checks";
+import { ratedCoolingBtuh, selectSystem } from "./select";
+import { allChecks, defaultedFields, gasCheck, sizingCheck } from "./checks";
+import { ductCapacity } from "./ductCalc";
 import { designConditionsFor } from "./designConditions";
 import { incentivesFor, ultraLowNoxNeeded } from "./data/rules";
 import { DEFAULTS_SOURCE } from "./data/defaults";
@@ -48,6 +49,7 @@ const FIELD_WORDS: Record<string, string> = {
   roofColor: "roof colour",
   shading: "shading",
   occupants: "occupants",
+  ventilationFan: "ventilation fan",
   "ducts.location": "duct location",
   "ducts.condition": "duct condition",
 };
@@ -83,6 +85,12 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
   const loadModel = zoneSqft ? { ...model, conditionedSqft: zoneSqft, storeys: 1, occupants: zoneOccupants, ducts: { location: "none" as const, condition: "good" as const }, perimeterFt: undefined, footprintEdges: undefined } : model;
   const load = computeBlockLoad(loadModel, conditions, { zone: zoneSqft > 0 });
   if (zoneSqft && !(opts.input?.zoneSqft && opts.input.zoneSqft > 0)) load.assumptions.unshift("Zone size not given — loaded as a 100 sq ft room; type the zone's square feet.");
+  // The ducts that are there (lib/hvac/ductCalc, 2026-10-08): what they carry
+  // bounds the size, and so does the old unit that kept up on the hottest days.
+  const ductsMatter = job.needs.ducts && model.ducts.location !== "none";
+  const ductCap = ductsMatter ? ductCapacity(model.ducts, load.cfmPerTon) : null;
+  const keptUpTons = job.needs.existing && model.existing.keptUp === "yes" && model.existing.tons ? model.existing.tons : undefined;
+  const bounds = { ductCfm: ductCap?.capacityCfm, keptUpTons };
   // A package-unit house gets a package unit on a full replacement; with no
   // package rows in the catalog the ledger prices one from the rate card.
   // What goes outside: the contractor's choice when the job allows it; else
@@ -102,15 +110,15 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
   const minTons = job.id === "ductless" ? 0.5 : undefined;
   let selection = job.selection === "none"
     ? { chosen: null, runnerUp: null, candidates: [], targetTons: Math.max(1.5, Math.round((load.coolingTotalBtuh / 12000) * 2) / 2), systems: 1 }
-    : selectSystem(catalog, load, conditions, model, { kinds, wantsHeatPump, keepsIndoor, minTons, coilTons: job.id === "replace-furnace" && (model.existing.kind === "split-ac-furnace" || model.existing.kind === "split-heat-pump") ? model.existing.tons : undefined });
+    : selectSystem(catalog, load, conditions, model, { kinds, wantsHeatPump, keepsIndoor, minTons, coilTons: job.id === "replace-furnace" && (model.existing.kind === "split-ac-furnace" || model.existing.kind === "split-heat-pump") ? model.existing.tons : undefined, ...bounds });
   // A choice the house cannot take (an AC where there is no furnace, a kind
   // the catalog lacks) falls back to the job's own pool, not an empty design.
-  if (job.selection !== "none" && !selection.chosen && outdoorKind && !packageHouse) selection = selectSystem(catalog, load, conditions, model, { kinds: job.kinds, wantsHeatPump: job.id === "heat-pump-conversion", keepsIndoor, minTons });
+  if (job.selection !== "none" && !selection.chosen && outdoorKind && !packageHouse) selection = selectSystem(catalog, load, conditions, model, { kinds: job.kinds, wantsHeatPump: job.id === "heat-pump-conversion", keepsIndoor, minTons, ...bounds });
   // A heat pump picked by hand on a job that offers both kinds is judged as a
   // heat-pump job — no "offer this as dual fuel" mark from the AC ranking.
   if (opts.pick && !asked && job.selection !== "none" && !packageHouse && job.kinds.includes("heat-pump") && job.kinds.includes("air-conditioner")) {
     const pickedItem = catalog.find((c) => c.id === opts.pick);
-    if (pickedItem?.kind === "heat-pump" && selection.chosen?.item.kind !== "heat-pump") selection = selectSystem(catalog, load, conditions, model, { kinds: ["heat-pump"], wantsHeatPump: true, keepsIndoor, minTons });
+    if (pickedItem?.kind === "heat-pump" && selection.chosen?.item.kind !== "heat-pump") selection = selectSystem(catalog, load, conditions, model, { kinds: ["heat-pump"], wantsHeatPump: true, keepsIndoor, minTons, ...bounds });
   }
   // The contractor's pick (or the page's Better-tier base) becomes the chosen
   // unit, so the checks and notes below describe the unit on the estimate.
@@ -175,9 +183,20 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
   const checks = waterHeater
     ? [...waterHeaterChecks(model, waterHeater, opts.input?.wh?.existingFuel ? opts.input.wh.existingFuel === "electric" : model.gas.available === false), ...fuelChecks(model, { gasFurnace: false, gasWaterHeater: waterHeater.fuel !== "electric" && waterHeater.type !== "heat-pump", whVent: waterHeater.vent, whLocation: waterHeater.location, furnaceReplaced: false, a2lCoilOnExistingFurnace: false })]
     : job.selection === "none"
-      ? [...(wanted.has("refrigerant") ? serviceRefrigerantCheck(model) : []), ...allChecks(load, conditions, model, null, { touchesRefrigerant: false, removesEquipment: false, kind: job.id }).filter((c) => wanted.has(c.id) || (wanted.has("code") && !["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "gas", "refrigerant", "efficiency"].includes(c.id)))]
-      : [...allChecks(load, conditions, model, selection.chosen, { dualFuel, removesEquipment: job.id !== "add-ac" && job.id !== "ductless", reusesCircuit, addsCircuit, newFurnace: gasFurnace }).filter((c) => wanted.has(c.id) || (c.id === "code" && wanted.has("code")) || (!["return", "static", "duct-cond", "duct-ins", "ducts-none", "service", "gas", "refrigerant", "efficiency"].includes(c.id) && wanted.has("code"))), ...fuelChecks(model, { gasFurnace, gasWaterHeater: false, furnaceReplaced: gasFurnace || furnaceRemoved, a2lCoilOnExistingFurnace: a2lOnExisting, furnaceMaxTonsUnknown: blowerUnknown, furnaceBlowerShort: blowerShort, indoorWord })];
+      ? [...(wanted.has("refrigerant") ? serviceRefrigerantCheck(model) : []), ...allChecks(load, conditions, model, null, { touchesRefrigerant: false, removesEquipment: false, kind: job.id }).filter((c) => wanted.has(c.id) || (wanted.has("code") && !["return", "static", "duct-size", "sizing", "duct-cond", "duct-ins", "ducts-none", "service", "gas", "refrigerant", "efficiency"].includes(c.id)))]
+      : [...allChecks(load, conditions, model, selection.chosen, { dualFuel, removesEquipment: job.id !== "add-ac" && job.id !== "ductless", reusesCircuit, addsCircuit, newFurnace: gasFurnace }).filter((c) => wanted.has(c.id) || (c.id === "code" && wanted.has("code")) || (!["return", "static", "duct-size", "sizing", "duct-cond", "duct-ins", "ducts-none", "service", "gas", "refrigerant", "efficiency"].includes(c.id) && wanted.has("code"))), ...fuelChecks(model, { gasFurnace, gasWaterHeater: false, furnaceReplaced: gasFurnace || furnaceRemoved, a2lCoilOnExistingFurnace: a2lOnExisting, furnaceMaxTonsUnknown: blowerUnknown, furnaceBlowerShort: blowerShort, indoorWord })];
 
+  // The walk's figure against the record (2026-10-08): the record stayed; the
+  // contractor confirms which is right before the number is sold.
+  if (model.conflicts?.length) {
+    const words = model.conflicts.map((c) => `${FIELD_WORDS[c.path] ?? c.path} — record ${c.kept} kept, the walk said ${c.walk}`).join("; ");
+    checks.push({ id: "code", title: "Record vs walk", status: "verify", detail: `The walk disagreed with the house record: ${words}. The record stands until you confirm; type the right figure to settle it.`, rule: "inputs" });
+  }
+  // The old unit that kept up (or could not): the house as a load check.
+  if (job.selection !== "none" && job.needs.existing && wanted.has("sizing")) {
+    const sz = sizingCheck(load, model, selection.chosen);
+    if (sz) checks.push(sz);
+  }
   // A full system with an AC brings a furnace the ledger picks: its gas line
   // and its fit against the heating load are checked here, for that furnace.
   if (gasFurnace && chosenItem && chosenItem.kind !== "furnace") {
@@ -239,5 +258,23 @@ export function runEngine(model: BuildingModel, opts: RunEngineOptions): EngineR
     notes.push({ kind: "contractor", text: `No catalog unit fits the ${load.coolingTotalBtuh.toLocaleString("en-US")} BTU/h cooling load within Manual S limits; a ${selection.targetTons}-ton system is the target.` });
   }
 
-  return { job: job.id, dualFuel: dualFuel || undefined, waterHeater, zone: zoneSqft ? { sqft: zoneSqft, heads } : undefined, conditions, load, selection, checks, notes, engineVersion: ENGINE_VERSION };
+  // The ducts against the airflow, for the design card and the proposal's
+  // one plain line (2026-10-08).
+  const chosenCap = selection.chosen ? ratedCoolingBtuh(selection.chosen.item) : 0;
+  const airTons = Math.round(((chosenCap > 0 ? chosenCap : load.coolingTotalBtuh) / 12000) * 2) / 2;
+  const targetCfm = Math.round((airTons * load.cfmPerTon) / 10) * 10;
+  const runnerCap = selection.runnerUp ? ratedCoolingBtuh(selection.runnerUp.item) : 0;
+  const sizedToDucts = Boolean(ductCap && selection.chosen && selection.runnerUp && runnerCap > chosenCap && selection.runnerUp.reasons.some((r) => /ducts as measured carry/.test(r)) && !selection.chosen.reasons.some((r) => /ducts as measured carry/.test(r)));
+  if (sizedToDucts && ductCap && selection.chosen && selection.runnerUp) {
+    notes.push({ kind: "contractor", text: `Sized to the ducts in the house: they carry about ${ductCap.capacityCfm.toLocaleString("en-US")} CFM (the ${ductCap.limitedBy} is the limit), which the ${selection.chosen.item.tons ?? airTons}-ton moves; the ${selection.runnerUp.item.tons ?? "bigger"}-ton would need a ${ductCap.limitedBy} upsize first.` });
+  }
+  const airflow: EngineResult["airflow"] = {
+    targetCfm,
+    verifiedBy: !ductsMatter ? "none" : typeof model.ducts.measuredTespInWc === "number" ? "static" : ductCap ? "sizes" : "none",
+    capacityCfm: ductCap?.capacityCfm,
+    limitedBy: ductCap?.limitedBy,
+    sizedToDucts: sizedToDucts || undefined,
+  };
+
+  return { job: job.id, dualFuel: dualFuel || undefined, waterHeater, zone: zoneSqft ? { sqft: zoneSqft, heads } : undefined, conditions, load, selection, checks, notes, airflow, engineVersion: ENGINE_VERSION };
 }

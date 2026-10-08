@@ -514,7 +514,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
   const [unitDraft, setUnitDraft] = React.useState<Record<string, string>>({});
 
   // shop data
-  const [catalog, setCatalog] = React.useState<{ items: CatalogItem[]; own: boolean } | null>(null);
+  const [catalog, setCatalog] = React.useState<{ items: CatalogItem[]; own: boolean; source?: "shop" | "us" | "starter" } | null>(null);
   const [card, setCard] = React.useState<{ card: HvacRateCard; own: boolean }>({ card: DEFAULT_RATE_CARD, own: false });
   const [cardDraft, setCardDraft] = React.useState<HvacRateCard | null>(null);
   const [cardMsg, setCardMsg] = React.useState("");
@@ -543,7 +543,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
 
   React.useEffect(() => {
     let alive = true;
-    void listHvacCatalog().then((c) => { if (alive) setCatalog(c); }).catch(() => { if (alive) setCatalog({ items: [], own: false }); });
+    void listHvacCatalog().then((c) => { if (alive) setCatalog(c); }).catch(() => { if (alive) setCatalog({ items: [], own: false, source: "starter" }); });
     void getHvacRateCard().then((c) => {
       if (!alive) return;
       if (c.own) setCard(c);
@@ -940,8 +940,10 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
     if (a) {
       setAnalysis(a);
       const probe = model ? structuredClone(model) : null;
-      const applied = probe ? applyWalkthrough(probe, a).applied : [];
-      toast.success("Walk read", applied.length ? `Filled: ${applied.slice(0, 6).join(", ")}${applied.length > 6 ? ` +${applied.length - 6}` : ""}` : `${a.measurements.length} figures, ${a.observations.length} observations — nothing new for the model.`);
+      const read = probe ? applyWalkthrough(probe, a) : { applied: [], conflicts: [] };
+      const applied = read.applied;
+      const kept = read.conflicts.length ? ` Kept the record on ${read.conflicts.map((c) => `${c.path.replace(/^existing\./, "")} (the walk said ${c.walk})`).join(", ")} — confirm on the card.` : "";
+      toast.success("Walk read", (applied.length ? `Filled: ${applied.slice(0, 6).join(", ")}${applied.length > 6 ? ` +${applied.length - 6}` : ""}.` : `${a.measurements.length} figures, ${a.observations.length} observations — nothing new for the model.`) + kept);
     }
   };
   const onPlateFile = async (key: SlotKey, hint: "outdoor" | "indoor" | "panel", f: File | undefined) => {
@@ -1002,7 +1004,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
   };
   const onClearCatalog = async () => {
     const res = await clearHvacCatalog();
-    setCatMsg(res.ok ? "Catalog cleared — the starter ladder is back." : res.error);
+    setCatMsg(res.ok ? "Catalog cleared — the built-in US list is back." : res.error);
     setCatalog(await listHvacCatalog());
   };
   const saveCard = async () => {
@@ -1151,7 +1153,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
   const sumExisting = model ? [EXISTING_WORDS[model.existing.kind] ?? model.existing.kind.replace(/-/g, " "), model.existing.tons ? `${model.existing.tons} t` : "", model.existing.btuInput ? `${Math.round(model.existing.btuInput / 1000)}k BTU` : "", model.existing.fuel ?? "", model.existing.refrigerant ?? "", model.existing.yearMade ? String(model.existing.yearMade) : ""].filter(Boolean).join(" · ") : "";
   const sumPanel = model ? [model.electrical.mainAmps ? `${model.electrical.mainAmps} A main` : "panel not read", model.electrical.freeSlots !== undefined ? `${model.electrical.freeSlots} free slots` : ""].filter(Boolean).join(" · ") : "";
   const sumDucts = model ? [
-    ...(def.needs.ducts ? [model.ducts.location !== "none" ? `in the ${model.ducts.location}` : "no ducts", model.ducts.condition !== "unknown" ? model.ducts.condition : "", model.ducts.returnGrilleSqIn ? `${model.ducts.returnGrilleSqIn} sq in return` : "return not measured"] : []),
+    ...(def.needs.ducts ? [model.ducts.location !== "none" ? `in the ${model.ducts.location}` : "no ducts", model.ducts.condition !== "unknown" ? model.ducts.condition : "", model.ducts.returnGrilleSqIn ? `${model.ducts.returnGrilleSqIn} sq in return` : "return not measured", model.ducts.supplyTrunk ? `${model.ducts.supplyTrunk} in trunk` : "", typeof model.ducts.measuredTespInWc === "number" ? `static ${model.ducts.measuredTespInWc}` : model.ducts.location !== "none" && !model.ducts.supplyTrunk && !model.ducts.returnDuct ? "airflow not verified" : ""] : []),
     ...(def.needs.gas ? [model.gas.available === false ? "no gas at the house" : model.gas.pipeIn ? `${model.gas.pipeIn === 0.5 ? "½" : model.gas.pipeIn === 0.75 ? "¾" : model.gas.pipeIn} in gas${model.gas.longestRunFt ? ` · ${model.gas.longestRunFt} ft run` : ""}` : model.gas.available ? "gas at the house · pipe not measured" : "gas not confirmed"] : []),
   ].filter(Boolean).join(" · ") : "";
   const chosen = engine?.selection.chosen ?? null;
@@ -1526,13 +1528,14 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
 
             <div className={cx("folds")}>
               {def.needs.load && !def.needs.zone && <details className={cx("fold2")}>
-                <summary><span className={cx("fold2-t")}>More about the house</span><span className={cx("fold2-s")}>ceiling · insulation · tightness · roof · shade · occupants</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></summary>
+                <summary><span className={cx("fold2-t")}>More about the house</span><span className={cx("fold2-s")}>ceiling · insulation · tightness · ventilation fan · roof · shade · occupants</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></summary>
                 <div className={cx("fold2-b")}>
                   <div className={cx("grid-f")}>
                     <Field label="Ceiling ft" path="ceilingHeightFt" model={model} kind="num" onChange={onTyped} />
                     <Field label="Occupants" path="occupants" model={model} kind="num" onChange={onTyped} />
                     <Field label="Wall insulation" path="wallInsulation" model={model} kind="select" onChange={onTyped} options={[["none", "None"], ["r11", "R-11"], ["r13", "R-13"], ["r19", "R-19"], ["r21", "R-21"]]} />
                     <Field label="Attic insulation" path="ceilingInsulation" model={model} kind="select" onChange={onTyped} options={[["none", "None"], ["r11", "R-11"], ["r19", "R-19"], ["r30", "R-30"], ["r38", "R-38"], ["r49", "R-49"]]} />
+                    <Field label="Whole-house ventilation fan" path="ventilationFan" model={model} kind="bool" onChange={onTyped} />
                     <Field label="Air tightness" path="tightness" model={model} kind="select" onChange={onTyped} options={[["leaky", "Leaky"], ["average", "Average"], ["tight", "Tight"], ["very-tight", "Very tight"]]} />
                     <Field label="Roof colour" path="roofColor" model={model} kind="select" onChange={onTyped} options={[["light", "Light"], ["medium", "Medium"], ["dark", "Dark"]]} />
                     <Field label="Shading" path="shading" model={model} kind="select" onChange={onTyped} options={[["none", "None — full sun"], ["some", "Some"], ["heavy", "Heavy trees"]]} />
@@ -1544,6 +1547,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                 <div className={cx("fold2-b")}><div className={cx("grid-f")}>
                   <Field label="Kind" path="existing.kind" model={model} kind="select" onChange={onTyped} options={[["split-ac-furnace", "AC + furnace"], ["split-heat-pump", "Heat pump"], ["furnace-only", "Furnace only"], ["package-unit", "Package / rooftop"], ["ductless", "Ductless"], ["none", "None"]]} />
                   <Field label="Tons" path="existing.tons" model={model} kind="num" onChange={onTyped} step="0.5" />
+                  <Field label="On the hottest days it" path="existing.keptUp" model={model} kind="select" onChange={onTyped} options={[["yes", "Kept up"], ["no", "Couldn't keep up"]]} />
                   <Field label="Furnace BTU input" path="existing.btuInput" model={model} kind="num" onChange={onTyped} placeholder="80,000" />
                   <Field label="Fuel" path="existing.fuel" model={model} kind="select" onChange={onTyped} options={[["gas", "Natural gas"], ["propane", "Propane"], ["electric", "Electric"], ["oil", "Oil"], ["none", "None"]]} />
                   <Field label="Refrigerant" path="existing.refrigerant" model={model} kind="select" onChange={onTyped} options={[["R-22", "R-22"], ["R-410A", "R-410A"], ["R-454B", "R-454B"], ["R-32", "R-32"]]} />
@@ -1575,6 +1579,10 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                     <Field label="Supply registers" path="ducts.supplyRegisters" model={model} kind="num" onChange={onTyped} placeholder="8" />
                     <Field label="Return grille (sq in, W×H)" path="ducts.returnGrilleSqIn" model={model} kind="num" onChange={onTyped} placeholder="20×25 = 500" />
                     <Field label="Static pressure (in. w.c.)" path="ducts.measuredTespInWc" model={model} kind="num" onChange={onTyped} step="0.05" />
+                    {/* The duct calculator's inputs (lib/hvac/ductCalc, 2026-10-08): the sizes a tech reads at the plenum. */}
+                    <Field label="Supply trunk (Ø or W×H, in)" path="ducts.supplyTrunk" model={model} kind="text" onChange={onTyped} placeholder="16 or 20×8" />
+                    <Field label="Return duct (Ø or W×H, in)" path="ducts.returnDuct" model={model} kind="text" onChange={onTyped} placeholder="16 or 20×10" />
+                    <Field label="Branch runs Ø (in)" path="ducts.branchIn" model={model} kind="num" onChange={onTyped} placeholder="6" step="1" />
                   </>}
                   {def.needs.gas && <>
                     <Field label="Gas at the house" path="gas.available" model={model} kind="bool" onChange={onTyped} />
@@ -1772,7 +1780,14 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
               <div className={cx("hero-cell")}>
                 <div className={cx("kpi-lbl")}>Airflow</div>
                 <div className={cx("hero-v")}>{num(engine.load.coolingCfm)}<small>CFM</small></div>
-                <div className={cx("hero-h")}>{engine.load.cfmPerTon} CFM/ton · ducts {Math.round(engine.load.ductGainCooling * 100)}% gain</div>
+                {/* Whether the ducts were held against this airflow (2026-10-08): nothing measured is said in red, not left among the checks. */}
+                <div className={cx("hero-h", def.needs.ducts && engine.airflow?.verifiedBy === "none" && "hero-warn")}>
+                  {def.needs.ducts && engine.airflow
+                    ? engine.airflow.verifiedBy === "none" ? "not verified — measure static or the trunk"
+                      : engine.airflow.verifiedBy === "sizes" ? `ducts carry ~${num(engine.airflow.capacityCfm ?? 0)} CFM${engine.airflow.sizedToDucts ? " · sized to them" : ""}`
+                      : `static measured · ${engine.load.cfmPerTon} CFM/ton`
+                    : `${engine.load.cfmPerTon} CFM/ton · ducts ${Math.round(engine.load.ductGainCooling * 100)}% gain`}
+                </div>
               </div>
             )}
           </div>}
@@ -1858,7 +1873,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                   {chosen.overridden && <div className={cx("call", "warn")} style={{ margin: "8px 0" }}><span className={cx("stamp")}>your pick</span><span>The engine ruled this unit out: {chosen.overridden} It is on the estimate because you chose it.</span></div>}
                   {chosen.item.typed && <div className={cx("call")} style={{ margin: "8px 0" }}><span className={cx("stamp")}>typed in</span><span>Typed in for this estimate, not a catalog row. Save it to the catalog below and it is there next time.</span></div>}
                   <ul>{chosen.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
-                  {!catalog?.own && <div className={cx("runner")}>Starter ladder — no shop costs on these rows. Import the shop catalog below and the same engine picks from it.</div>}
+                  {!catalog?.own && <div className={cx("runner")}>{catalog?.source === "us" ? "Built-in US list — real brands and model numbers, priced from the rate card until your costs are in. Import the shop catalog below, or load the US list and add costs, and the same engine picks from it." : "Starter ladder — no shop costs on these rows. Import the shop catalog below and the same engine picks from it."}</div>}
                   {engine.selection.runnerUp && <div className={cx("runner")}><b>Runner-up:</b> {engine.selection.runnerUp.item.brand} {engine.selection.runnerUp.item.model} — {engine.selection.runnerUp.reasons[0]}</div>}
                 </div>
               ) : (
@@ -2129,7 +2144,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
           </details>
 
           <details className={cx("panel")}>
-            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop${usStale ? " · update available" : ""}` : "starter ladder · import your CSV"}</span><span className={cx("panel-go")}><span className={cx("st-edit", "go-open")}>Manage</span><span className={cx("st-edit", "go-close")}>Close</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></span></summary>
+            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop${usStale ? " · update available" : ""}` : catalog?.source === "us" ? `built-in US list · ${catalog.items.length} models · import your CSV for your costs` : "starter ladder · import your CSV"}</span><span className={cx("panel-go")}><span className={cx("st-edit", "go-open")}>Manage</span><span className={cx("st-edit", "go-close")}>Close</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></span></summary>
             <div className={cx("panel-body")}>
               {usStale && <div className={cx("call", "warn")} style={{ marginBottom: 10 }}><span className={cx("stamp")}>update</span><span>Your catalog came from an older build of the US list: it is missing {usStale.missing} row{usStale.missing === 1 ? "" : "s"}{usStale.uln ? `, ${usStale.uln} of them ultra-low-NOx gas heat for California` : ""}{usStale.noNox ? ", and its gas rows carry no NOx class, so California districts rule them all out" : ""}. Press <b>Load the US catalog</b> to bring it up to date — your own rows and costs on other ids stay.</span></div>}
               <div className={cx("note")}>Load the US list or import your own CSV — the engine picks from what is here, and your costs price the estimate.</div>
