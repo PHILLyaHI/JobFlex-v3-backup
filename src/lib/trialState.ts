@@ -9,10 +9,11 @@
 // the same plan.
 //
 // THE RECORD. What Stripe knows is mirrored on the Subscription row (status,
-// trialEndsAt). What only this flow knows — that the trial is card-less, the
-// plan and pages it was started on, when a card arrived, which reminder
-// emails went out — is one SyncState row per organization,
-// `cardlessTrial:<orgId>`, the app's key→string store (no schema change).
+// trialEndsAt, the plan and its price). What only this flow knows — that the
+// trial is card-less, the plan and pages it was started on, when a card
+// arrived, which reminder emails went out — is one SyncState row per
+// organization, `cardlessTrial:<orgId>`, the app's key→string store (no
+// schema change).
 //
 // Database only — no Stripe client — so the write guard in lib/orgContext
 // can ask it on every server action without loading the SDK.
@@ -22,7 +23,9 @@ import { SubscriptionStatus } from "@/lib/prismaEnums";
 export type CardlessRecord = {
   subId: string;
   customerId: string;
-  /** The plan the trial runs on: a catalog slug, or "custom". */
+  /** The plan picked at SIGNUP: a catalog slug, or "custom". The plan the
+   *  trial is on now is the subscription's (lib/trialPlan); these three are
+   *  only its fallback and are never updated. */
   planSlug: string;
   interval: "MONTH" | "YEAR";
   customPages: string[];

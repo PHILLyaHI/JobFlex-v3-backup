@@ -3,10 +3,10 @@ import "server-only";
 // signups list is worth per month and, for a trial, how likely it is to pay.
 // The rules are in lib/trialProjection (pure); this only reads:
 //
-//   · the price: the card-less trial's own record (plan, monthly or yearly,
-//     custom pages — SyncState `cardlessTrial:<orgId>`), else the Stripe price
-//     the subscription carries (PlanPrice), else a custom plan's pages
-//     (`orgPages:<orgId>`), else the catalog's list price for the plan;
+//   · the price: the plan a card-less trial is on now (lib/trialPlan — the
+//     subscription's plan and interval, a custom plan's pages), else the
+//     Stripe price the subscription carries (PlanPrice), else a custom plan's
+//     pages (`orgPages:<orgId>`), else the catalog's list price for the plan;
 //   · the card: the card-less record's cardAt, or a Stripe subscription with
 //     no card-less record (a trial started under the card-first signup);
 //   · the work: proposals, clients, jobs and leads made, and the screens and
@@ -18,6 +18,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { CUSTOM_PLAN_SLUG, customPriceCents, normalizeCustomPages } from "@/lib/customPlan";
 import { cardlessKey, type CardlessRecord } from "@/lib/trialState";
+import { currentTrialPlan, type TrialPlanChoice } from "@/lib/trialPlan";
 import { calibrate, monthlyCents, projectTrials, trialTier, valueTrial, type TrialProjection, type TrialValue } from "@/lib/trialProjection";
 
 export interface ValueInput {
@@ -72,6 +73,11 @@ export async function valueSignups(rows: readonly ValueInput[], now = Date.now()
     const rec = parse<CardlessRecord>(row.cursor);
     if (rec?.subId) cardless.set(row.key.slice("cardlessTrial:".length), rec);
   }
+  // The plan each card-less trial is on now — the subscription's, not the
+  // signup pick the record keeps (lib/trialPlan).
+  const trialPlans = new Map<string, TrialPlanChoice>(
+    await Promise.all([...cardless].map(async ([orgId, rec]) => [orgId, await safe(currentTrialPlan(orgId, rec), { planSlug: rec.planSlug, interval: rec.interval, customPages: rec.customPages })] as const)),
+  );
   // The shop's record: live-mode card-less trials that finished one way or the other.
   let converted = 0;
   let lapsed = 0;
@@ -104,11 +110,14 @@ export async function valueSignups(rows: readonly ValueInput[], now = Date.now()
     const sub = r.sub;
     if (!sub) return null;
     if (sub.provider.toUpperCase() === "MANUAL") return 0; // a comp bills nothing
-    const rec = cardless.get(r.orgId);
-    if (rec) {
-      if (rec.planSlug === CUSTOM_PLAN_SLUG) return monthlyCents(customPriceCents(rec.customPages, rec.interval), rec.interval);
-      const row = catalogBySlug.get(rec.planSlug.toUpperCase());
-      if (row) return rec.interval === "YEAR" && row.yearlyPriceCents ? monthlyCents(row.yearlyPriceCents, "YEAR") : row.priceCents;
+    // Only while the row still follows the trial's subscription: once a card
+    // restarted the plan on a new one, that one's own price below applies.
+    const trialPlan = sub.externalSubId === cardless.get(r.orgId)?.subId ? trialPlans.get(r.orgId) : undefined;
+    if (trialPlan) {
+      const { planSlug, interval, customPages } = trialPlan;
+      if (planSlug === CUSTOM_PLAN_SLUG) return monthlyCents(customPriceCents(customPages, interval), interval);
+      const row = catalogBySlug.get(planSlug.toUpperCase());
+      if (row) return interval === "YEAR" && row.yearlyPriceCents ? monthlyCents(row.yearlyPriceCents, "YEAR") : row.priceCents;
     }
     const price = sub.stripePriceId ? priceById.get(sub.stripePriceId) : undefined;
     if (price) return monthlyCents(price.unitAmountCents, price.interval);
