@@ -411,6 +411,8 @@
 :global(.jf-blueprint) .liveKpis > div[data-tone="mute"] strong { color:var(--muted); }
 :global(.jf-blueprint) .liveKpis > div[data-tone="today"] { background:var(--paper); }
 :global(.jf-blueprint) .liveEmpty { padding:22px 24px; font:600 13px var(--font-mono); color:var(--muted); }
+:global(.jf-blueprint) .activityHead { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; padding:14px 24px 6px; }
+:global(.jf-blueprint) .activityHead h3 { margin:0; font:800 13px/1 var(--font); letter-spacing:.12em; text-transform:uppercase; color:var(--ink); }
 :global(.jf-blueprint) .liveList { list-style:none; margin:0; padding:0; }
 :global(.jf-blueprint) .liveRow { display:grid; grid-template-columns:6px minmax(220px,1.3fr) minmax(180px,1fr) minmax(170px,.9fr); gap:0 18px; align-items:start; padding:14px 20px 14px 0; border-bottom:1px solid var(--traffic-line); background:var(--traffic-plate); }
 :global(.jf-blueprint) .liveRow:last-child { border-bottom:0; }
@@ -656,6 +658,8 @@
    when the map is empty); the manual opens on demand (.mapHelp). */
 :global(.jf-blueprint) .mapLegend { position:relative; display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; min-height:22px; margin-top:8px; padding-right:32px; font:600 11px var(--font-mono); color:var(--ink-soft); }
 :global(.jf-blueprint) .mapLegend > span { display:inline-flex; align-items:center; gap:6px; }
+:global(.jf-blueprint) .mapLegend > .mapLegendCount { display:block; flex-basis:100%; font-size:12px; line-height:1.5; color:var(--ink); }
+:global(.jf-blueprint) .mapLegendCount b { font-size:15px; font-weight:900; letter-spacing:-.02em; }
 :global(.jf-blueprint) .mapLegend svg { width:12px; height:16px; }
 :global(.jf-blueprint) .mapLegend b { color:var(--ink); }
 :global(.jf-blueprint) .mapAdRing { width:12px; height:12px; border:2px solid var(--map-ad); border-radius:50%; }

@@ -287,23 +287,28 @@ export function LivePanel({ initial, timezone, fullHistory = false, ledger = nul
         {spanFromLaunch && <span data-map-span-state="since">Counted from {TRAFFIC_SINCE_LABEL}, the day the live map started</span>}
         {platform && <button type="button" className={s.textButton} onClick={() => setPlatform(null)}>Show everyone</button>}
       </div>
-      {/* The map, and beside it the signups of the day / two days / week /
-          month — the green cards, newest on top, the next one the moment it
-          lands (./signup-rail, 2026-10-04). */}
+      {/* The map across the whole width (owner, 2026-10-07: "the map more
+          visual, the activity under it"); the signups rail that stood beside
+          it (./signup-rail, 2026-10-04) now stands beside the visitor list. */}
       <div className={rail.mapRow}>
         <div className={rail.mapCol}>
-          <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} totals={report.totals} adNames={adNames} view={mapView}/>
-        </div>
-        <div className={rail.railCol}>
-          <SignupRail initial={ledger} timezone={timezone} fullHistory={fullHistory} liveSignups={liveSignups} adNames={adNames}/>
+          <LiveMap visitors={onMap} selected={selected} onSelect={setSelected} timezone={timezone} adNames={adNames} view={mapView}/>
         </div>
       </div>
     </>}
+    <div className={rail.activityRow} data-activity>
+    <div className={rail.listCol}>
+    {live && <div className={s.activityHead}><h3>Who is on the site</h3><span className={s.micro}>{fmt(rows.length)} {rows.length === 1 ? "visitor" : "visitors"} in the last {report.windowMinutes} min · newest move first · click a line to see it on the map</span></div>}
     {live && !rows.length && <div className={s.liveEmpty}>{report.visitors.length ? (platform ? "Nobody from this platform in the last half hour — press the card again to see everyone." : "Nobody from an ad in the last half hour — turn off the ads filter to see everyone.") : `Nobody on the site in the last ${report.windowMinutes} minutes.`}</div>}
     {rows.length > 0 && <ol className={s.liveList} aria-label="Visitors on the site">
       {rows.map((v) => <LiveRow key={v.id + v.firstAt} v={v} timezone={timezone} selected={selected === v.id} onToggle={toggleRow} adNames={adNames} onName={onName}/>)}
     </ol>}
     {report.otherSignups.length > 0 && <div className={s.liveOthers}><span className={s.micro}>Signed up today, outside the last {report.windowMinutes} minutes or with analytics blocked — the live list above only holds the window, this holds the day:</span>{report.otherSignups.map((o) => <span key={o.orgName + o.at} className={s.liveOther}><b>{o.orgName}</b> · {o.ownerEmail || "no owner yet"} · {o.source} · {clock(o.at, timezone)} <b className={s.livePlan}>{o.planLabel}</b></span>)}</div>}
+    </div>
+    {live && <div className={rail.railCol}>
+      <SignupRail initial={ledger} timezone={timezone} fullHistory={fullHistory} liveSignups={liveSignups} adNames={adNames}/>
+    </div>}
+    </div>
     <p className={s.footnote}>One line per browser (a PostHog person), newest move first, signups on top; a click on a line shows it on the map. Source is what the first page of the visit carried: it is from an ad only when it carried utm_source or fbclid — a Facebook, Instagram or TikTok link with neither is that platform&apos;s link, not an ad. Colour is how far they got, and each stage has its own: crimson looking around, cyan signing in, amber on the sign-up form or at checkout, green signed up, near-black already a member. A visitor at the login, forgot-password or reset screen is an existing customer, counted as signing in rather than browsing; "locked out" means they asked for a reset link. Places come from PostHog&apos;s GeoIP reading of the browser&apos;s address — the town is usually right, the street never known. A signup is named after the organization created within fifteen minutes of it with the same campaign tag.</p>
   </section>;
 }

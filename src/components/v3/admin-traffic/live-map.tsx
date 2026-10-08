@@ -17,8 +17,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { PARTY_LABEL, partyOf } from "@/lib/usPolitics";
-import { LIVE_ACTIVE_MINUTES, type LiveStage, type LiveTotals, type LiveVisitor } from "@/lib/traffic-live";
-import { TRAFFIC_SINCE_SHORT } from "@/lib/traffic-visitor";
+import { LIVE_ACTIVE_MINUTES, type LiveStage, type LiveVisitor } from "@/lib/traffic-live";
 import { Ago } from "./ticker";
 import { JourneyLine } from "./journey-line";
 import s from "./traffic.module.css";
@@ -113,7 +112,7 @@ const MapBase = memo(function MapBase({ map, shapes, states, party, lit, outline
   </>;
 });
 
-export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, timezone, totals, adNames = EMPTY_NAMES, view: mode = "everyone" }: { visitors: LiveVisitor[]; selected: string | null; onSelect: (key: string | null) => void; timezone: string; totals?: LiveTotals | null; adNames?: Record<string, string>;
+export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, timezone, adNames = EMPTY_NAMES, view: mode = "everyone" }: { visitors: LiveVisitor[]; selected: string | null; onSelect: (key: string | null) => void; timezone: string; adNames?: Record<string, string>;
   /** "prospects" (2026-10-02): the panel has already left members and sign-ins off and kept the day's converts; the map words itself for it. */
   view?: "everyone" | "prospects" }) {
   const [map, setMap] = useState<WorldMap | null>(null);
@@ -451,16 +450,10 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
         </div>
         {zoom > 1.05 && <span className={s.mapZoomLevel} data-card={!!open}>{Math.round(zoom * 10) / 10}×{showStates ? " · US states" : detailed ? " · detailed" : ""}</span>}
 
-        {/* The count, on the map (2026-09-30): what is pinned here, how many
-            of them are on the site this minute, and the day's running total,
-            so the map answers "how many" without looking anywhere else. */}
-        <div className={s.mapCount} data-card={!!open}>
-          <b>{count.toLocaleString("en-US")}</b>
-          <span>{prospects ? (count === 1 ? "prospect on the map" : "prospects on the map") : count === 1 ? "visitor on the map" : "visitors on the map"}</span>
-          <i>{onNow.toLocaleString("en-US")} on the site now{fromAds > 0 ? ` · ${fromAds.toLocaleString("en-US")} from ads` : ""}{perCountry.size > 0 ? ` · ${plural(perCountry.size, "country", "countries")}` : ""}</i>
-          {prospects && <i>{converted.toLocaleString("en-US")} signed up in the last 24 h</i>}
-          {totals && <i>{totals.today.toLocaleString("en-US")} today · {totals.allTime.toLocaleString("en-US")} since {TRAFFIC_SINCE_SHORT}</i>}
-        </div>
+        {/* The count box that sat here (2026-09-30) covered the map (owner,
+            2026-10-07: "the map is covered with the big banner"); its facts
+            are the first items of the key line under the map now, and the
+            day's totals are the tiles above the map. */}
 
         {/* The name of what is under the pointer */}
         {tip && !open && <span className={s.mapTip} style={{ left: tip.x + 14, top: tip.y + 12 }}>{tip.text}</span>}
@@ -525,6 +518,7 @@ export const LiveMap = memo(function LiveMap({ visitors, selected, onSelect, tim
           manual and the whole key open from the "?" at its end; with nobody
           on the map the line is that button alone. */}
       <div className={s.mapLegend} data-map-legend>
+        <span className={s.mapLegendCount} data-map-count><b>{count.toLocaleString("en-US")}</b> {prospects ? (count === 1 ? "prospect" : "prospects") : count === 1 ? "visitor" : "visitors"} on the map · <b>{onNow.toLocaleString("en-US")}</b> on the site now{perCountry.size > 0 ? ` · ${plural(perCountry.size, "country", "countries")}` : ""}{prospects ? ` · ${converted.toLocaleString("en-US")} signed up in the last 24 h` : ""}</span>
         {kinds.filter(([, n]) => n > 0).map(([key, n]) => (
           <span key={key}><PinIcon colour={PIN_META[key].colour}/>{PIN_META[key].label} · <b>{n}</b></span>
         ))}
