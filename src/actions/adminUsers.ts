@@ -5,8 +5,8 @@ import { z } from "zod";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
-import { SubscriptionStatus } from "@/lib/prismaEnums";
 import { subscriptionPeriodEnd } from "@/lib/stripeCompat";
+import { mirrorStatusFor } from "@/lib/stripeStatus";
 import { getSubscribersData, type SubscriberRow } from "@/actions/subscribers";
 import {
   LIVE_RECORD_STATUSES,
@@ -673,7 +673,9 @@ export async function syncSubscriptionsFromStripe(): Promise<StripeSyncResult> {
   // ── write (sequential: one SQLite writer) ───────────
   for (const [organizationId, sub] of best) {
     const existing = existingByOrg.get(organizationId);
-    const status = mapStripeSubStatus(sub.status);
+    // The webhook's and the cron's answer (lib/stripeStatus): a card-less trial
+    // that ran out stays TRIAL_ENDED, not CANCELED.
+    const status = mirrorStatusFor(sub);
 
     // A LIVE hand grant is never overwritten — the hand-grant rule, whatever id
     // the row happens to carry. A lapsed Stripe row would downgrade the grant
@@ -870,25 +872,6 @@ function subPrecedence(sub: Stripe.Subscription): number {
   const rank =
     sub.status === "active" ? 4 : sub.status === "trialing" ? 3 : sub.status === "past_due" ? 2 : 1;
   return rank * 1e12 + sub.created;
-}
-
-/** The status ladder the webhook writes (lib/stripeSync), so both agree. */
-function mapStripeSubStatus(s: Stripe.Subscription.Status): string {
-  switch (s) {
-    case "active":
-      return SubscriptionStatus.ACTIVE;
-    case "trialing":
-      return SubscriptionStatus.TRIALING;
-    case "past_due":
-      return SubscriptionStatus.PAST_DUE;
-    case "unpaid":
-      return SubscriptionStatus.UNPAID;
-    case "canceled":
-    case "incomplete_expired":
-      return SubscriptionStatus.CANCELED;
-    default:
-      return SubscriptionStatus.PAST_DUE; // incomplete / paused — not yet active
-  }
 }
 
 /**

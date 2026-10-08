@@ -27,6 +27,7 @@ import { db } from "@/lib/db";
 import { getStripeClient, isStripeEnabled } from "@/lib/sdk/stripe";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { SubscriptionStatus } from "@/lib/prismaEnums";
+import { mirrorStatusFor } from "@/lib/stripeStatus";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { planDisplayName, type PlanDTO } from "@/lib/planCatalog";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
@@ -140,22 +141,6 @@ interface Situation {
   catalog: PlanDTO[];
 }
 
-function stripeStatusToMirror(s: Stripe.Subscription.Status): string {
-  switch (s) {
-    case "active":
-      return SubscriptionStatus.ACTIVE;
-    case "trialing":
-      return SubscriptionStatus.TRIALING;
-    case "unpaid":
-      return SubscriptionStatus.UNPAID;
-    case "canceled":
-    case "incomplete_expired":
-      return SubscriptionStatus.CANCELED;
-    default:
-      return SubscriptionStatus.PAST_DUE;
-  }
-}
-
 function intervalOf(sub: Stripe.Subscription | null): "MONTH" | "YEAR" | null {
   const r = sub?.items.data[0]?.price?.recurring?.interval;
   return r === "year" ? "YEAR" : r === "month" ? "MONTH" : null;
@@ -220,7 +205,7 @@ function nowFacts(s: Situation): SubscriptionFacts {
   if (sub) {
     const slug = planSlugOf(sub, s) ?? (mirror?.plan ?? "").toLowerCase();
     const plan = s.catalog.find((p) => p.slug === slug);
-    const status = stripeStatusToMirror(sub.status);
+    const status = mirrorStatusFor(sub);
     const cancelBooked = sub.cancel_at_period_end;
     const nextAt = cancelBooked ? null : sub.status === "trialing" ? sub.trial_end : subscriptionPeriodEnd(sub);
     return {
@@ -408,7 +393,7 @@ async function planChange(raw: unknown, forApply: boolean): Promise<Plan | { err
     becomes = {
       plan: plan.slug,
       planName: plan.name,
-      status: sub ? (endsTrial ? SubscriptionStatus.ACTIVE : stripeStatusToMirror(sub.status)) : "—",
+      status: sub ? (endsTrial ? SubscriptionStatus.ACTIVE : mirrorStatusFor(sub)) : "—",
       payer: "customer",
       priceCents: targetCents,
       interval,
@@ -520,7 +505,7 @@ export async function applySubscriptionChange(raw: unknown, admin: EditorActor):
       return { ok: false, error: stripeError(err) };
     }
     // ── Stripe agreed; now the mirror, from its reply ──
-    const status = stripeStatusToMirror(updated.status);
+    const status = mirrorStatusFor(updated);
     const next = {
       plan: stored,
       status,

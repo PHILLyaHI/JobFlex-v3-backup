@@ -23,6 +23,7 @@ import {
   isWithinCommissionWindow,
 } from "@/lib/commission";
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
+import { isCardlessTrialLapse, mirrorStatusFor } from "@/lib/stripeStatus";
 import { mirrorSubAtKey, recordMirrorReference } from "@/lib/subscriptionRecord";
 import { mailChargeback, mailCommissionHeld } from "@/lib/influencerMail";
 import {
@@ -41,41 +42,9 @@ function idOf(v: string | { id: string } | null | undefined): string | null {
   return typeof v === "string" ? v : v.id;
 }
 
-function mapStripeStatus(s: Stripe.Subscription.Status): string {
-  switch (s) {
-    case "active":
-      return SubscriptionStatus.ACTIVE;
-    case "trialing":
-      return SubscriptionStatus.TRIALING;
-    case "past_due":
-      return SubscriptionStatus.PAST_DUE;
-    // Retries exhausted, subscription kept: the features close (lib/planStatus).
-    case "unpaid":
-      return SubscriptionStatus.UNPAID;
-    case "canceled":
-    case "incomplete_expired":
-      return SubscriptionStatus.CANCELED;
-    default:
-      return SubscriptionStatus.PAST_DUE; // incomplete / paused — not yet active
-  }
-}
-
-/* A CARD-LESS TRIAL THAT RAN OUT (2026-10-01). The trial is created with
-   trial_settings.end_behavior.missing_payment_method = "cancel" and marked
-   jf_cardless (lib/cardlessTrial), so Stripe cancels it at the trial's end
-   when no card arrived. That cancellation is not a customer leaving: the
-   mirror says TRIAL_ENDED (lib/trialState) — the workspace reads, nothing
-   writes, and a card restarts the plan — instead of CANCELED. */
-export function isCardlessTrialLapse(sub: Stripe.Subscription): boolean {
-  if (sub.status !== "canceled" || sub.metadata?.jf_cardless !== "1" || !sub.trial_end) return false;
-  const ended = sub.ended_at ?? sub.canceled_at ?? 0;
-  return ended >= sub.trial_end - 60 * 60 && !sub.default_payment_method;
-}
-
-/** The mirror's status for a subscription. */
-export function mirrorStatusFor(sub: Stripe.Subscription): string {
-  return isCardlessTrialLapse(sub) ? SubscriptionStatus.TRIAL_ENDED : mapStripeStatus(sub.status);
-}
+// The status ladder and the card-less trial's lapse: lib/stripeStatus, shared
+// with every other path that writes the mirror from Stripe.
+export { isCardlessTrialLapse, mirrorStatusFor };
 
 async function planSlugForPrice(stripePriceId: string | null): Promise<string | null> {
   if (!stripePriceId) return null;

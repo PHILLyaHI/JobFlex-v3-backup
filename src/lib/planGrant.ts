@@ -36,6 +36,7 @@ import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { ActivityKind, SubscriptionStatus } from "@/lib/prismaEnums";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { mirrorStatusFor } from "@/lib/stripeStatus";
 import { sendEmail } from "@/lib/sdk/resend";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { buildComplimentaryEnding } from "@/lib/email/build/planGrant";
@@ -241,22 +242,6 @@ export async function recordPlanActivity(opts: {
 
 /* ── THE SYNCING MARK, CONFIRMED BY STRIPE ────────────────────────────── */
 
-function statusOfStripe(s: Stripe.Subscription.Status): string {
-  switch (s) {
-    case "active":
-      return SubscriptionStatus.ACTIVE;
-    case "trialing":
-      return SubscriptionStatus.TRIALING;
-    case "unpaid":
-      return SubscriptionStatus.UNPAID;
-    case "canceled":
-    case "incomplete_expired":
-      return SubscriptionStatus.CANCELED;
-    default:
-      return SubscriptionStatus.PAST_DUE;
-  }
-}
-
 /**
  * A subscription Stripe reported (webhook, cron, or a verify read) confirms
  * the mark when it is the one the editor changed, on the price the editor
@@ -273,7 +258,7 @@ export async function confirmSyncingFromStripe(sub: Stripe.Subscription, organiz
   if (!mark || mark.subId !== sub.id) return false;
   const priceId = sub.items.data[0]?.price?.id ?? null;
   if (mark.priceId && priceId !== mark.priceId) return false;
-  if (statusOfStripe(sub.status) !== mark.status) return false;
+  if (mirrorStatusFor(sub) !== mark.status) return false;
   await clearSyncingMark(organizationId);
   return true;
 }
