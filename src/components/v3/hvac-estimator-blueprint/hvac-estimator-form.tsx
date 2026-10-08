@@ -36,6 +36,7 @@ import { VIDEO_ACCEPT, fmtClock, stripFrames } from "@/components/v3/video-estim
 import type { WalkthroughAnalysis } from "@/lib/estimate/video-schema";
 import type { BuildingModel, CatalogItem, EngineResult, Provenance } from "@/lib/hvac/types";
 import { runEngine } from "@/lib/hvac/engine";
+import { nextSteps, planFor, type FixAction } from "@/lib/hvac/fixes";
 import { countiesFor } from "@/lib/hvac/designConditions";
 import { CATALOG_CSV_COLUMNS, DEFAULT_RATE_CARD, buildLedger, normalizeRateCard, tiersFor, waterHeaterOptions, type HvacRateCard, type LedgerLine } from "@/lib/hvac/ledger";
 import { DEFAULT_JOB, JOBS, jobDef, type JobInput, type JobKind , type OutdoorKind } from "@/lib/hvac/jobs";
@@ -836,6 +837,24 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
   }
 
   const onTyped = React.useCallback((path: string, v: unknown) => setTyped((t) => ({ ...t, [path]: v })), []);
+  /** A check's fix, done (2026-10-08): the field opened and focused (or set),
+   *  the unit picked, the job switched, or the permit panel shown. */
+  const runFix = React.useCallback((a: FixAction) => {
+    if (a.kind === "field") {
+      if (a.value !== undefined) onTyped(a.path, a.value);
+      go("intake");
+      window.setTimeout(() => {
+        const el = document.getElementById(`hv-${a.path.replace(/\./g, "-")}`);
+        if (!el) return;
+        let d: HTMLElement | null = el.parentElement;
+        while (d) { if (d instanceof HTMLDetailsElement) d.open = true; d = d.parentElement; }
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (a.value === undefined) el.focus();
+      }, 120);
+    } else if (a.kind === "pick") { setPickId(a.candidateId); setSwapMsg(""); }
+    else if (a.kind === "job") { setJob(a.job); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); setTitle(null); }
+    else if (a.kind === "permit") { go("design"); window.setTimeout(() => document.getElementById("hv-permit")?.scrollIntoView({ behavior: "smooth", block: "center" }), 120); }
+  }, [onTyped, go]);
   /** Arrow keys walk a radio strip and pick as they go (the APG radiogroup pattern). */
   const radioKeys = (e: React.KeyboardEvent<HTMLElement>) => {
     const keys: Record<string, number> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
@@ -1898,10 +1917,24 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
             </div>
             <div>
               {(() => {
-                const fix = engine.checks.filter((c) => c.status === "fix");
-                const verify = engine.checks.filter((c) => c.status === "verify");
-                const pass = engine.checks.filter((c) => c.status === "pass");
-                const row = (c: (typeof engine.checks)[number]) => {
+                /* Every check comes with its way to a pass (lib/hvac/fixes,
+                   2026-10-08): what to type, what to pick, what is priced
+                   already. The rows are grouped by what the contractor can do
+                   — fix now, measure, or read for the install — and a strip
+                   on top names the few clicks that get the estimate to pass. */
+                const ctx = { model: model!, engine, job };
+                const planned = engine.checks.map((c) => ({ c, plan: planFor(c, ctx) }));
+                const pass = planned.filter((x) => x.c.status === "pass");
+                const fix = planned.filter((x) => x.c.status !== "pass" && x.plan.group === "fix");
+                const measure = planned.filter((x) => x.c.status !== "pass" && x.plan.group === "measure");
+                const notes = planned.filter((x) => x.c.status !== "pass" && x.plan.group === "code");
+                const steps = nextSteps(engine.checks, ctx);
+                const actionButton = (a: FixAction, i: number) => (
+                  a.kind === "ledger" || a.kind === "note"
+                    ? <span key={i} className={cx("fix-note", a.kind === "ledger" && "fix-priced")} data-fix-kind={a.kind}>{a.kind === "ledger" && <svg className={cx("ic")}><use href="#i-check" /></svg>}{a.label}</span>
+                    : <button key={i} type="button" className={cx("fix-btn")} data-fix-kind={a.kind} onClick={() => runFix(a)}>{a.label}</button>
+                );
+                const row = ({ c, plan }: (typeof planned)[number]) => {
                   const id = c.id + c.title;
                   const open = openCheck === id;
                   return (
@@ -1911,7 +1944,18 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                         <span className={cx("chk-t")}>{c.title}</span>
                         <svg className={cx("ic", "chk-c")}><use href="#i-chev" /></svg>
                       </button>
-                      {open && <div className={cx("chk-d")}>{c.detail}{c.rule && <div className={cx("check-r")}>{c.rule}</div>}</div>}
+                      {open && (
+                        <div className={cx("chk-d")}>
+                          {c.detail}{c.rule && <div className={cx("check-r")}>{c.rule}</div>}
+                          {c.status !== "pass" && plan.actions.length > 0 && (
+                            <div className={cx("chk-plan")} data-check-plan={plan.group}>
+                              <div className={cx("chk-lead")}>{plan.lead}</div>
+                              <div className={cx("chk-acts")}>{plan.actions.map(actionButton)}</div>
+                            </div>
+                          )}
+                          {c.status !== "pass" && plan.actions.length === 0 && <div className={cx("chk-lead")}>{plan.lead}</div>}
+                        </div>
+                      )}
                     </li>
                   );
                 };
@@ -1919,9 +1963,22 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                   <>
                     <div className={cx("chk-sum")}>
                       <span className={cx("kpi-lbl")}>Checks</span>
-                      <span className={cx("mono", "chk-n")}>{fix.length} to fix · {verify.length} to verify · {pass.length} pass</span>
+                      <span className={cx("mono", "chk-n")}>{fix.length} to fix · {measure.length} to measure · {notes.length} for the install · {pass.length} pass</span>
                     </div>
-                    <ul className={cx("chk-l")}>{[...fix, ...verify].map(row)}</ul>
+                    {steps.length > 0 && (
+                      <div className={cx("chk-next")} data-next-steps>
+                        <span className={cx("kpi-lbl")}>To pass</span>
+                        <div className={cx("chk-acts")}>{steps.map(actionButton)}</div>
+                      </div>
+                    )}
+                    {fix.length + measure.length === 0 && notes.length + pass.length > 0 && <div className={cx("chk-clear")} data-all-clear>Nothing left to fix or measure on the design.</div>}
+                    <ul className={cx("chk-l")}>{[...fix, ...measure].map(row)}</ul>
+                    {notes.length > 0 && (
+                      <details className={cx("chk-pass")} data-code-notes>
+                        <summary><span className={cx("chip", "chip-verify")}>note</span><span className={cx("chk-t")}>{notes.length} for the install and the permit</span><span className={cx("mono")}>show</span></summary>
+                        <ul className={cx("chk-l")}>{notes.map(row)}</ul>
+                      </details>
+                    )}
                     {pass.length > 0 && (
                       <details className={cx("chk-pass")}>
                         <summary><span className={cx("chip", "chip-pass")}>pass</span><span className={cx("chk-t")}>{pass.length} passed</span><span className={cx("mono")}>show</span></summary>
@@ -2079,7 +2136,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
             </div>
           </details>
 
-          <div className={cx("permit")} style={def.needs.load ? undefined : { display: "none" }}>
+          <div id="hv-permit" className={cx("permit")} style={def.needs.load ? undefined : { display: "none" }}>
             <div className={cx("permit-txt")}>
               <span className={cx("kpi-lbl")}>Permit-grade report</span>
               <div className={cx("note")} style={{ marginTop: 6 }}>

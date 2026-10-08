@@ -959,6 +959,21 @@
 :global(.jf-blueprint .content) .chk-c { width: 16px; height: 16px; color: var(--muted); transition: transform 0.2s var(--ease); }
 :global(.jf-blueprint .content) .chk-r.open .chk-c { transform: rotate(180deg); }
 :global(.jf-blueprint .content) .chk-d { padding: 0 0 12px 72px; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+/* the way to a pass (2026-10-08): a strip of the few clicks on top, and under
+   each open row its lead and its actions — buttons where the page can do it,
+   a tick where the estimate already carries it, plain text for the install */
+:global(.jf-blueprint .content) .chk-next { display: grid; gap: 6px; padding: 10px 12px; margin: 0 0 8px; border: 1.5px solid var(--blueprint); background: color-mix(in oklab, var(--blueprint) 6%, #fff); }
+:global(.jf-blueprint .content) .chk-clear { padding: 10px 0; font-family: var(--font-mono); font-size: 11px; color: var(--success-dark, #1f6b3a); }
+:global(.jf-blueprint .content) .chk-plan { margin-top: 8px; padding: 8px 10px; border-left: 2px solid var(--blueprint); background: color-mix(in oklab, var(--blueprint) 4%, #fff); color: var(--ink); }
+:global(.jf-blueprint .content) .chk-lead { font-size: 12px; font-weight: 700; color: var(--ink); }
+:global(.jf-blueprint .content) .chk-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+:global(.jf-blueprint .content) .fix-btn { min-height: 30px; padding: 4px 10px; border: 1.5px solid var(--blueprint); border-radius: 2px; background: #fff; color: var(--blueprint); font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-align: left; cursor: pointer; }
+:global(.jf-blueprint .content) .fix-btn:hover { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .fix-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint .content) .fix-note { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 2px; font-size: 12px; color: var(--muted); }
+:global(.jf-blueprint .content) .fix-priced { color: var(--success-dark, #1f6b3a); font-weight: 700; }
+:global(.jf-blueprint .content) .fix-priced .ic { width: 14px; height: 14px; }
+@media (max-width: 560px) { :global(.jf-blueprint .content) .fix-btn { min-height: 40px; } }
 :global(.jf-blueprint .content) .chk-pass { margin-top: 2px; }
 :global(.jf-blueprint .content) .chk-pass > summary { display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 40px; padding: 6px 0; cursor: pointer; list-style: none; border-bottom: 1px solid var(--hair-soft); }
 :global(.jf-blueprint .content) .chk-pass > summary::-webkit-details-marker { display: none; }
