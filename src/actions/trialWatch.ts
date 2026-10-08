@@ -40,7 +40,7 @@ export type TrialWatchData = {
   watchDays: number;
   /** False when the PageView table could not be read — not pushed to this database yet. */
   viewsAvailable: boolean;
-  rows: Array<TrialAssessment & { card: TrialCard | null; spend: TrialSpend }>;
+  rows: Array<TrialAssessment & { card: TrialCard | null; spend: TrialSpend; winback: { sent: number; offerUntil: string | null } | null }>;
 };
 
 /** How each listed company's subscription pays, by organization id
@@ -200,14 +200,19 @@ export async function getTrialWatch(): Promise<TrialWatchData> {
   // Paid API spend during the trial (lib/trialMeter: recorded only while an
   // organization is TRIALING, priced by lib/paidApiCosts).
   const meters = await readTrialMeters(ids);
+  // The win-back (lib/trialWinback): how many mails an ended trial has had, and the 10% offer's last day.
+  const { readWinbacks } = await import("@/lib/trialWinback");
+  const winbacks = await readWinbacks(ids).catch(() => new Map());
   const rowsOut = withCard.map((r) => {
     const m = meters.get(r.id);
+    const wb = winbacks.get(r.id);
+    const winback = wb ? { sent: Object.values(wb.sent).filter((v) => typeof v === "string" && !v.startsWith("skipped:")).length, offerUntil: wb.offerUntil ?? null } : null;
     const byService = m
       ? (Object.keys(m.spend) as PaidService[])
           .map((service) => ({ service, cents: m.spend[service] ?? 0, calls: m.calls[service] ?? 0 }))
           .sort((a, b) => b.cents - a.cents)
       : [];
-    return { ...r, spend: { cents: meterSpendCents(m), byService, uses: m?.uses ?? {} } };
+    return { ...r, spend: { cents: meterSpendCents(m), byService, uses: m?.uses ?? {} }, winback };
   });
   return { now: new Date().toISOString(), windowDays: TRIAL_WINDOW_DAYS, watchDays: WATCH_DAYS, viewsAvailable, rows: rowsOut };
 }

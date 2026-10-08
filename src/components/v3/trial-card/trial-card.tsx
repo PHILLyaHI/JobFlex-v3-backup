@@ -298,8 +298,13 @@ export function TrialSheet({
             </div>
           ) : isOwner ? (
             <div className={s.actions}>
+              {ended && view.offer ? (
+                <p className={s.offer} data-winback-offer>
+                  <b>{view.offer.pct}% off for {view.offer.months} months</b> — applied by itself at the card step, until {DATE.format(new Date(view.offer.until))}.
+                </p>
+              ) : null}
               <button type="button" className={s.button} onClick={() => void go()} disabled={busy} aria-busy={busy || undefined}>
-                {busy ? "Opening…" : ended ? "Add a card to continue" : "Add a card"}
+                {busy ? "Opening…" : ended && view.offer ? `Add a card with ${view.offer.pct}% off` : ended ? "Add a card to continue" : "Add a card"}
               </button>
               <Link className={s.quiet} href={"/dashboard" as Route}>
                 {ended ? "Look around first" : "Later"}

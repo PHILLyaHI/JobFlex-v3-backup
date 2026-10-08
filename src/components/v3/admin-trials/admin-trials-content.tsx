@@ -34,7 +34,9 @@ const CARD_LABEL: Record<TrialCard, string> = { none: "No card", "on-file": "Car
  *  trial that added one, a card-first trial, a restart — and the card-less
  *  record's own words otherwise. Nothing for a company Stripe holds no
  *  subscription for. Until Stripe answers (it streams) the record's words show. */
-function CardLine({ card, payment }: { card: TrialCard | null; payment: PaymentCard | null }) {
+type Winback = { sent: number; offerUntil: string | null } | null;
+const DAY = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+function CardLine({ card, payment, winback = null }: { card: TrialCard | null; payment: PaymentCard | null; winback?: Winback }) {
   const method = payment && payment.kind !== "none" ? <PaymentCardLabel card={payment} /> : null;
   const words =
     card === "restarted" ? (
@@ -43,7 +45,10 @@ function CardLine({ card, payment }: { card: TrialCard | null; payment: PaymentC
         {method && <> · {method}</>}
       </>
     ) : card === "ended" ? (
-      CARD_LABEL.ended
+      <>
+        {CARD_LABEL.ended}
+        {winback ? <> · win-back · {winback.sent} {winback.sent === 1 ? "mail" : "mails"}{winback.offerUntil ? ` · 10% until ${DAY.format(new Date(winback.offerUntil))}` : ""}</> : null}
+      </>
     ) : (
       method ?? (card ? CARD_LABEL[card] : payment?.label)
     );
@@ -57,8 +62,8 @@ function CardLine({ card, payment }: { card: TrialCard | null; payment: PaymentC
   );
 }
 
-function StreamedCardLine({ id, card, payments }: { id: string; card: TrialCard | null; payments: Promise<TrialPayments> }) {
-  return <CardLine card={card} payment={use(payments)[id] ?? null} />;
+function StreamedCardLine({ id, card, payments, winback = null }: { id: string; card: TrialCard | null; payments: Promise<TrialPayments>; winback?: Winback }) {
+  return <CardLine card={card} payment={use(payments)[id] ?? null} winback={winback} />;
 }
 
 export function AdminTrialsContent({
@@ -226,8 +231,8 @@ export function AdminTrialsContent({
                         <div className={s.sub}>
                           <StatusChip status={r.status} />
                         </div>
-                        <Suspense fallback={<CardLine card={r.card} payment={null} />}>
-                          <StreamedCardLine id={r.id} card={r.card} payments={payments} />
+                        <Suspense fallback={<CardLine card={r.card} payment={null} winback={r.winback} />}>
+                          <StreamedCardLine id={r.id} card={r.card} payments={payments} winback={r.winback} />
                         </Suspense>
                       </div>
                     </td>

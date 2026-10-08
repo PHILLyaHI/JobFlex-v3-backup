@@ -200,11 +200,15 @@ export async function openCardCheckout(orgId: string, origin: string): Promise<{
   const plan = await currentTrialPlan(orgId, rec);
   const priced = await resolveSignupPrice({ stripe, mode, planSlug: plan.planSlug, interval: plan.interval, customPages: plan.customPages });
   if (!priced.ok) throw new Error(priced.error);
+  // The win-back's 10% (lib/trialWinback), applied by itself while the offer stands.
+  const { winbackOffer } = await import("@/lib/trialWinback");
+  const offer = await winbackOffer(orgId).catch(() => null);
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: rec.customerId,
     client_reference_id: orgId,
     line_items: priced.lineItems,
+    ...(offer ? { discounts: [{ coupon: offer.couponId }] } : {}),
     subscription_data: {
       metadata: {
         organizationId: orgId,
@@ -214,7 +218,7 @@ export async function openCardCheckout(orgId: string, origin: string): Promise<{
         ...(priced.isCustom ? { customPages: plan.customPages.join(",") } : {}),
       },
     },
-    metadata: { organizationId: orgId, jf_purpose: "trial-restart", planSlug: priced.planLabel },
+    metadata: { organizationId: orgId, jf_purpose: "trial-restart", planSlug: priced.planLabel, ...(offer ? { jf_winback: `${offer.pct}` } : {}) },
     success_url: `${back}?card=added&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${back}?card=cancelled`,
   });
@@ -279,18 +283,24 @@ export type TrialView = {
   planName: string;
   /** "$79/mo" */
   price: string;
+  /** The win-back's offer while it stands (lib/trialWinback): the trial page says so and the card step applies it. */
+  offer: { pct: number; months: number; until: string } | null;
 };
 
 export async function trialView(orgId: string): Promise<TrialView | null> {
   const state = await cardlessTrialState(orgId);
+  const { winbackOffer } = await import("@/lib/trialWinback");
+  const offer = state?.kind === "ended" ? await winbackOffer(orgId).then((o) => (o ? { pct: o.pct, months: o.months, until: o.until } : null)).catch(() => null) : null;
   if (!state) return null;
   const plan = await trialPlanSummary(orgId, state.record);
   const dollars = plan.cents / 100;
   const price = `$${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}${plan.per}`;
   if (state.kind === "ended") {
-    return { kind: "ended", daysLeft: 0, endsAt: state.endedAt.toISOString(), hasCard: false, planName: plan.name, price };
+    return {
+    offer, kind: "ended", daysLeft: 0, endsAt: state.endedAt.toISOString(), hasCard: false, planName: plan.name, price };
   }
-  return { kind: "trialing", daysLeft: state.daysLeft, endsAt: state.endsAt.toISOString(), hasCard: state.hasCard, planName: plan.name, price };
+  return {
+    offer, kind: "trialing", daysLeft: state.daysLeft, endsAt: state.endsAt.toISOString(), hasCard: state.hasCard, planName: plan.name, price };
 }
 
 const HOUR_MS = 60 * 60 * 1000;
