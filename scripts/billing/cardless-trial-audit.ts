@@ -41,7 +41,7 @@ const PROD = process.argv.includes("--prod");
 const READ_STRIPE = process.argv.includes("--stripe");
 
 async function main() {
-  const { where } = openEnvironment({ prod: PROD, out: path.join(ROOT, ".cache/cardless-trial-audit"), allowLiveWrites: false });
+  const { where } = openEnvironment({ prod: PROD, out: path.join(ROOT, ".cache/cardless-trial-audit"), allowLiveWrites: false, stripe: READ_STRIPE });
   console.log(`cardless-trial-audit — ${where} — read only${READ_STRIPE ? ", with Stripe reads" : ""}\n`);
 
   const { db } = await import("../../src/lib/db");
@@ -64,27 +64,24 @@ async function main() {
       unreadable += 1;
       continue;
     }
-    const [org, sub] = await Promise.all([
+    const [org, sub, owner] = await Promise.all([
       db.organization.findUnique({ where: { id: orgId }, select: { name: true } }),
-      db.subscription.findUnique({ where: { organizationId: orgId }, select: { plan: true, status: true, externalSubId: true, stripePriceId: true, provider: true } }),
+      db.subscription.findUnique({ where: { organizationId: orgId }, select: { plan: true, status: true, externalSubId: true, stripePriceId: true, provider: true, trialEndsAt: true } }),
+      db.membership.findFirst({ where: { organizationId: orgId, role: "OWNER" }, orderBy: { createdAt: "asc" }, select: { user: { select: { email: true } } } }),
     ]);
-    const name = org?.name ?? "(organization gone)";
+    const who = `${org?.name ?? "(organization gone)"} (${orgId})`;
+    const email = owner?.user.email ?? "—";
     const onTrialSub = sub?.externalSubId === rec.subId;
+    const ends = (sub && onTrialSub && sub.trialEndsAt ? sub.trialEndsAt.toISOString() : rec.endsAt).slice(0, 10);
+    const recPlan = `${rec.planSlug}/${rec.interval}`;
+    const now = onTrialSub ? await currentTrialPlan(orgId, rec) : null;
+    const subPlan = now ? `${now.planSlug}/${now.interval}` : `${(sub?.plan ?? "—").toLowerCase()} (another subscription)`;
 
     // A — only while the row still follows the trial's subscription: once it
     // moved on (a paid checkout, a comp) the record names nothing on screen.
-    if (onTrialSub && !rec.restartedAt) {
-      const now = await currentTrialPlan(orgId, rec);
-      if (now.planSlug !== rec.planSlug || now.interval !== rec.interval) {
-        planRows.push([
-          orgId,
-          name,
-          sub!.status,
-          `${rec.planSlug}/${rec.interval}`,
-          `${now.planSlug}/${now.interval}`,
-          now.planSlug === "custom" ? `${rec.customPages.length} → ${now.customPages.length} pages` : "",
-        ]);
-      }
+    if (now && !rec.restartedAt && (now.planSlug !== rec.planSlug || now.interval !== rec.interval)) {
+      const pages = now.planSlug === "custom" ? ` (${rec.customPages.length} → ${now.customPages.length} pages)` : "";
+      planRows.push([who, email, `${recPlan} / ${subPlan}${pages}`, sub!.status, ends]);
     }
 
     // B
@@ -98,7 +95,7 @@ async function main() {
           stripeSays = "not on this Stripe account";
         }
       }
-      statusRows.push([orgId, name, onTrialSub ? rec.subId : `${rec.subId} (row now ${sub.externalSubId ?? "none"})`, rec.endedAt ?? "—", rec.cardAt ? "card on file" : "no card", stripeSays]);
+      statusRows.push([who, email, `${recPlan} / ${subPlan}`, `${sub.status}${onTrialSub ? "" : ` (row now ${sub.externalSubId ?? "no subscription"})`}`, ends, rec.cardAt ? "card on file" : "no card", ...(stripe ? [stripeSays] : [])]);
     }
   }
 
@@ -110,9 +107,9 @@ async function main() {
   };
   console.log(`${rows.length} card-less trial record(s)${unreadable ? `, ${unreadable} unreadable` : ""}\n`);
   console.log(`A. Plan in the record ≠ plan on the subscription — ${planRows.length}`);
-  table(["org", "name", "status", "record", "subscription", "pages"], planRows);
+  table(["organization", "owner email", "plan: record / subscription", "status", "trial ends"], planRows);
   console.log(`B. Record without restartedAt, row CANCELED — ${statusRows.length}`);
-  table(["org", "name", "subscription", "endedAt", "card", "Stripe"], statusRows);
+  table(["organization", "owner email", "plan: record / subscription", "status", "trial ends", "card", ...(stripe ? ["Stripe"] : [])], statusRows);
   await db.$disconnect();
 }
 

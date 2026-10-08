@@ -53,7 +53,13 @@ function openProductionDatabase(out: string): string {
  * Load .env.local/.env, silence mail and analytics, open the database.
  * Returns where the run points and whether the Stripe key is live.
  */
-export function openEnvironment(opts: { prod: boolean; out: string; allowLiveWrites: boolean }): { where: string; live: boolean } {
+export function openEnvironment(opts: {
+  prod: boolean;
+  out: string;
+  allowLiveWrites: boolean;
+  /** False for a database-only run: --prod then needs no live key. */
+  stripe?: boolean;
+}): { where: string; live: boolean } {
   fs.mkdirSync(opts.out, { recursive: true });
   // Next's own loader: .env.local, then .env; a variable already set wins.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -65,6 +71,11 @@ export function openEnvironment(opts: { prod: boolean; out: string; allowLiveWri
   delete process.env.STRIPE_MOCK_FILE;
   process.env.STRIPE_ALLOW_LIVE_WRITES = opts.allowLiveWrites ? "true" : "";
 
+  // The key is checked BEFORE the production URL is read: the file is
+  // deleted as it is read, and a refusal after that cost the owner a new one.
+  const live = (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_");
+  if (opts.prod && !live && opts.stripe !== false) throw new Error("--prod needs the LIVE key (STRIPE_SECRET_KEY=sk_live_…)");
+  if (!opts.prod && live) throw new Error("a live key against a local database — refusing; blank STRIPE_SECRET_KEY for the sandbox");
   let where: string;
   if (opts.prod) {
     where = `production (${openProductionDatabase(opts.out)})`;
@@ -72,10 +83,6 @@ export function openEnvironment(opts: { prod: boolean; out: string; allowLiveWri
     const url = process.env.DATABASE_URL ?? "";
     if (!/^file:/.test(url)) throw new Error("without --prod only a local SQLite database is allowed");
     where = `local (${url.replace(/^file:/, "")})`;
-  }
-  const live = (process.env.STRIPE_SECRET_KEY ?? "").startsWith("sk_live_");
-  if (opts.prod !== live) {
-    throw new Error(opts.prod ? "--prod needs the LIVE key (STRIPE_SECRET_KEY=sk_live_…)" : "a live key against a local database — refusing; blank STRIPE_SECRET_KEY for the sandbox");
   }
   return { where, live };
 }
