@@ -8,7 +8,8 @@ import "server-only";
 //   day 3   "pick up where you left off";
 //   day 5   THE OFFER: 10% off for three months, applied by itself at the card
 //           step (a Stripe coupon on the restart Checkout), good for 14 days;
-//   day 12  "last days of your 10% off".
+//   day 12  "last days of your 10% off" — a week after the offer mail, so a
+//           trial that ended long ago gets the offer first, then this.
 // One mail per shop per run, the furthest stage that is due (a shop found
 // late gets the offer, not a backlog); nothing once a card restarts the plan;
 // the record is SyncState `winback:<orgId>`. The coupon is made once per
@@ -29,8 +30,18 @@ export const WINBACK_STAGES: Array<{ key: WinbackStage; afterDays: number }> = [
   { key: "d1", afterDays: 1 },
   { key: "d3", afterDays: 3 },
   { key: "offer", afterDays: 5 },
+  // The last word is counted from the OFFER mail, not the trial's end (day 12
+  // in the normal run): a trial that ended long before the sweep existed gets
+  // the offer first and the last word a week later, never "last days of your
+  // 10% off" as the first thing it hears.
   { key: "last", afterDays: 12 },
 ];
+export const LAST_AFTER_OFFER_DAYS = 7;
+
+const offerMailedAt = (rec: WinbackRecord): number | null => {
+  const at = rec.sent.offer;
+  return at && !at.startsWith("skipped:") ? Date.parse(at) : null;
+};
 
 export interface WinbackRecord {
   endedAt: string;
@@ -134,7 +145,12 @@ export async function runTrialWinbackSweep(now = new Date()): Promise<WinbackSwe
       out.ended++;
       const rec = (await readWinback(orgId)) ?? { endedAt: state.endedAt.toISOString(), sent: {} };
       const daysSince = Math.floor((now.getTime() - Date.parse(rec.endedAt)) / DAY_MS);
-      const due = WINBACK_STAGES.filter((s) => daysSince >= s.afterDays && !rec.sent[s.key]);
+      const due = WINBACK_STAGES.filter((s) => {
+        if (rec.sent[s.key]) return false;
+        if (s.key !== "last") return daysSince >= s.afterDays;
+        const offerAt = offerMailedAt(rec);
+        return offerAt !== null && now.getTime() - offerAt >= LAST_AFTER_OFFER_DAYS * DAY_MS;
+      });
       if (due.length === 0) { out.skipped++; continue; }
       const stage = due[due.length - 1];
       for (const earlier of due.slice(0, -1)) rec.sent[earlier.key] = `skipped:${now.toISOString()}`;
