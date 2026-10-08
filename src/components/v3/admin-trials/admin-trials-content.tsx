@@ -12,8 +12,9 @@ import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import type { TrialCard, TrialWatchData } from "@/actions/trialWatch";
-import type { SignupTrialState } from "@/lib/trialPolicyServer";
+import type { SignupFlow, SignupTrialState } from "@/lib/trialPolicyServer";
 import { TrialPolicyPanel } from "./trial-policy-panel";
+import { SignupStepsPanel } from "./signup-steps-panel";
 import type { TrialLevel } from "@/lib/trialWatch";
 import { formatSpend, PAID_SERVICE_LABEL } from "@/lib/paidApiCosts";
 import { TRIAL_CAP_KEYS, TRIAL_CAP_NOUN } from "@/lib/trialCaps";
@@ -25,7 +26,7 @@ const LEVEL_LABEL: Record<TrialLevel, string> = { suspicious: "Look at this", wa
 /** The card-less trial's card, as the row's second line says it. */
 const CARD_LABEL: Record<TrialCard, string> = { none: "No card", "on-file": "Card added", ended: "Ended, no card", restarted: "Paid after trial" };
 
-export function AdminTrialsContent({ data, policy }: { data: TrialWatchData; policy: SignupTrialState }) {
+export function AdminTrialsContent({ data, policy, signup }: { data: TrialWatchData; policy: SignupTrialState; signup: SignupFlow }) {
   const [level, setLevel] = useState<"" | TrialLevel>("");
   // Card-less trials apart (owner, 2026-10-01): "no-card" is every trial that
   // started without one, whatever has happened since; the rest narrow it.
@@ -70,6 +71,7 @@ export function AdminTrialsContent({ data, policy }: { data: TrialWatchData; pol
       )}
 
       <TrialPolicyPanel initial={policy} />
+      <SignupStepsPanel initial={signup} />
 
       <div className="kpi-grid">
         <div className="kpi">

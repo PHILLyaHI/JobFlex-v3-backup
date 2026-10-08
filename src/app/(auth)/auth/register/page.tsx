@@ -28,7 +28,7 @@ import { db } from "@/lib/db";
 import { isPlaceholderOrgName, needsCompanySetup } from "@/lib/orgSetup";
 import { readGoogleSignup } from "@/lib/googleSignup";
 import { detectInAppBrowser } from "@/lib/inAppBrowser";
-import { signupTrialMode } from "@/lib/trialPolicyServer";
+import { signupSteps, signupTrialMode } from "@/lib/trialPolicyServer";
 import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/disposableEmail";
 import { customPlanOffered } from "@/lib/customPlanFlag";
 import { RegisterResponsive, type GooglePrefill, type SetupPrefill } from "./register-responsive";
@@ -156,6 +156,7 @@ export default async function RegisterPage({
       <script dangerouslySetInnerHTML={{ __html: STEP1_PRELUDE }} />
       <RegisterResponsive
         requiresCard={(await signupTrialMode()) === "card"}
+        steps={await signupSteps()}
         offerCustom={customPlanOffered()}
         initialError={googleError}
         setup={setup}
