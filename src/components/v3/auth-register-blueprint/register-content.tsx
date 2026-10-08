@@ -129,7 +129,14 @@ export function RegisterContent({
   requiresCard: requiresCardInitial = true,
   initialError = null,
   offerCustom = false,
+  steps = 3,
 }: {
+  /* THE SIGN-UP'S STEPS (owner, 2026-10-07, lib/trialPolicyServer): 3 =
+     account · company · plan as built; 2 = step 1 also takes the business
+     name and the trades (folded — what the shop does, not lead matching:
+     leads come once specialties and the address are set in Settings) and
+     goes straight to the plan; the company screen is never drawn. */
+  steps?: 2 | 3;
   /* CUSTOM_PLAN_ENABLED (lib/customPlanFlag), read on the server: the custom
      plan's card and page picker on the plan step. */
   offerCustom?: boolean;
@@ -170,6 +177,9 @@ export function RegisterContent({
      it), the plan step follows in the app (/dashboard/upgrade), and there is
      no pending-signup intent to park: the account already exists. */
   const setupMode = setup !== null;
+  /* The two-step sign-up: the company's part folds into step 1 (never in
+     setup mode, which is the company screen on its own). */
+  const twoStep = steps === 2 && !setupMode;
   /* THE FORM (landing-e pass A, 2026-09-11; the only form since 2026-09-16):
      step 1 is name, email, password and — since 2026-09-26 (owner) — a
      password confirmation, checked here in the browser only; the business
@@ -206,7 +216,7 @@ export function RegisterContent({
      shop is live" — which read as being sent back (owner's report). The done
      panel now carries a finalizing state (`payBusy`) for that second. */
   const [step, setStep] = React.useState<Step>(
-    setupMode ? 2 : ret ? (ret.sessionId && !ret.cancelled ? 4 : 3) : googlePrefill ? 2 : 1,
+    setupMode ? 2 : ret ? (ret.sessionId && !ret.cancelled ? 4 : 3) : googlePrefill ? (twoStep ? 1 : 2) : 1,
   );
   /* GOOGLE ON THIS PAGE proves who the visitor is and nothing more (owner,
      2026-09-03). The auth callback parks the verified identity and comes back
@@ -225,10 +235,10 @@ export function RegisterContent({
     // Parent route effects must record the entry pageview before this screen.
     const timer = window.setTimeout(() => {
       lastTrackedStep.current = key;
-      trackTraffic(TRAFFIC_EVENTS.step, { step, flow: trafficFlow, variant: "e" });
+      trackTraffic(TRAFFIC_EVENTS.step, { step, flow: trafficFlow, variant: "e", steps: twoStep ? 2 : 3 });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [step, trafficFlow]);
+  }, [step, trafficFlow, twoStep]);
   /* True once the ticket minted by completePendingSignup has been redeemed:
      the browser holds a session, and step 4 may point at the dashboard. */
   const [signedIn, setSignedIn] = React.useState(false);
@@ -412,7 +422,7 @@ export function RegisterContent({
   const leadSent = React.useRef(false);
   const registrationSent = React.useRef(false);
   /** Step 1's outcome for the analyst: passed, or refused and why. */
-  const step1Outcome = (outcome: "continue" | "error", reason = "") => trackTraffic(TRAFFIC_EVENTS.signupStep1, { outcome, reason, variant: "e" });
+  const step1Outcome = (outcome: "continue" | "error", reason = "") => trackTraffic(TRAFFIC_EVENTS.signupStep1, { outcome, reason, variant: "e", steps: twoStep ? 2 : 3 });
   /* CompleteRegistration, the browser's copy. On the return from Checkout
      the page mounts straight on step 4 — before the consent provider has
      loaded the pixel, so an effect keyed on the step fired into nothing
@@ -560,6 +570,9 @@ export function RegisterContent({
   const [addr, setAddr] = React.useState("");
   const [phone, setPhone] = React.useState(setup?.companyPhone || setup?.phone || "");
   const [trades, setTrades] = React.useState<TradeType[]>(industry ? [industry] : []);
+  /* The two-step sign-up's trades fold: open until something is picked (a
+     landing's ?industry= pre-picks one, so that visitor sees it folded). */
+  const [foldOpen, setFoldOpen] = React.useState(!industry);
   // "Other" is the one chip that cannot say what it means on its own. Picking it
   // opens a free-text line so the trade the taxonomy has no word for still
   // reaches the company record instead of being flattened into a shrug.
@@ -619,12 +632,12 @@ export function RegisterContent({
            before anything is created, so a failed lookup must not strand a
            verified visitor on a step they cannot complete. */
       }
-      if (live) setStep(2);
+      if (live) setStep(twoStep ? 1 : 2);
     });
     return () => {
       live = false;
     };
-  }, [gsu, googlePrefill, initialError]);
+  }, [gsu, googlePrefill, initialError, twoStep]);
 
   /* ADDRESS SUGGESTIONS on the company address (owner, 2026-09-02). The same
      Google Places attach every blueprint page uses; the list is appended to
@@ -1030,6 +1043,12 @@ export function RegisterContent({
     if (!leadSent.current) {
       leadSent.current = metaTrackWithServer("Lead", { content_name: industry ?? "default" }, { email: em });
     }
+    if (twoStep) {
+      /* The company's part of the one step: the business name and the
+         trades are checked and the pending signup starts right here. */
+      await finish(setErr1);
+      return;
+    }
     setStep(2);
   }
 
@@ -1043,23 +1062,25 @@ export function RegisterContent({
      one trade are what the Lead Center matches on, so a shop without them is a
      shop that never receives the free leads the step promises. The
      "Skip — set this up later" exit is gone with it. */
-  async function finish() {
+  async function finish(report: (message: string | null) => void = setErr2) {
     if (creating) return;
     /* The business name is asked for on this step, so it is validated here. */
     if (!biz.trim()) {
-      setErr2("Enter your business name.");
+      report("Enter your business name.");
       return;
     }
-    if (!addr.trim()) {
-      setErr2("Enter your company address — leads are matched by distance.");
+    /* The two-step sign-up asks for the address later, in Settings. */
+    if (!twoStep && !addr.trim()) {
+      report("Enter your company address — leads are matched by distance.");
       return;
     }
     if (trades.length === 0) {
-      setErr2("Pick at least one trade — leads are matched to it.");
+      report(twoStep ? "Pick at least one trade — what you do." : "Pick at least one trade — leads are matched to it.");
+      setFoldOpen(true);
       return;
     }
     setCreating(true);
-    setErr2(null);
+    report(null);
     try {
       if (setupMode) {
         await completeCompanySetup({
@@ -1082,7 +1103,7 @@ export function RegisterContent({
         businessName: biz.trim(),
         email: email.trim(),
         ...(google ? { googleToken: google.handle } : { password }),
-        companyAddress: addr.trim(),
+        companyAddress: addr.trim() || undefined,
         companyPhone: phone.trim() || undefined,
         tradeTypes: trades,
         otherTrade:
@@ -1105,7 +1126,7 @@ export function RegisterContent({
         },
       });
       if (!res.ok) {
-        setErr2(res.error);
+        report(res.error);
         toast.error("Couldn't continue", res.error);
         return;
       }
@@ -1117,7 +1138,7 @@ export function RegisterContent({
       setToken(res.token);
       setStep(3);
     } catch {
-      setErr2(SERVER_TROUBLE);
+      report(SERVER_TROUBLE);
       toast.error("Couldn't continue", SERVER_TROUBLE);
     } finally {
       setCreating(false);
@@ -1148,8 +1169,63 @@ export function RegisterContent({
   /* The step indicator. Drawn twice — in the form column and on the plan
      sheet — because the two are separate layers that slide past each other;
      only one is ever visible. */
-  const stepper = (
-    <div className="stepper" id="stepper">
+  /* The trade chips, the same on the company screen and inside step 1's
+     fold — with their own note: the company screen's promises lead matching,
+     the fold's says what you do and sends lead matching to Settings
+     (owner, 2026-10-07). */
+  const tradeChips = (note: string) => (
+    <>
+      <div className="chips" role="group" aria-label="Your trades">
+        {TRADE_TYPES.map((t) => (
+          <button
+            key={t}
+            className={trades.includes(t) ? "chip on" : "chip"}
+            type="button"
+            aria-pressed={trades.includes(t)}
+            onClick={() => toggleTrade(t)}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      {trades.includes("Other") && (
+        <input
+          ref={otherRef}
+          className="fld-in fld-in--other"
+          type="text"
+          maxLength={80}
+          placeholder="Name the trade — e.g. epoxy & garage floor coatings"
+          aria-label="Your other trade"
+          value={otherTrade}
+          onChange={(e) => setOtherTrade(e.target.value)}
+        />
+      )}
+      <span className="fld-note" id="tradeNote">
+        {note}
+      </span>
+    </>
+  );
+
+  const stepper = twoStep ? (
+    <div className="stepper" id="stepper" data-steps="2">
+      <div className={stItem(0, step)} data-step="1">
+        <span className="st-n">1</span>
+        <span className="st-txt">
+          <span className="st-t">Account</span>
+          <span className="st-h">Required</span>
+        </span>
+      </div>
+      <span className="st-line"></span>
+      <div className={stItem(2, step)} data-step="3">
+        <span className="st-n">2</span>
+        <span className="st-txt">
+          <span className="st-t">Plan</span>
+          <span className="st-h">Free trial</span>
+        </span>
+      </div>
+    </div>
+  ) : (
+    <div className="stepper" id="stepper" data-steps="3">
       <div className={stItem(0, step)} data-step="1">
         <span className="st-n">1</span>
         <span className="st-txt">
@@ -1321,8 +1397,39 @@ export function RegisterContent({
               </>
               ) : null}
 
-              <button className="btn" type="submit" id="nextBtn" disabled={checking}>
-                {checking ? "Checking…" : "Continue"}
+              {twoStep ? (
+                <>
+                  <label className="fld">
+                    <span className="fld-lbl">Business name</span>
+                    <input
+                      className="fld-in"
+                      id="biz1"
+                      placeholder="Company name"
+                      autoComplete="organization"
+                      value={biz}
+                      onChange={(e) => setBiz(e.target.value)}
+                    />
+                  </label>
+                  <details
+                    className="fold"
+                    id="tradesFold"
+                    open={foldOpen}
+                    onToggle={(e) => setFoldOpen((e.currentTarget as HTMLDetailsElement).open)}
+                  >
+                    <summary className="fold-sum">
+                      <span className="fld-lbl">What you do</span>
+                      <span className="fold-val">{trades.length ? trades.join(", ") : "Pick your trades"}</span>
+                      <svg className="ic fold-ic" aria-hidden="true">
+                        <use href="#i-arrow-r" />
+                      </svg>
+                    </summary>
+                    {tradeChips("What you do — your estimators and proposals follow it. To receive leads, set your specialties and address in Settings after you sign in.")}
+                  </details>
+                </>
+              ) : null}
+
+              <button className="btn" type="submit" id="nextBtn" disabled={checking || creating}>
+                {checking ? "Checking…" : creating ? "Creating…" : "Continue"}
                 <svg className="ic">
                   <use href="#i-arrow-r" />
                 </svg>
@@ -1437,34 +1544,7 @@ export function RegisterContent({
 
               <div className="fld">
                 <span className="fld-lbl">Trades you take</span>
-                <div className="chips" role="group" aria-label="Your trades">
-                  {TRADE_TYPES.map((t) => (
-                    <button
-                      key={t}
-                      className={trades.includes(t) ? "chip on" : "chip"}
-                      type="button"
-                      aria-pressed={trades.includes(t)}
-                      onClick={() => toggleTrade(t)}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-                {trades.includes("Other") && (
-                  <input
-                    ref={otherRef}
-                    className="fld-in fld-in--other"
-                    type="text"
-                    maxLength={80}
-                    placeholder="Name the trade — e.g. epoxy & garage floor coatings"
-                    aria-label="Your other trade"
-                    value={otherTrade}
-                    onChange={(e) => setOtherTrade(e.target.value)}
-                  />
-                )}
-                <span className="fld-note" id="tradeNote">
-                  {tradeNote(trades.length)}
-                </span>
+                {tradeChips(tradeNote(trades.length))}
               </div>
 
               <div className="btn-pair">

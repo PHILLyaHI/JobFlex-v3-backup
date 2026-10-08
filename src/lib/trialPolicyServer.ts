@@ -108,3 +108,44 @@ export async function resetTrialPolicy(): Promise<SignupTrialState> {
   cache = null;
   return signupTrialState({ fresh: true });
 }
+
+/* ── THE SIGN-UP'S STEPS (owner, 2026-10-07: "fewer steps to get in, see if
+   the conversion to the free trial is better; a switch for 2 or 3 steps").
+   3 = account · company · plan, as built; 2 = one account step that also
+   takes the business name and the trades (what the shop does — leads come
+   once it sets its specialties and address on its company page), then the
+   plan. SyncState `signupFlow` = { steps, by, at }; no row = 3. Read by the
+   register page, cached ten seconds per instance like the card. ─────────── */
+export const SIGNUP_FLOW_KEY = "signupFlow";
+export type SignupSteps = 2 | 3;
+export interface SignupFlow { steps: SignupSteps; source: "admin" | "default"; by: string | null; at: string | null }
+const STEPS_CACHE_MS = 10_000;
+let stepsCache: { at: number; value: SignupFlow } | null = null;
+
+/** The sign-up's steps in force. Never throws: a hiccup reads as 3, uncached. */
+export async function readSignupFlow({ fresh = false }: { fresh?: boolean } = {}): Promise<SignupFlow> {
+  const now = Date.now();
+  if (!fresh && stepsCache && now - stepsCache.at < STEPS_CACHE_MS) return stepsCache.value;
+  let value: SignupFlow = { steps: 3, source: "default", by: null, at: null };
+  try {
+    const row = await db.syncState.findUnique({ where: { key: SIGNUP_FLOW_KEY }, select: { cursor: true } });
+    if (row?.cursor) {
+      const r = JSON.parse(row.cursor) as Record<string, unknown>;
+      if (r.steps === 2 || r.steps === 3) value = { steps: r.steps, source: "admin", by: typeof r.by === "string" ? r.by : null, at: typeof r.at === "string" ? r.at : null };
+    }
+  } catch (err) {
+    console.warn("[signup-flow] read failed, using 3 steps:", err);
+    return value;
+  }
+  stepsCache = { at: now, value };
+  return value;
+}
+export async function signupSteps(): Promise<SignupSteps> {
+  return (await readSignupFlow()).steps;
+}
+export async function setSignupSteps(steps: SignupSteps, by: string | null): Promise<SignupFlow> {
+  const cursor = JSON.stringify({ steps, by, at: new Date().toISOString() });
+  await db.syncState.upsert({ where: { key: SIGNUP_FLOW_KEY }, create: { key: SIGNUP_FLOW_KEY, cursor }, update: { cursor } });
+  stepsCache = null;
+  return readSignupFlow({ fresh: true });
+}

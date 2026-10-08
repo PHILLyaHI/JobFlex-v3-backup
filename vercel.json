@@ -19,6 +19,7 @@
     { "path": "/api/cron/trials", "schedule": "20 * * * *" },
     { "path": "/api/cron/home-plans", "schedule": "0 16 * * *" },
     { "path": "/api/cron/traffic-digest", "schedule": "0 15,16,17 * * *" },
-    { "path": "/api/cron/meta-ad-spend", "schedule": "20 7 * * *" }
+    { "path": "/api/cron/meta-ad-spend", "schedule": "20 7 * * *" },
+    { "path": "/api/cron/lead-setup-reminders", "schedule": "0 16 * * *" }
   ]
 }

@@ -12,8 +12,9 @@ import { Fragment, Suspense, use, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
 import type { TrialCard, TrialPayments, TrialWatchData } from "@/actions/trialWatch";
-import type { SignupTrialState } from "@/lib/trialPolicyServer";
+import type { SignupFlow, SignupTrialState } from "@/lib/trialPolicyServer";
 import { TrialPolicyPanel } from "./trial-policy-panel";
+import { SignupStepsPanel } from "./signup-steps-panel";
 import type { TrialLevel } from "@/lib/trialWatch";
 import { formatSpend, PAID_SERVICE_LABEL } from "@/lib/paidApiCosts";
 import { TRIAL_CAP_KEYS, TRIAL_CAP_NOUN } from "@/lib/trialCaps";
@@ -60,7 +61,17 @@ function StreamedCardLine({ id, card, payments }: { id: string; card: TrialCard 
   return <CardLine card={card} payment={use(payments)[id] ?? null} />;
 }
 
-export function AdminTrialsContent({ data, policy, payments }: { data: TrialWatchData; policy: SignupTrialState; payments: Promise<TrialPayments> }) {
+export function AdminTrialsContent({
+  data,
+  policy,
+  signup,
+  payments,
+}: {
+  data: TrialWatchData;
+  policy: SignupTrialState;
+  signup: SignupFlow;
+  payments: Promise<TrialPayments>;
+}) {
   const [level, setLevel] = useState<"" | TrialLevel>("");
   // Card-less trials apart (owner, 2026-10-01): "no-card" is every trial that
   // started without one, whatever has happened since; the rest narrow it.
@@ -105,6 +116,7 @@ export function AdminTrialsContent({ data, policy, payments }: { data: TrialWatc
       )}
 
       <TrialPolicyPanel initial={policy} />
+      <SignupStepsPanel initial={signup} />
 
       <div className="kpi-grid">
         <div className="kpi">

@@ -89,8 +89,11 @@ function RegisterSwitch({
   requiresCard,
   initialError,
   offerCustom,
+  steps,
 }: {
   offerCustom: boolean;
+  /** The sign-up's steps, the owner's switch (lib/trialPolicyServer): 3 as built, or 2. */
+  steps: 2 | 3;
   setup: SetupPrefill | null;
   google: GooglePrefill | null;
   industry: TradeType | null;
@@ -122,7 +125,7 @@ function RegisterSwitch({
      day the handheld build is ported to the pending-signup flow. */
   void isHandheld;
   void params;
-  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} offerCustom={offerCustom} />;
+  return <RegisterContent setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} offerCustom={offerCustom} steps={steps} />;
 }
 
 // The attribution capture under either tree reads the query string, so the
@@ -137,9 +140,12 @@ export function RegisterResponsive({
   requiresCard = true,
   initialError = null,
   offerCustom = false,
+  steps = 3,
 }: {
   /** CUSTOM_PLAN_ENABLED, read on the server (lib/customPlanFlag). */
   offerCustom?: boolean;
+  /** The sign-up's steps (lib/trialPolicyServer): 3 as built, or 2. */
+  steps?: 2 | 3;
   setup?: SetupPrefill | null;
   google?: GooglePrefill | null;
   /** The landing's trade variant, resolved by the page — see page.tsx. */
@@ -155,7 +161,7 @@ export function RegisterResponsive({
 }) {
   return (
     <Suspense fallback={null}>
-      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} offerCustom={offerCustom} />
+      <RegisterSwitch setup={setup} google={google} industry={industry} utm={utm} inAppBrowser={inAppBrowser} requiresCard={requiresCard} initialError={initialError} offerCustom={offerCustom} steps={steps} />
     </Suspense>
   );
 }
