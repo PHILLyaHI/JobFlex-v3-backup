@@ -69,6 +69,8 @@ export interface LiveEvent {
   orgId: string;
   userId: string;
   step: string;
+  /** The sign-up's step count the screen belonged to ("2" or "3") when the event carried it (2026-10-07). */
+  steps?: string;
   outcome: string;
   plan: string;
   verified: string;
@@ -152,6 +154,8 @@ export interface LiveVisitor {
   id: string;
   stage: LiveStage;
   /** True for a tagged ad and for an untagged ad-platform referrer. */
+  /** The sign-up this visit went through had two steps (its step events say so). */
+  twoStep?: boolean;
   fromAd: boolean;
   sourceKind: SourceKind;
   /** "Facebook ad", "Google search", "Direct", "yelp.com"… */
@@ -479,10 +483,19 @@ export function eventStage(e: LiveEvent): LiveStage {
   return "browsing";
 }
 /** What one event was, for the trail: a screen, a step, the checkout, the signup. */
+/** The sign-up step's name on a visit line. A two-step sign-up (2026-10-07;
+ *  the step event carries steps: 2) showed the visitor "1 Account" and
+ *  "2 Plan", though the plan is step 3 inside the form — so it is named the
+ *  way they saw it. */
+export function stepTitle(step: string, steps?: string): string {
+  if (steps === "2") return step === "3" ? "Step 2 / Plan" : step === "1" ? "Step 1 / Account + company" : pageLabel(`registration:${step}`);
+  return pageLabel(`registration:${step}`);
+}
+
 function trailLabel(e: LiveEvent): string | null {
   if (e.event === E.completed) return "Signed up";
   if (e.event === E.opened || e.event === E.attempt) return "Checkout";
-  if (e.event === E.step && e.step) return pageLabel(`registration:${e.step}`);
+  if (e.event === E.step && e.step) return stepTitle(e.step, e.steps);
   const p = pathOf(e);
   return p ? screenLabel(p) : null;
 }
@@ -520,6 +533,8 @@ export function visitSummary(v: {
   active: boolean;
   signup: { orgName: string } | null;
   step: number;
+  /** The sign-up it went through had two steps (2026-10-07). */
+  twoStep?: boolean;
   fromAd: boolean;
   source: string;
 }): string {
@@ -543,7 +558,7 @@ export function visitSummary(v: {
   }
   if (v.stage === "checkout") return join("At checkout, choosing a plan.", pressed);
   if (v.stage === "registering") {
-    const where = v.step > 0 ? `reached step ${v.step}` : "opened the form";
+    const where = v.step > 0 ? (v.twoStep ? (v.step >= 3 ? "reached the plan step (2 of 2)" : "on the account step (1 of 2)") : `reached step ${v.step}`) : "opened the form";
     return join(`Filling in the sign-up form — ${where}.`, v.active ? "" : "Stopped there.", pressed);
   }
   // Browsing. One sentence, not two saying the same thing: a visitor who
@@ -792,6 +807,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
     const lockedOut = list.some((e) => RECOVER_PATH.test(pathOf(e)));
     // The furthest numbered sign-up step they reached, for the sentence.
     const furthestStep = list.reduce((best, e) => (e.event === E.step && /^\d+$/.test(e.step) ? Math.max(best, Number(e.step)) : best), 0);
+    const twoStepFlag = list.some((e) => e.event === E.step && e.steps === "2");
     // What they pressed. Only the landing's tagged CTAs fire cta_click, so an
     // empty list means "nothing we track", never "they clicked nothing".
     const clicks = [...list]
@@ -841,6 +857,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       id: shortId(person),
       stage,
       fromAd: src.fromAd,
+      twoStep: twoStepFlag,
       sourceKind: src.kind,
       source: src.label,
       platform: src.platform,
@@ -873,7 +890,7 @@ export function shapeLive(events: LiveEvent[], signups: FreshSignup[], now = Dat
       trade: landingTradeOf(visit.map((e) => e.url)) || signupTrade,
       orgId: [...list].reverse().find((e) => e.orgId)?.orgId ?? "",
       userId: [...list].reverse().find((e) => e.userId)?.userId ?? "",
-      summary: visitSummary({ stage, lockedOut, views: views.length, trail, clicks, active: last.at >= activeSince, signup, step: furthestStep, fromAd: src.fromAd, source: src.label }),
+      summary: visitSummary({ stage, lockedOut, views: views.length, trail, clicks, active: last.at >= activeSince, signup, step: furthestStep, twoStep: twoStepFlag, fromAd: src.fromAd, source: src.label }),
     });
   }
   // Signups first, then the people from ads who are on the site now, then
@@ -1158,7 +1175,7 @@ function liveSelectSql(): string {
     ${prop("$geoip_country_code")}, ${prop("$geoip_subdivision_1_code")},
     multiIf(${CLICK_ID_KEYS.map((k) => `${prop(k)} != '', '${k}'`).join(", ")}, ''),
     ${prop("placement")}, ${prop("label")}, ${prop("jf_org_id")}, ${prop("jf_user_id")},
-    ${UA_SQL}, ${BROWSER_TYPE_SQL}
+    ${UA_SQL}, ${BROWSER_TYPE_SQL}, ${prop("steps")}
     FROM events`;
 }
 
@@ -1291,5 +1308,6 @@ export function liveEventFromRow(row: unknown[]): LiveEvent | null {
     userId: str(32).slice(0, 40),
     ua: str(33),
     browserType: str(34),
+    steps: str(35),
   };
 }
