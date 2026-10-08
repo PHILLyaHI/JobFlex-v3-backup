@@ -26,6 +26,7 @@
 
 import { updateBranding, updateLanding, updateLeadProfile } from "@/actions/company";
 import { staggerIn } from "@/components/v3/blueprint-shell/list-motion";
+import { LogoFileError, prepareLogo } from "@/lib/logoClient";
 import { whoColor, whoHtml, whoInitials, roleLabel } from "@/lib/team/who";
 import { rangeStart, type RangeDays } from "@/lib/teamActivityView";
 import {
@@ -743,7 +744,7 @@ export function initCompanyContent(
       return;
     }
     if (t.closest("#logoDrop")) {
-      if (!canEdit) return;
+      if (!canEdit || logoBusy) return;
       // Open the real picker. The donor flashed the border and saved nothing.
       $<HTMLInputElement>("#logoFile")?.click();
       return;
@@ -751,53 +752,51 @@ export function initCompanyContent(
   });
 
   // ================= LOGO =================
-  // Same rules as the classic LogoDropzone: images only, 2 MB ceiling, read to
-  // a data URL. (Until Vercel Blob is configured that data URL IS the stored
-  // value — `Organization.logoUrl` holds whatever the classic form stores.)
-  const MAX_LOGO = 2 * 1024 * 1024;
+  // One rule for every logo upload (lib/logoClient): PNG, JPG, WebP or SVG up
+  // to 15 MB, shrunk in the browser to ≤1024 px and under 1 MB before it is
+  // sent. (Until Vercel Blob is configured that data URL IS the stored value —
+  // `Organization.logoUrl` holds whatever the upload produces.)
+  let logoBusy = false;
 
-  function readDataUrl(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(r.result as string);
-      r.onerror = () => reject(new Error("Couldn’t read that file."));
-      r.readAsDataURL(file);
-    });
+  function setLogoBusy(busy: boolean) {
+    logoBusy = busy;
+    const drop = $("#logoDrop");
+    if (!drop) return;
+    drop.classList.toggle("busy", busy);
+    drop.setAttribute("aria-busy", busy ? "true" : "false");
   }
 
   async function acceptLogo(file: File) {
-    if (!canEdit) return;
-    if (!file.type.startsWith("image/")) {
-      saveLine("saveLogo", "Image files only", "err");
-      return;
-    }
-    if (file.size > MAX_LOGO) {
-      saveLine("saveLogo", "Too large — keep it under 2 MB", "err");
-      return;
-    }
-    let dataUrl: string;
+    if (!canEdit || logoBusy) return;
+    setLogoBusy(true);
     try {
-      dataUrl = await readDataUrl(file);
-    } catch (err) {
-      saveLine("saveLogo", actionError(err), "err");
-      return;
-    }
-    const previous = co.logoUrl;
-    // Optimistic: the picture appears while the write is in flight, and rolls
-    // back if the server refuses.
-    co.logoUrl = dataUrl;
-    renderLogo();
-    renderPreview();
-    await commit("saveLogo", async () => {
+      saveLine("saveLogo", "Preparing logo…", "");
+      let dataUrl: string;
       try {
-        await updateBranding({ logoUrl: dataUrl });
+        dataUrl = await prepareLogo(file);
       } catch (err) {
-        co.logoUrl = previous;
-        renderLogo();
-        renderPreview();
-        throw err;
+        saveLine("saveLogo", err instanceof LogoFileError ? err.message : "Couldn’t read that file.", "err");
+        return;
       }
-    });
+      const previous = co.logoUrl;
+      // Optimistic: the picture appears while the write is in flight, and rolls
+      // back if the server refuses.
+      co.logoUrl = dataUrl;
+      renderLogo();
+      renderPreview();
+      await commit("saveLogo", async () => {
+        try {
+          await updateBranding({ logoUrl: dataUrl });
+        } catch (err) {
+          co.logoUrl = previous;
+          renderLogo();
+          renderPreview();
+          throw err;
+        }
+      });
+    } finally {
+      setLogoBusy(false);
+    }
   }
 
   const logoFile = $<HTMLInputElement>("#logoFile");

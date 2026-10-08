@@ -3,6 +3,7 @@ import * as React from "react";
 import { UploadCloud, Image as ImageIcon, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { toast } from "@/components/ui/Toast";
+import { LOGO_ACCEPT, LOGO_HINT, LogoFileError, prepareLogo } from "@/lib/logoClient";
 
 interface Props {
   value: string | null;
@@ -10,29 +11,37 @@ interface Props {
   label?: string;
   hint?: string;
   aspect?: "square" | "wide";
+  /** Longest side of the stored picture. Logos 1024; a wide hero shot more. */
+  maxEdge?: number;
 }
 
 export function LogoDropzone({
   value,
   onChange,
   label = "Logo",
-  hint = "PNG, JPG, or SVG up to 2 MB",
+  hint = LOGO_HINT,
   aspect = "square",
+  maxEdge,
 }: Props) {
   const [dragOver, setDragOver] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const busyRef = React.useRef(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
+  // The shared logo rule (lib/logoClient): checked and shrunk in the browser.
+  // One file at a time — a click or drop while one is being prepared is ignored.
   async function handleFile(f: File) {
-    if (!f.type.startsWith("image/")) {
-      toast.error("Image files only");
-      return;
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try {
+      onChange(await prepareLogo(f, { maxEdge }));
+    } catch (err) {
+      toast.error(err instanceof LogoFileError ? err.message : "Couldn’t read that file.");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
     }
-    if (f.size > 2 * 1024 * 1024) {
-      toast.error("Too large", "Keep it under 2 MB.");
-      return;
-    }
-    const dataUrl = await fileToDataUrl(f);
-    onChange(dataUrl);
   }
 
   return (
@@ -50,13 +59,17 @@ export function LogoDropzone({
           const f = e.dataTransfer.files?.[0];
           if (f) handleFile(f);
         }}
-        onClick={() => inputRef.current?.click()}
+        onClick={() => {
+          if (!busyRef.current) inputRef.current?.click();
+        }}
+        aria-busy={busy}
         className={cn(
           "rounded-[var(--r-md)] hairline border-dashed cursor-pointer transition-colors overflow-hidden",
           aspect === "square" ? "h-[120px] w-[120px]" : "h-[140px] w-full",
           dragOver
             ? "bg-[color:var(--accent-soft)]/40 border-[color:var(--accent)]/40"
             : "bg-white/40 hover:bg-white/60 border-[color:var(--ink-line)]",
+          busy && "cursor-progress opacity-60",
           "relative grid place-items-center group",
         )}
       >
@@ -92,7 +105,7 @@ export function LogoDropzone({
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept={LOGO_ACCEPT}
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -103,13 +116,4 @@ export function LogoDropzone({
       </div>
     </div>
   );
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result as string);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
 }

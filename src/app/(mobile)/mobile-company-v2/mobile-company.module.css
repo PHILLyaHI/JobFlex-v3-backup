@@ -406,6 +406,9 @@
 }
 .logoDrop .ic { width: 20px; height: 20px; color: var(--muted); }
 .logoDrop:active, .logoDrop.over { border-color: var(--ink); background: rgba(10, 10, 10, 0.05); }
+/* Busy while a picked file is shrunk and saved: ink frame, contents step back. */
+.logoDrop.busy { cursor: progress; border-color: var(--ink); }
+.logoDrop.busy > * { opacity: 0.45; transition: opacity 0.14s; }
 /* The saved logo fills the drop target once one exists (tap to replace). */
 .logoImg { max-height: 84px; max-width: 100%; object-fit: contain; }
 .logoT { font-size: 15px; font-weight: 700; }

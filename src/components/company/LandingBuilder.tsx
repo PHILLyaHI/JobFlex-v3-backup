@@ -129,6 +129,7 @@ export function LandingBuilder({ org }: { org: OrgLanding }) {
               label="Hero image"
               hint="A wide shot of your best work · 1600×600+"
               aspect="wide"
+              maxEdge={1600}
               value={heroImage}
               onChange={setHeroImage}
             />

@@ -25,6 +25,7 @@ import { useBlueprintContent } from "@/components/v3/blueprint-shell/use-bluepri
 import { initCompanyContent } from "./company-behavior";
 import type { ActivityEntry, CompanyOrgState, TeamMember } from "./company-data";
 import { CompanySprite } from "./sprite";
+import { LOGO_ACCEPT, LOGO_HINT } from "@/lib/logoClient";
 
 export type CompanyContentProps = {
   org: CompanyOrgState;
@@ -128,7 +129,7 @@ export function CompanyContent({ org, activity, members, canEdit }: CompanyConte
           </div>
 
           <div className="co-side">
-            <div className="card co-card">
+            <div className="card co-card" id="logo">
               <div className="card-head">
                 <div className="card-titles">
                   <div className="card-title">Logo</div>
@@ -140,14 +141,14 @@ export function CompanyContent({ org, activity, members, canEdit }: CompanyConte
                     inside a button is invalid) that the behavior opens on
                     click and on drop; the chosen file is read and saved
                     through updateBranding. */}
-                <button className="logo-drop" type="button" id="logoDrop">
+                <button className="logo-drop" type="button" id="logoDrop" aria-busy="false">
                   <svg className="ic">
                     <use href="#i-imgadd" />
                   </svg>
                   <span className="logo-t">Drop or click</span>
-                  <span className="logo-h">PNG, JPG, or SVG up to 2 MB</span>
+                  <span className="logo-h">{LOGO_HINT}</span>
                 </button>
-                <input className="is-hidden" type="file" accept="image/*" id="logoFile" />
+                <input className="is-hidden" type="file" accept={LOGO_ACCEPT} id="logoFile" />
                 <div className="save-line" id="saveLogo"></div>
               </div>
             </div>

@@ -1394,6 +1394,10 @@
 /* With a logo saved, the drop target becomes the preview of it. */
 .bp :global(.content .logo-drop.has-img) { padding: 10px; border-style: solid; border-color: var(--hair-soft); background: #fff; }
 .bp :global(.content .logo-img) { max-width: 100%; max-height: 112px; object-fit: contain; }
+/* Busy while a picked file is shrunk and saved: the frame goes ink, the
+   contents step back, and a second click is ignored (the behavior gates it). */
+.bp :global(.content .logo-drop.busy) { cursor: progress; border-color: var(--ink); }
+.bp :global(.content .logo-drop.busy > *) { opacity: 0.45; transition: opacity 0.14s; }
 .bp :global(.content .logo-t) { font-size: 13px; font-weight: 700; color: var(--ink); }
 .bp :global(.content .logo-h) { font-family: var(--font-mono); font-size: 10.5px; color: var(--muted); }
 .bp :global(.content .mail-prev) { display: flex; align-items: center; gap: 12px; padding: 14px 15px; border: 1.5px solid var(--hair-soft); border-left-width: 4px; border-radius: var(--radius); background: var(--paper); }

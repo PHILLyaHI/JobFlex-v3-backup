@@ -52,6 +52,7 @@ import { useRouter } from "next/navigation";
 import styles from "./mobile-company.module.css";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { useSheetDrag } from "@/components/v3/mobile-shell/use-sheet-drag";
+import { LOGO_ACCEPT, LOGO_HINT, LogoFileError, prepareLogo } from "@/lib/logoClient";
 import { lockScroll } from "@/lib/scrollLock";
 import { roleLabel } from "@/lib/team/who";
 import {
@@ -336,6 +337,15 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
   const [hex, setHex] = useState(seed.org.primaryColor || DEFAULT_COLOR);
   const [logoUrl, setLogoUrl] = useState<string | null>(seed.org.logoUrl);
   const logoFileRef = useRef<HTMLInputElement>(null);
+  const [logoBusy, setLogoBusy] = useState(false);
+  const logoBusyRef = useRef(false);
+  // /dashboard/company#logo: this tree mounts after the browser's own hash
+  // jump (the viewport switch imports it), so make that jump here.
+  useEffect(() => {
+    if (window.location.hash !== "#logo") return;
+    const t = window.setTimeout(() => document.getElementById("logo")?.scrollIntoView({ block: "center" }), 0);
+    return () => window.clearTimeout(t);
+  }, []);
 
   /* ---- lead matching ---- */
   const [lead, setLead] = useState(() => ({ addr: seed.org.address, phone: seed.org.phone }));
@@ -906,55 +916,57 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                   />
                 </div>
 
-                <div className={styles.zoneBeige}>
+                <div className={styles.zoneBeige} id="logo">
                   <div className={styles.zoneLbl}>Logo</div>
-                  {/* Real upload (2026-08-22), desktop's rules verbatim: images
-                      only, 2 MB ceiling, read to a data URL, optimistic swap
-                      with rollback through the same updateBranding write. */}
+                  {/* Real upload, desktop's rule (lib/logoClient): PNG, JPG,
+                      WebP or SVG up to 15 MB, shrunk in the browser to
+                      ≤1024 px and under 1 MB, then the optimistic swap with
+                      rollback through the same updateBranding write. Busy
+                      until saved; a second pick meanwhile is ignored. */}
                   <input
                     ref={logoFileRef}
                     className={styles.srOnlyInput ?? ""}
                     style={{ display: "none" }}
                     type="file"
-                    accept="image/*"
+                    accept={LOGO_ACCEPT}
                     onChange={(ev) => {
                       const file = ev.target.files?.[0];
                       ev.target.value = "";
-                      if (!file) return;
-                      if (!file.type.startsWith("image/")) {
-                        saveBrand.run(() => Promise.reject(new Error("Image files only")), 0);
-                        return;
-                      }
-                      if (file.size > 2 * 1024 * 1024) {
-                        saveBrand.run(
-                          () => Promise.reject(new Error("Too large — keep it under 2 MB")),
-                          0,
-                        );
-                        return;
-                      }
-                      const reader = new FileReader();
-                      reader.onload = () => {
-                        const dataUrl = reader.result as string;
-                        const previous = logoUrl;
-                        setLogoUrl(dataUrl);
-                        saveBrand.run(async () => {
+                      if (!file || logoBusyRef.current) return;
+                      logoBusyRef.current = true;
+                      setLogoBusy(true);
+                      saveBrand.run(async () => {
+                        try {
+                          let dataUrl: string;
+                          try {
+                            dataUrl = await prepareLogo(file);
+                          } catch (err) {
+                            throw new Error(
+                              err instanceof LogoFileError ? err.message : "Couldn’t read that file.",
+                            );
+                          }
+                          const previous = logoUrl;
+                          setLogoUrl(dataUrl);
                           try {
                             await updateBranding({ logoUrl: dataUrl });
                           } catch (err) {
                             setLogoUrl(previous);
                             throw err;
                           }
-                        }, 0);
-                      };
-                      reader.onerror = () =>
-                        saveBrand.run(() => Promise.reject(new Error("Couldn’t read that file.")), 0);
-                      reader.readAsDataURL(file);
+                        } finally {
+                          logoBusyRef.current = false;
+                          setLogoBusy(false);
+                        }
+                      }, 0);
                     }}
                   />
                   <button
-                    className={styles.logoDrop}
+                    className={`${styles.logoDrop}${logoBusy ? ` ${styles.busy}` : ""}`}
                     type="button"
-                    onClick={() => logoFileRef.current?.click()}
+                    aria-busy={logoBusy}
+                    onClick={() => {
+                      if (!logoBusyRef.current) logoFileRef.current?.click();
+                    }}
                   >
                     {logoUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element -- may be a data: URL
@@ -963,7 +975,7 @@ function CompanyBoard({ seed }: { seed: CompanySeed }) {
                       <>
                         <Icon id="i-imgplus" />
                         <span className={styles.logoT}>Tap to upload</span>
-                        <span className={styles.logoH}>PNG, JPG, or SVG up to 2 MB</span>
+                        <span className={styles.logoH}>{LOGO_HINT}</span>
                       </>
                     )}
                   </button>
