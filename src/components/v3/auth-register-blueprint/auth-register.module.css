@@ -261,7 +261,12 @@
 .bp :global(.auth) { height: 100dvh; overflow: hidden; }
 .bp :global(.auth-form) {
   padding: clamp(14px, 3.4vh, 44px) 56px;
-  max-height: 100dvh; overflow: hidden;
+  /* The column scrolls its own content when a step is taller than the screen
+     (the two-step sign-up's step 1 with the trades open, 2026-10-07 — the
+     owner could not reach Continue at 1440×900). `safe center` below keeps
+     a short step centred and starts a tall one at the top; the plan step
+     still fits the height and never shows a bar. */
+  max-height: 100dvh; overflow: hidden auto; overscroll-behavior: contain;
 }
 .bp :global(.brand) { margin-bottom: clamp(10px, 2.6vh, 40px); }
 .bp :global(.brand-mark) { width: clamp(28px, 3.6vh, 34px); height: clamp(28px, 3.6vh, 34px); }
