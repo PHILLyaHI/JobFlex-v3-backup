@@ -8,6 +8,8 @@
 //     action. "Add a card to continue" once the trial has ended.
 // The button asks /api/billing/trial-card for Stripe Checkout and leaves for
 // it. Only the owner adds the card; everyone else is told who can.
+// While the trial runs the ribbon can be dismissed, one step at a time
+// (lib/trialNotice); once it has ended it stays.
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -15,6 +17,7 @@ import type { Route } from "next";
 import type { TrialView } from "@/lib/cardlessTrial";
 import { TRIAL_CAP_NOUN, TRIAL_CAP_TITLE, trialCapAllowance, type TrialCapKey } from "@/lib/trialCaps";
 import { metaTrack, newEventId } from "@/lib/metaPixel";
+import { TRIAL_NOTICE_DAYS, trialDismissCookie, trialNoticeDismissed, trialNoticeStep } from "@/lib/trialNotice";
 import s from "./trial-card.module.css";
 
 const DATE = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
@@ -63,6 +66,52 @@ function useAddCard() {
   return { go, busy, error };
 }
 
+/* THE DISMISSAL, SHARED. The layout leaves a dismissed ribbon out on the
+   server; this covers the rest. The dock and the ribbon can be two mounts at
+   once (the shell's handheldBanner beside the layout's children), and a
+   layout is not re-rendered on a client-side navigation, so a mount that
+   arrives later reads the cookie itself instead of trusting the layout's
+   first answer. */
+const dismissListeners = new Set<() => void>();
+function subscribeDismiss(cb: () => void) {
+  dismissListeners.add(cb);
+  return () => {
+    dismissListeners.delete(cb);
+  };
+}
+function readCookie(name: string): string | null {
+  const hit = document.cookie.split("; ").find((c) => c.startsWith(`${name}=`));
+  return hit ? decodeURIComponent(hit.slice(name.length + 1)) : null;
+}
+
+function useDismiss(view: TrialView, orgId: string) {
+  const name = trialDismissCookie(orgId);
+  const dismissed = React.useSyncExternalStore(
+    subscribeDismiss,
+    () => trialNoticeDismissed(view, readCookie(name)),
+    // The layout renders the ribbon only while it is not dismissed.
+    () => false,
+  );
+  const dismiss = React.useCallback(() => {
+    const secure = window.location.protocol === "https:" ? "; secure" : "";
+    document.cookie = `${name}=${trialNoticeStep(view.daysLeft)}; path=/; expires=${new Date(view.endsAt).toUTCString()}; samesite=lax${secure}`;
+    dismissListeners.forEach((cb) => cb());
+  }, [name, view.daysLeft, view.endsAt]);
+  return { dismissed, dismiss };
+}
+
+function DismissButton({ onClick }: { onClick: () => void }) {
+  // The icon is the shell sprite's (every dashboard shell mounts one; the
+  // classic layout mounts it beside this ribbon).
+  return (
+    <button type="button" className={s.dismiss} aria-label="Dismiss" onClick={onClick}>
+      <svg className={s.dismissIcon} aria-hidden="true" focusable="false">
+        <use href="#i-x" />
+      </svg>
+    </button>
+  );
+}
+
 function daysText(n: number): string {
   if (n <= 0) return "Ends today";
   return n === 1 ? "1 day left" : `${n} days left`;
@@ -74,15 +123,20 @@ function daysText(n: number): string {
    docks as a compact bar just above the bottom navigation instead — CSS
    chooses which of the two shows (trial-card.module.css). The mapped handheld
    surfaces, which replace the layout's children, get the dock alone
-   (only="dock", via the shell's handheldBanner). */
-export function TrialRibbon({ view, isOwner, only }: { view: TrialView; isOwner: boolean; only?: "dock" }) {
+   (only="dock", via the shell's handheldBanner).
+   DISMISSABLE while the trial runs (lib/trialNotice): the dock then runs the
+   full width of the screen, over the support button, with the cross where
+   that button stands — the button is hidden under it (trial-card.module.css)
+   and back as soon as the dock goes. Ended, the dock keeps clear of it. */
+export function TrialRibbon({ view, isOwner, orgId, only }: { view: TrialView; isOwner: boolean; orgId: string; only?: "dock" }) {
   const { go, busy, error } = useAddCard();
+  const { dismissed, dismiss } = useDismiss(view, orgId);
   // Not over the trial's own page, which says the same at full size. Read in
   // the browser too: a layout is not re-rendered on a client-side navigation
   // (a refused write redirects there), so the server's check alone left it up.
   const pathname = usePathname();
   const ended = view.kind === "ended";
-  const tone = ended ? s.isEnded : view.hasCard ? s.isCard : view.daysLeft <= 2 ? s.isSoon : "";
+  const tone = ended ? s.isEnded : view.hasCard ? s.isCard : view.daysLeft <= TRIAL_NOTICE_DAYS ? s.isSoon : "";
   const stamp = ended ? "Trial ended" : view.hasCard ? "Card on file" : daysText(view.daysLeft);
   const action =
     view.hasCard && !ended ? null : isOwner ? (
@@ -97,16 +151,19 @@ export function TrialRibbon({ view, isOwner, only }: { view: TrialView; isOwner:
       )
     ) : null;
   const dock = (
-    <div className={`${s.dock} ${tone}`} role={ended ? "alert" : "status"}>
-      <span className={s.stamp}>{stamp}</span>
-      <p className={s.dockText}>
-        {ended ? "Read-only until a card is added" : view.hasCard ? `${view.planName} starts ${DATE.format(new Date(view.endsAt))}` : isOwner ? "Add a card to keep access" : "Ask the owner to add a card"}
-        {error ? <span role="alert"> · {error}</span> : null}
-      </p>
+    <div className={`${s.dock} ${tone} ${ended ? "" : s.dockWide}`} role={ended ? "alert" : "status"}>
+      <div className={s.dockLead}>
+        <span className={s.stamp}>{stamp}</span>
+        <p className={s.dockText}>
+          {ended ? "Read-only until a card is added" : view.hasCard ? `${view.planName} starts ${DATE.format(new Date(view.endsAt))}` : isOwner ? "Add a card to keep access" : "Ask the owner to add a card"}
+          {error ? <span role="alert"> · {error}</span> : null}
+        </p>
+      </div>
       {action}
+      {ended ? null : <DismissButton onClick={dismiss} />}
     </div>
   );
-  if (pathname?.startsWith("/dashboard/trial")) return null;
+  if (pathname?.startsWith("/dashboard/trial") || dismissed) return null;
   if (only === "dock") return dock;
   return (
     <>
@@ -144,6 +201,7 @@ export function TrialRibbon({ view, isOwner, only }: { view: TrialView; isOwner:
           <span>Ask the owner to add a card.</span>
         </span>
       )}
+      {ended ? null : <DismissButton onClick={dismiss} />}
     </div>
     </>
   );
@@ -171,7 +229,7 @@ export function TrialSheet({
 }) {
   const { go, busy, error } = useAddCard();
   const ended = view.kind === "ended";
-  const tone = ended ? s.isEnded : view.hasCard ? s.isCard : view.daysLeft <= 2 ? s.isSoon : "";
+  const tone = ended ? s.isEnded : view.hasCard ? s.isCard : view.daysLeft <= TRIAL_NOTICE_DAYS ? s.isSoon : "";
   const when = DATE.format(new Date(view.endsAt));
   // A ceiling was reached: the sheet leads with it (owner, 2026-10-02).
   const hit = !ended && !view.hasCard && caps ? capHit : null;

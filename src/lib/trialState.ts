@@ -73,6 +73,11 @@ export type CardlessTrialState =
   | { kind: "trialing"; endsAt: Date; daysLeft: number; hasCard: boolean; record: CardlessRecord }
   | { kind: "ended"; endedAt: Date; record: CardlessRecord };
 
+// The ribbon's steps over this state (the 2-day boundary, the dismissal
+// cookie) live in lib/trialNotice, which has no imports: the client ribbon
+// reads them too, and this module reaches the database.
+export { TRIAL_NOTICE_DAYS } from "@/lib/trialNotice";
+
 /**
  * Null for every organization that is not on (or past) a card-less trial —
  * a paid signup, a converted trial, a comp, a free account. Ended when the

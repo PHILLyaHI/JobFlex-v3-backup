@@ -52,6 +52,7 @@ import { DashboardAnnouncementDismiss } from "@/app/(dashboard)/announcement-dis
 import { TrafficContext } from "@/components/providers/traffic-context";
 import { TrialWatchMount } from "@/components/v3/trial-watch/trial-watch-mount";
 import { trialView, type TrialView } from "@/lib/cardlessTrial";
+import { trialDismissCookie, trialNoticeDismissed } from "@/lib/trialNotice";
 import { TrialRibbon } from "@/components/v3/trial-card/trial-card";
 import { PaymentRibbon } from "@/components/v3/payment-ribbon/payment-ribbon";
 
@@ -220,6 +221,10 @@ export default async function DashboardBlueprintLayout({
   const sidebarFolded = (await cookies()).get(SIDEBAR_FOLD_COOKIE)?.value === "1";
   // Not over the trial's own page, which says the same thing at full size.
   const onTrialPage = trial ? ((await headers()).get("x-pathname") ?? "").startsWith("/dashboard/trial") : false;
+  // Nor once dismissed on this step (lib/trialNotice) — read here, so a
+  // dismissed ribbon is never painted and then taken away.
+  const trialDismissed =
+    trial && organizationId ? trialNoticeDismissed(trial, (await cookies()).get(trialDismissCookie(organizationId))?.value) : false;
 
   return (
     <ResponsiveDashboardShell
@@ -232,7 +237,7 @@ export default async function DashboardBlueprintLayout({
       limitsExempt={navLimitsExempt}
       handheldBanner={
         trial && !onTrialPage ? (
-          <TrialRibbon view={trial} isOwner={role === "OWNER"} only="dock" />
+          trialDismissed ? null : <TrialRibbon view={trial} isOwner={role === "OWNER"} orgId={organizationId ?? ""} only="dock" />
         ) : paymentFailed ? (
           <PaymentRibbon isOwner={role === "OWNER"} only="dock" />
         ) : null
@@ -241,7 +246,7 @@ export default async function DashboardBlueprintLayout({
     >
       <TrafficContext role={role} plan={plan} organizationId={organizationId} userId={userId} />
       {organizationId && <TrialWatchMount organizationId={organizationId} email={email} />}
-      {trial && !onTrialPage && <TrialRibbon view={trial} isOwner={role === "OWNER"} />}
+      {trial && !onTrialPage && !trialDismissed && <TrialRibbon view={trial} isOwner={role === "OWNER"} orgId={organizationId ?? ""} />}
       {paymentFailed && !trial && <PaymentRibbon isOwner={role === "OWNER"} />}
       {announcements.length > 0 && <DashboardAnnouncementDismiss announcements={announcements} />}
       {customGate ?? children}

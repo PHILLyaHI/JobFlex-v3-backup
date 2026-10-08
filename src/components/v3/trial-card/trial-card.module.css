@@ -86,6 +86,42 @@
 .quiet.quiet:hover { color: var(--ink); }
 .ribbon.ribbon .button.button { flex: 0 0 auto; min-height: 40px; }
 
+/* ── Dismiss (2026-10-07, lib/trialNotice) ────────────────────
+   A square at the far right, as tall as the Add card beside it: 40 in the
+   ribbon, 44 in the dock. The ribbon's 40 still answers a 44px touch — the
+   ::after reaches 2px past every edge. White plate, ink frame; hover and
+   press tint it the way the blue button darkens. */
+.dismiss.dismiss {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-sm);
+  background: var(--sheet, var(--paper-deep));
+  color: var(--ink);
+  cursor: pointer;
+  transition: background-color 160ms var(--ease-out), color 160ms var(--ease-out);
+}
+.dismiss.dismiss::after { content: ""; position: absolute; inset: -2px; }
+.dismiss.dismiss:hover { background: var(--accent-soft); color: var(--accent-ink); }
+.dismiss.dismiss:active { background: color-mix(in srgb, var(--accent) 22%, var(--sheet, var(--paper-deep))); color: var(--accent-ink); }
+.dismiss.dismiss:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.dismissIcon.dismissIcon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.ribbon.ribbon .dismiss.dismiss { width: 40px; height: 40px; }
+
 /* ── The sheet (/dashboard/trial) ─────────────────────────── */
 .page.page { display: grid; gap: 20px; max-width: 760px; min-width: 0; }
 .sheet.sheet {
@@ -172,7 +208,9 @@
    stamp, a short line, the button. It stops short of the right edge: the
    support button (support-widget.css, .jfsup-fab — 46px at right 18px)
    sits on the same line and only lifts for bars that touch the screen's
-   bottom edge, which this one does not. */
+   bottom edge, which this one does not. That is the ended trial's dock (and
+   the payment ribbon's); a dock that can be dismissed runs the full width
+   instead — see .dockWide below. */
 .dock.dock { display: none; }
 @media (max-width: 768px) {
   .ribbon.ribbon { display: none; }
@@ -200,6 +238,18 @@
   .dock.dock .stamp.stamp { padding: 3px 6px; font-size: 9.5px; }
   .dockText.dockText { flex: 1 1 auto; min-width: 0; margin: 0; font-weight: 700; overflow-wrap: anywhere; }
   .dock.dock .button.button { flex: 0 0 auto; min-height: 44px; padding: 8px 12px; }
+  /* Dismissable: the full width, over the support button, the cross where
+     that button stood. Hidden under it rather than covered, so it takes no
+     tap and no focus; back the moment the dock goes. An ended trial's dock
+     cannot be dismissed and keeps clear of it. */
+  .dock.dock.dockWide.dockWide { right: 8px; }
+  :global(body):has(.dockWide) :global(.jfsup-fab) { visibility: hidden; }
+  /* The stamp and the line, side by side while the line keeps ~96px; on a
+     narrower phone (360) the stamp sits over it instead of the line breaking
+     into three. */
+  .dockLead.dockLead { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+  .dockLead.dockLead .stamp.stamp { align-self: center; }
+  .dockLead.dockLead .dockText.dockText { flex: 1 1 96px; }
   .sheetHead.sheetHead { padding: 14px 20px; }
   .sheetBody.sheetBody { padding: 20px; gap: 16px; }
   .title.title { font-size: 24px; }
@@ -208,5 +258,6 @@
   .actions.actions .button.button { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .button.button { transition: none; }
+  .button.button,
+  .dismiss.dismiss { transition: none; }
 }

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import type { Route } from "next";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
@@ -21,6 +21,8 @@ import { getNavLimitCounters } from "@/lib/navLimits";
 import { getPlanDisplayName } from "@/lib/planCatalogServer";
 import { DashboardAnnouncementDismiss } from "./announcement-dismiss";
 import { trialView } from "@/lib/cardlessTrial";
+import { trialDismissCookie, trialNoticeDismissed } from "@/lib/trialNotice";
+import { Sprite } from "@/components/v3/blueprint-shell/sprite";
 import { TrialRibbon } from "@/components/v3/trial-card/trial-card";
 import { PaymentRibbon } from "@/components/v3/payment-ribbon/payment-ribbon";
 import { TrafficContext } from "@/components/providers/traffic-context";
@@ -129,6 +131,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const planName = subscription?.plan ? await getPlanDisplayName(subscription.plan) : undefined;
   // The card-less trial's ribbon — the blueprint layout's, for this tree's pages.
   const trial = activeOrgId ? await trialView(activeOrgId).catch(() => null) : null;
+  // Dismissed on this step (lib/trialNotice): left out, not painted and removed.
+  const showTrial =
+    trial && activeOrgId && !trialNoticeDismissed(trial, (await cookies()).get(trialDismissCookie(activeOrgId))?.value) ? trial : null;
 
   return (
     <SessionProvider>
@@ -151,7 +156,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             limited={isLimited}
           />
           <div className="px-6 lg:px-10 py-8 max-w-[1400px] mx-auto pb-24 md:pb-8">
-            {trial && <TrialRibbon view={trial} isOwner={activeRole === "OWNER"} />}
+            {showTrial && activeOrgId && <TrialRibbon view={showTrial} isOwner={activeRole === "OWNER"} orgId={activeOrgId} />}
             {/* A declined renewal Stripe is retrying (components/v3/payment-ribbon). */}
             {!trial && subscription?.status === "PAST_DUE" && <PaymentRibbon isOwner={activeRole === "OWNER"} />}
             <DashboardAnnouncementDismiss
@@ -179,6 +184,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
         {!isLimited && <CommandK />}
         {canHandleLeads && <LeadOfferPopup />}
         <PlanLimitDialog />
+        {/* This shell has no icon sprite of its own; the trial ribbon's cross
+            draws from the blueprint one. After the page, so a page that mounts
+            its own sprite keeps its symbols (the first id in the document wins). */}
+        {showTrial && <Sprite />}
         {/* The support composer. It was mounted in the two blueprint shells
             only, so ~50 routes had no Help control at all — every billing and
             settings surface among them, which is where the composer's Billing
