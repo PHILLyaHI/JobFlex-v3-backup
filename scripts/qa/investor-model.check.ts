@@ -2,7 +2,7 @@
 // realistic share, the payback curve and its break-even — on fixtures with
 // hand-checked answers.
 //   npx --no-install tsx --tsconfig tsconfig.json scripts/qa/investor-model.check.ts
-import { addDays, daysBetween, dollars, investorFigures, paybackSentence, perDay, type ModelInput } from "../../src/lib/investorModel";
+import { addDays, daysBetween, dollars, investorFigures, paybackSentence, perDay, spendPeriods, type ModelInput } from "../../src/lib/investorModel";
 
 let bad = 0;
 const check = (name: string, ok: boolean, detail = "") => {
@@ -47,6 +47,12 @@ check("a booked day overrides the budget: all seven days booked, still $700, no 
 const budgetEarly = investorFigures({ ...base, spend: [], assumptions: { ...base.assumptions, dailyBudgetCents: 5000, budgetFrom: "2026-09-01" } });
 check("a budget from before the start day counts from the start day: 7 days, $350", budgetEarly.spend.totalCents === 35000 && budgetEarly.spend.budgetFrom === "2026-09-30" && budgetEarly.spend.budgetDays === 7);
 check("the owner's projected figure beats the budget for tomorrow on", investorFigures({ ...base, spend: [], assumptions: { ...base.assumptions, dailyBudgetCents: 5000, budgetFrom: null, spendPerDayCents: 8000 } }).spend.perDayProjectedCents === 8000);
+console.log("── spend by period");
+const per = Object.fromEntries(spendPeriods(f.curve, "2026-10-06").map((p) => [p.key, p]));
+check("today $100, yesterday $100, this week (Mon Oct 5 →) $200 over 2 days", per.today.cents === 10000 && per.yesterday.cents === 10000 && per.week.cents === 20000 && per.week.days === 2 && per.week.perDayCents === 10000);
+check("this month (Oct 1 →) $600 over 6 days; last 7 and since the start $700 over 7", per.month.cents === 60000 && per.month.days === 6 && per.last7.cents === 70000 && per.all.cents === 70000 && per.all.days === 7);
+check("last 30 days clips to the start day: 7 days, not 30", per.last30.days === 7 && per.last30.cents === 70000 && per.last30.perDayCents === 10000);
+check("a budget-filled day counts like a booked one", Object.fromEntries(spendPeriods(budgetOnly.curve, "2026-10-06").map((p) => [p.key, p])).last7.cents === 30000);
 console.log("── the curve's run-rate and accounts");
 const t0 = f.curve[6];
 check("today: MRR $158 (two paying, no trial ended), 2 paying, 6 signed up (trial or paying)", t0.mrrRealisticCents === 15800 && t0.mrrAllPayCents === 15800 && t0.payingRealistic === 2 && t0.payingAllPay === 2 && t0.signups === 6);

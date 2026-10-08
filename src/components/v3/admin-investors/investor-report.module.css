@@ -28,6 +28,30 @@
 .kpiNote { font: 600 11px/1.45 var(--rep-mono); color: var(--rep-muted); overflow-wrap: anywhere; }
 
 .card { padding: 18px 20px 20px; background: #fff; border: 2px solid var(--rep-ink); border-radius: 2px; min-width: 0; }
+.cardHead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 12px; }
+.cardHead .h2 { margin: 0; }
+.cardNote { font: 600 11px/1.45 var(--rep-mono); color: var(--rep-muted); max-width: 70ch; }
+/* The costs: a tile a period, the bars, the campaigns */
+.periods { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1.5px solid var(--rep-ink); border-radius: 2px; margin-bottom: 14px; }
+.period { display: grid; gap: 4px; align-content: start; padding: 10px 12px 11px; border-right: 1px solid var(--rep-line); min-width: 0; }
+.period:last-child { border-right: 0; }
+.period[data-period="today"], .period[data-period="all"] { background: var(--rep-paper); }
+.periodLabel { font: 700 10px var(--rep-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--rep-muted); }
+.periodValue { font-size: 22px; font-weight: 900; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.period[data-period="today"] .periodValue, .period[data-period="all"] .periodValue { color: var(--rep-blue); }
+.periodNote { font: 600 10.5px/1.4 var(--rep-mono); color: var(--rep-muted); overflow-wrap: anywhere; }
+.bars { margin: 0 0 6px; }
+.bars svg { display: block; width: 100%; height: auto; }
+.bar { fill: var(--rep-ink); }
+.barBudget { fill: var(--rep-muted); opacity: .45; }
+.signupDot { fill: var(--rep-green); }
+.swBar { border-color: var(--rep-ink); }
+.swBudget { border-color: var(--rep-muted); opacity: .6; }
+.swDot { width: 8px !important; height: 8px !important; border: 0 !important; border-radius: 50%; background: var(--rep-green); }
+.campaigns { margin-top: 12px; }
+.campaigns th { text-align: left; padding: 6px 8px 6px 0; border-bottom: 1.5px solid var(--rep-ink); font: 700 10px var(--rep-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--rep-muted); }
+.campaigns th.num { text-align: right; padding-right: 14px; }
+.campaignName { display: block; font-weight: 700; overflow-wrap: anywhere; }
 .h2 { margin: 0 0 12px; font-size: 14px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .twoUp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
@@ -90,7 +114,7 @@
 .method { padding: 16px 20px; border: 1px solid var(--rep-line); border-radius: 2px; background: #fff; }
 .method ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 12.5px; line-height: 1.5; color: var(--rep-soft); max-width: 90ch; }
 
-@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpi:nth-child(3n) { border-right: 0; } .kpi:nth-child(-n + 3) { border-bottom: 1px solid var(--rep-line); } }
+@media (max-width: 1100px) { .periods { grid-template-columns: repeat(4, minmax(0, 1fr)); } .period:nth-child(4) { border-right: 0; } .period:nth-child(-n + 4) { border-bottom: 1px solid var(--rep-line); } .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpi:nth-child(3n) { border-right: 0; } .kpi:nth-child(-n + 3) { border-bottom: 1px solid var(--rep-line); } }
 @media (max-width: 760px) {
   .rep { gap: 12px; }
   .lead { padding: 16px 16px 14px; }
@@ -104,6 +128,11 @@
   .kpi:nth-child(-n + 4) { border-bottom: 1px solid var(--rep-line); }
   .kpiValue { font-size: 22px; }
   .twoUp { grid-template-columns: minmax(0, 1fr); }
+  .periods { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .period { border-bottom: 1px solid var(--rep-line); }
+  .period:nth-child(2n) { border-right: 0; }
+  .periodValue { font-size: 19px; }
+  .campaigns th:nth-child(3), .campaigns td:nth-child(3), .campaigns th:nth-child(4), .campaigns td:nth-child(4) { display: none; }
   .card { padding: 14px; }
   .chartInner { min-width: 640px; }
   .readings { grid-template-columns: minmax(0, 1fr); }

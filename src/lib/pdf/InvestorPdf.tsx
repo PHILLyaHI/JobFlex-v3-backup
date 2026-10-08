@@ -95,6 +95,19 @@ export function InvestorPdfDocument({ report }: { report: InvestorReport }) {
             ))}
           </View>
         </View>
+        <Text style={s.h2}>The ad spend by period{report.meta.lastPulledAt ? " (Meta's own figures)" : ""}</Text>
+        {report.periods.map((p) => (
+          <View key={p.key} style={s.row}><Text style={s.c1}>{p.label}</Text><Text style={s.c2}>{dollars(p.cents)}</Text><Text style={s.c3}>{p.days === 0 ? "nothing yet" : `${dollars(p.perDayCents)}/day over ${p.days} ${p.days === 1 ? "day" : "days"}`}</Text></View>
+        ))}
+        {report.campaigns.length > 0 && (
+          <>
+            <Text style={s.h2}>By campaign, since {report.insights?.campaignsSince ? longDate(report.insights.campaignsSince) : "the start"}</Text>
+            <View style={s.row}><Text style={[s.c1, { fontFamily: "Helvetica-Bold" }]}>Campaign</Text><Text style={s.c2}>Spent</Text><Text style={s.c2}>Clicks</Text><Text style={s.c2}>Signed up</Text><Text style={s.c2}>Per signup</Text></View>
+            {report.campaigns.slice(0, 12).map((c) => (
+              <View key={c.id} style={s.row}><Text style={s.c1}>{c.name}</Text><Text style={s.c2}>{dollars(c.spendCents)}</Text><Text style={s.c2}>{c.clicks.toLocaleString("en-US")}</Text><Text style={s.c2}>{c.signups}</Text><Text style={s.c2}>{c.costPerSignupCents === null ? "—" : dollars(c.costPerSignupCents)}</Text></View>
+            ))}
+          </>
+        )}
         <Text style={s.h2}>Ad spend against revenue, at list price</Text>
         <View style={s.row}><Text style={[s.c1, { fontFamily: "Helvetica-Bold" }]}>Day</Text><Text style={s.c2}>Spend</Text><Text style={s.c2}>Realistic revenue</Text><Text style={s.c2}>If every trial pays</Text></View>
         {milestones(f.curve, f.today, f.breakEven.date).map((p) => (

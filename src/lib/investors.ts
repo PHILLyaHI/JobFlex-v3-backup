@@ -20,12 +20,14 @@ import { signupState } from "@/lib/traffic-live";
 import { TRAFFIC_SINCE, TRAFFIC_SINCE_MS, TRAFFIC_TZ } from "@/lib/traffic-visitor";
 import { fetchInvestorVisitors } from "@/lib/traffic-server";
 import { valueSignups } from "@/lib/trialProjectionRead";
-import { investorFigures, dayOf, PLATFORMS, PLATFORM_LABEL, type InvestorAssumptions, type InvestorFigures, type SpendDay, type SpendPlatform } from "@/lib/investorModel";
+import { investorFigures, dayOf, PLATFORMS, PLATFORM_LABEL, spendPeriods, addDays, type InvestorAssumptions, type InvestorFigures, type SpendDay, type SpendPlatform, type SpendPeriod } from "@/lib/investorModel";
 
 export const AD_SPEND_KEY = "adSpend";
 export const INVESTOR_SETTINGS_KEY = "investorSettings";
 /** When Meta's figures were last read, and how it went (lib/metaAdSpend). */
 export const META_SPEND_STATUS_KEY = "metaAdSpendStatus";
+/** Meta's own figures by day and by campaign, the last read (lib/metaAdSpend). */
+export const META_INSIGHTS_KEY = "metaInsights";
 
 // The platform list lives in the pure model so the client page can list it.
 export { PLATFORMS, PLATFORM_LABEL, type SpendPlatform } from "@/lib/investorModel";
@@ -140,6 +142,24 @@ export async function writeMetaSpend(days: Array<{ date: string; cents: number }
 }
 
 export interface MetaSpendStatus { lastPulledAt: string | null; lastError: string | null; daysPulled: number }
+export interface MetaDay { date: string; spendCents: number; impressions: number; clicks: number; reach: number }
+export interface MetaCampaign { id: string; name: string; spendCents: number; impressions: number; clicks: number; reach: number }
+export interface MetaInsights { at: string; since: string; until: string; /** The campaign totals' first day (the investors' start day when inside the window). */ campaignsSince: string; days: MetaDay[]; campaigns: MetaCampaign[] }
+const n0 = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : 0);
+export function cleanInsights(raw: unknown): MetaInsights | null {
+  const r = (raw && typeof raw === "object" ? raw : null) as Record<string, unknown> | null;
+  if (!r || typeof r.at !== "string") return null;
+  const days = Array.isArray(r.days) ? r.days.map((d) => d as Record<string, unknown>).filter((d) => typeof d.date === "string" && DATE.test(d.date)).map((d) => ({ date: d.date as string, spendCents: n0(d.spendCents), impressions: n0(d.impressions), clicks: n0(d.clicks), reach: n0(d.reach) })) : [];
+  const campaigns = Array.isArray(r.campaigns) ? r.campaigns.map((c) => c as Record<string, unknown>).filter((c) => typeof c.id === "string").map((c) => ({ id: String(c.id).slice(0, 40), name: typeof c.name === "string" ? c.name.slice(0, 120) : "", spendCents: n0(c.spendCents), impressions: n0(c.impressions), clicks: n0(c.clicks), reach: n0(c.reach) })) : [];
+  const since = typeof r.since === "string" ? r.since : "";
+  return { at: r.at, since, until: typeof r.until === "string" ? r.until : "", campaignsSince: typeof r.campaignsSince === "string" && DATE.test(r.campaignsSince) ? r.campaignsSince : since, days, campaigns };
+}
+export async function readMetaInsights(): Promise<MetaInsights | null> {
+  return cleanInsights(parse(await readKey(META_INSIGHTS_KEY)));
+}
+export async function writeMetaInsights(insights: MetaInsights): Promise<void> {
+  await writeKey(META_INSIGHTS_KEY, insights);
+}
 export async function readMetaStatus(): Promise<MetaSpendStatus> {
   const r = (parse<Record<string, unknown>>(await readKey(META_SPEND_STATUS_KEY)) ?? {}) as Record<string, unknown>;
   return {
@@ -219,6 +239,13 @@ export interface InvestorReport {
   firstAdDay: string | null;
   /** Meta's ad account: connected (the deployment has the token and account id), and the last read. */
   meta: { configured: boolean } & MetaSpendStatus;
+  /** The spend by period — today, this week, this month… — off the curve's booked days (lib/investorModel). */
+  periods: SpendPeriod[];
+  /** Meta's own figures, when read: by day for the bars, by campaign for the table (with the signups each brought). */
+  insights: MetaInsights | null;
+  campaigns: Array<{ id: string; name: string; spendCents: number; impressions: number; clicks: number; cpcCents: number | null; signups: number; costPerSignupCents: number | null }>;
+  /** The last 30 days, one row each: what was spent (any source) and who signed up. */
+  dailyRows: Array<{ date: string; spendCents: number; source: "booked" | "budget" | "none"; clicks: number | null; signups: number }>;
   /** When this was read. */
   at: string;
 }
@@ -238,8 +265,18 @@ const todayIn = (tz: string) => {
   return `${n("year")}-${n("month")}-${n("day")}`;
 };
 
-export async function investorReport(): Promise<InvestorReport> {
-  const [entries, settings, hidden, metaStatus] = await Promise.all([readAdSpend(), readInvestorSettings(), statsHiddenIds(), readMetaStatus()]);
+export async function investorReport({ refreshMeta = false }: { refreshMeta?: boolean } = {}): Promise<InvestorReport> {
+  // The admin's own read asks Meta first when the last read is over an hour old
+  // (owner, 2026-10-08: "live spending"); the shared link and the PDF read what is kept.
+  if (refreshMeta && metaAdsConfigured()) {
+    try {
+      const { metaPullIfStale } = await import("@/lib/metaAdSpend");
+      await metaPullIfStale(60);
+    } catch (err) {
+      console.warn("[investors] Meta refresh skipped:", err instanceof Error ? err.message : err);
+    }
+  }
+  const [entries, settings, hidden, metaStatus, insights] = await Promise.all([readAdSpend(), readInvestorSettings(), statsHiddenIds(), readMetaStatus(), readMetaInsights()]);
   const today = todayIn(TRAFFIC_TZ);
   // The start day: the first campaign's (owner, 2026-10-06), else the live map's.
   const since = settings.sinceDate ?? TRAFFIC_SINCE;
@@ -250,7 +287,7 @@ export async function investorReport(): Promise<InvestorReport> {
     where: { createdAt: { gte: new Date(sinceMs) }, ...countedOrgs(hidden) },
     orderBy: { createdAt: "desc" },
     take: 5000,
-    select: { id: true, createdAt: true, subscription: { select: { plan: true, status: true, trialEndsAt: true, stripePriceId: true, externalSubId: true, provider: true, createdAt: true } } },
+    select: { id: true, createdAt: true, utmCampaign: true, utmContent: true, utmSource: true, subscription: { select: { plan: true, status: true, trialEndsAt: true, stripePriceId: true, externalSubId: true, provider: true, createdAt: true } } },
   });
   // Every paying account; the ones from before the start day are named, not counted.
   const payingAll = await db.subscription.findMany({
@@ -301,5 +338,24 @@ export async function investorReport(): Promise<InvestorReport> {
     const mine = entries.filter((e) => e.platform === platform && e.date >= since && e.date <= today);
     return { platform, label: PLATFORM_LABEL[platform], cents: mine.reduce((a, e) => a + e.cents, 0), days: new Set(mine.map((e) => e.date)).size };
   }).filter((p) => p.cents > 0);
-  return { figures, settings, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, meta: { configured: metaAdsConfigured(), ...metaStatus }, at: new Date().toISOString() };
+  // Spend by period, the daily rows of the last 30 days, and each Meta campaign with the signups it brought
+  // (a signup carries the ad's utm_campaign — Meta sends {{campaign.id}} or the name — so both are matched).
+  const periods = spendPeriods(figures.curve, today);
+  const dayIn = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: TRAFFIC_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  // Only the signups the figures count (a trial, a paying account, a lapsed trial) — the same rows as "Signed up".
+  const counted = new Set(rows.filter((r) => r.state === "trial" || r.state === "paying" || r.state === "lapsed").map((r) => r.orgId));
+  const signupsByDay = new Map<string, number>();
+  for (const o of orgs) { if (!counted.has(o.id)) continue; const d = dayIn(o.createdAt); signupsByDay.set(d, (signupsByDay.get(d) ?? 0) + 1); }
+  const clicksByDay = new Map((insights?.days ?? []).map((d) => [d.date, d.clicks]));
+  const from30 = addDays(today, -29);
+  const dailyRows = figures.curve.filter((p) => !p.projected && p.date >= from30 && p.date <= today).map((p) => ({
+    date: p.date, spendCents: p.spendDayCents, source: p.spendSource === "projected" ? ("none" as const) : p.spendSource, clicks: clicksByDay.has(p.date) ? (clicksByDay.get(p.date) ?? 0) : null, signups: signupsByDay.get(p.date) ?? 0,
+  }));
+  const tagOf = (v: string | null | undefined) => (v ?? "").trim().toLowerCase();
+  const campaigns = (insights?.campaigns ?? []).map((c) => {
+    const id = tagOf(c.id), name = tagOf(c.name);
+    const signups = orgs.filter((o) => { if (!counted.has(o.id)) return false; const t = tagOf(o.utmCampaign); return t !== "" && (t === id || t === name); }).length;
+    return { id: c.id, name: c.name || c.id, spendCents: c.spendCents, impressions: c.impressions, clicks: c.clicks, cpcCents: c.clicks > 0 ? Math.round(c.spendCents / c.clicks) : null, signups, costPerSignupCents: signups > 0 && c.spendCents > 0 ? Math.round(c.spendCents / signups) : null };
+  }).sort((a, b) => b.spendCents - a.spendCents);
+  return { figures, settings, spend: { entries, byPlatform }, visitorsKnown: visitors !== null, payingUnpriced, before, firstAdDay, meta: { configured: metaAdsConfigured(), ...metaStatus }, periods, insights, campaigns, dailyRows, at: new Date().toISOString() };
 }

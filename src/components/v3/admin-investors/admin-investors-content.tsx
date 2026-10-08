@@ -101,7 +101,7 @@ export function AdminInvestorsContent({ initial, origin }: { initial: InvestorRe
           <div>
             <b>Meta</b>{" "}
             {report.meta.configured
-              ? <>connected{report.meta.lastPulledAt ? ` · last read ${when(report.meta.lastPulledAt)}, ${report.meta.daysPulled} ${report.meta.daysPulled === 1 ? "day" : "days"}` : " · not read yet"}{report.meta.lastError ? ` · ${report.meta.lastError}` : ""}</>
+              ? <>connected{report.meta.lastPulledAt ? ` · last read ${when(report.meta.lastPulledAt)}, ${report.meta.daysPulled} ${report.meta.daysPulled === 1 ? "day" : "days"}` : " · not read yet"}{report.meta.lastError ? ` · ${report.meta.lastError}` : ""} · read again by itself when older than an hour, and every morning</>
               : <>not connected — add <code>META_ADS_ACCESS_TOKEN</code> and <code>META_AD_ACCOUNT_ID</code> to the deployment; then the exact spend per day is read every morning.</>}
           </div>
           {report.meta.configured && <button type="button" className="btn btn-ghost" disabled={pending} onClick={() => void run(() => pullMetaSpendAction())}>Read from Meta now</button>}

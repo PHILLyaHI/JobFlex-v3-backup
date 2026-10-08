@@ -17,7 +17,7 @@ async function fresh(): Promise<Result> {
 
 export async function getInvestorReport(): Promise<InvestorReport> {
   await requirePlatformAdmin();
-  return investorReport();
+  return investorReport({ refreshMeta: true });
 }
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;

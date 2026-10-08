@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { dollars, longDate, paybackSentence, type InvestorFigures } from "@/lib/investorModel";
 import type { InvestorReport } from "@/lib/investors";
 import { PaybackChart } from "./payback-chart";
+import { SpendBars } from "./spend-bars";
 import s from "./investor-report.module.css";
 
 const n = (v: number) => v.toLocaleString("en-US");
@@ -42,6 +43,50 @@ export function InvestorReportView({ report, shared = false, between }: { report
       </section>
 
       {between}
+
+      {/* The costs (owner, 2026-10-08): by period, by day, and by campaign when Meta answers. */}
+      <section className={s.card} data-costs>
+        <div className={s.cardHead}>
+          <h2 className={s.h2}>The ad spend, live</h2>
+          <span className={s.cardNote}>
+            {report.meta.configured
+              ? report.meta.lastPulledAt
+                ? `Meta's own figures · read ${new Date(report.meta.lastPulledAt).toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" })}${report.insights ? ` · ${report.insights.days.length} days · ${report.insights.campaigns.length} ${report.insights.campaigns.length === 1 ? "campaign" : "campaigns"}` : ""}${report.meta.lastError ? ` · last read failed: ${report.meta.lastError}` : ""}`
+                : `Meta is connected; its figures arrive with the first read${report.meta.lastError ? ` — last read failed: ${report.meta.lastError}` : ""}`
+              : "Figures from the daily budget and the days booked by hand; Meta's own come once its account is connected"}
+          </span>
+        </div>
+        <div className={s.periods} aria-label="Ad spend by period">
+          {report.periods.map((p) => (
+            <div key={p.key} className={s.period} data-period={p.key}>
+              <span className={s.periodLabel}>{p.label}</span>
+              <strong className={s.periodValue}>{dollars(p.cents)}</strong>
+              <small className={s.periodNote}>{p.days === 0 ? "nothing yet" : p.days === 1 ? (p.key === "today" || p.key === "yesterday" ? "one day" : "1 day") : `${dollars(p.perDayCents)}/day · ${p.days} days`}</small>
+            </div>
+          ))}
+        </div>
+        <SpendBars rows={report.dailyRows} />
+        {report.campaigns.length > 0 && (
+          <table className={`${s.tbl} ${s.campaigns}`} aria-label="Spend by campaign">
+            <thead>
+              <tr><th>Campaign · since {report.insights?.campaignsSince ? shortDate(report.insights.campaignsSince) : "the start"}</th><th className={s.num}>Spent</th><th className={s.num}>Clicks</th><th className={s.num}>Per click</th><th className={s.num}>Signed up</th><th className={s.num}>Per signup</th></tr>
+            </thead>
+            <tbody>
+              {report.campaigns.slice(0, 12).map((c) => (
+                <tr key={c.id}>
+                  <td><span className={s.campaignName}>{c.name}</span>{c.name !== c.id && <small className={s.sub}>{c.id}</small>}</td>
+                  <td className={s.num}>{dollars(c.spendCents)}</td>
+                  <td className={s.num}>{c.clicks.toLocaleString("en-US")}</td>
+                  <td className={s.num}>{c.cpcCents === null ? "—" : dollars(c.cpcCents)}</td>
+                  <td className={s.num}>{c.signups}</td>
+                  <td className={s.num}>{c.costPerSignupCents === null ? "—" : dollars(c.costPerSignupCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {report.campaigns.length > 0 && <p className={s.sub}>A signup is credited to the campaign its ad link named (utm_campaign); one with no tag is counted in the totals, not here.</p>}
+      </section>
 
       <section className={s.card}>
         <h2 className={s.h2}>Ad spend against revenue</h2>

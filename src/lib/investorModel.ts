@@ -270,6 +270,42 @@ export function investorFigures(input: ModelInput): InvestorFigures {
   };
 }
 
+/** THE SPEND BY PERIOD (owner, 2026-10-08: "live spending per day, per week,
+ *  per month; show all the costs"): read off the curve's booked days, so a
+ *  Meta figure, a hand-booked day and a budget-filled day all count. The
+ *  week starts on Monday; "days" is how many days of the window fall on or
+ *  after the start day, so the per-day figure is honest in a young window. */
+export interface SpendPeriod {
+  key: "today" | "yesterday" | "week" | "last7" | "month" | "last30" | "all";
+  label: string;
+  cents: number;
+  days: number;
+  perDayCents: number;
+}
+export function spendPeriods(curve: CurvePoint[], today: string): SpendPeriod[] {
+  const booked = curve.filter((p) => !p.projected && p.date <= today);
+  const since = booked[0]?.date ?? today;
+  const sum = (from: string, to: string) => {
+    const inWindow = booked.filter((p) => p.date >= from && p.date <= to);
+    const cents = inWindow.reduce((x, p) => x + p.spendDayCents, 0);
+    return { cents, days: inWindow.length, perDayCents: inWindow.length ? r0(cents / inWindow.length) : 0 };
+  };
+  const dow = new Date(`${today}T12:00:00Z`).getUTCDay(); // 0 Sunday
+  const monday = addDays(today, -((dow + 6) % 7));
+  const first = `${today.slice(0, 8)}01`;
+  const yesterday = addDays(today, -1);
+  const mk = (key: SpendPeriod["key"], label: string, from: string, to: string): SpendPeriod => ({ key, label, ...sum(from < since ? since : from, to) });
+  return [
+    mk("today", "Today", today, today),
+    mk("yesterday", "Yesterday", yesterday, yesterday),
+    mk("week", "This week", monday, today),
+    mk("last7", "Last 7 days", addDays(today, -6), today),
+    mk("month", "This month", first, today),
+    mk("last30", "Last 30 days", addDays(today, -29), today),
+    mk("all", "Since the start", since, today),
+  ];
+}
+
 /** "$1,234" — whole dollars; cents only under ten dollars. */
 export function dollars(cents: number): string {
   const d = cents / 100;
