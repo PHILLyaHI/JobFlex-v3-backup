@@ -6,7 +6,7 @@ import { computeMetrics } from "@/components/v3/admin-subscribers/billing-metric
 export default async function AdminSubscribersPage() {
   await requirePlatformAdmin();
   const { rows, metrics, stripeEnabled, stripeLive, stripeError, truncated } =
-    await getSubscribersData();
+    await getSubscribersData({ cards: true });
 
   // CANCELED SUBSCRIPTIONS ARE NOT SHOWN, for now (owner, 2026-09-05): the
   // record keeps them, this page lists neither the rows nor a count of them,

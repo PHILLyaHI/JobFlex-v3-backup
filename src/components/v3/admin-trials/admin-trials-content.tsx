@@ -8,10 +8,10 @@
 // admin pages (admin-shared): the KPI strip, the filter bar, the estimate
 // table that stacks on a phone.
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, Suspense, use, useMemo, useState } from "react";
 import Link from "next/link";
 import type { Route } from "next";
-import type { TrialCard, TrialWatchData } from "@/actions/trialWatch";
+import type { TrialCard, TrialPayments, TrialWatchData } from "@/actions/trialWatch";
 import type { SignupTrialState } from "@/lib/trialPolicyServer";
 import { TrialPolicyPanel } from "./trial-policy-panel";
 import type { TrialLevel } from "@/lib/trialWatch";
@@ -20,12 +20,47 @@ import { TRIAL_CAP_KEYS, TRIAL_CAP_NOUN } from "@/lib/trialCaps";
 import s from "@/components/v3/admin-overview/admin-shared.module.css";
 import { Ic, StatusChip, ago } from "@/components/v3/admin-overview/admin-ui";
 import t from "./admin-trials.module.css";
+import type { PaymentCard } from "@/lib/paymentCard";
+import { PaymentCardLabel } from "@/components/v3/admin-subscribers/payment-card";
+import pc from "@/components/v3/admin-subscribers/payment-card.module.css";
 
 const LEVEL_LABEL: Record<TrialLevel, string> = { suspicious: "Look at this", watch: "Watch", clear: "Clear" };
 /** The card-less trial's card, as the row's second line says it. */
 const CARD_LABEL: Record<TrialCard, string> = { none: "No card", "on-file": "Card added", ended: "Ended, no card", restarted: "Paid after trial" };
 
-export function AdminTrialsContent({ data, policy }: { data: TrialWatchData; policy: SignupTrialState }) {
+/** The row's card words (owner, 2026-10-07): the card itself from Stripe
+ *  ("Visa ···· 4242", lib/paymentCard) wherever one is on file — a card-less
+ *  trial that added one, a card-first trial, a restart — and the card-less
+ *  record's own words otherwise. Nothing for a company Stripe holds no
+ *  subscription for. Until Stripe answers (it streams) the record's words show. */
+function CardLine({ card, payment }: { card: TrialCard | null; payment: PaymentCard | null }) {
+  const method = payment && payment.kind !== "none" ? <PaymentCardLabel card={payment} /> : null;
+  const words =
+    card === "restarted" ? (
+      <>
+        {CARD_LABEL.restarted}
+        {method && <> · {method}</>}
+      </>
+    ) : card === "ended" ? (
+      CARD_LABEL.ended
+    ) : (
+      method ?? (card ? CARD_LABEL[card] : payment?.label)
+    );
+  if (!words) return null;
+  // Its own line under the status, free to wrap: the column is narrow and the
+  // status line beside it cuts off with an ellipsis.
+  return (
+    <div className={pc.trialCard} data-card={card ?? "card-first"} data-card-kind={payment?.kind ?? "unknown"}>
+      {words}
+    </div>
+  );
+}
+
+function StreamedCardLine({ id, card, payments }: { id: string; card: TrialCard | null; payments: Promise<TrialPayments> }) {
+  return <CardLine card={card} payment={use(payments)[id] ?? null} />;
+}
+
+export function AdminTrialsContent({ data, policy, payments }: { data: TrialWatchData; policy: SignupTrialState; payments: Promise<TrialPayments> }) {
   const [level, setLevel] = useState<"" | TrialLevel>("");
   // Card-less trials apart (owner, 2026-10-01): "no-card" is every trial that
   // started without one, whatever has happened since; the rest narrow it.
@@ -178,8 +213,10 @@ export function AdminTrialsContent({ data, policy }: { data: TrialWatchData; pol
                         {ago(r.createdAt, data.now)}
                         <div className={s.sub}>
                           <StatusChip status={r.status} />
-                          {r.card ? <span data-card={r.card}> · {CARD_LABEL[r.card]}</span> : null}
                         </div>
+                        <Suspense fallback={<CardLine card={r.card} payment={null} />}>
+                          <StreamedCardLine id={r.id} card={r.card} payments={payments} />
+                        </Suspense>
                       </div>
                     </td>
                     <td data-l="Screens" className={s.num}>

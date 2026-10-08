@@ -20,6 +20,7 @@ import {
   type PricedBy,
 } from "@/components/v3/admin-subscribers/billing-metrics";
 import { customPriceCents, normalizeCustomPages } from "@/lib/customPlan";
+import { CARD_EXPAND, expandedCustomer, NO_CARD, paymentCardOf, paymentCardsFor, type PaymentCard } from "@/lib/paymentCard";
 
 // The MRR rule itself lives in that module — see its header. This file only
 // establishes the FACTS each rule reads: which organization a subscription
@@ -50,6 +51,11 @@ export interface SubscriberRow extends BillingFacts {
   changedAt: Date;
   /** What that timestamp IS, so no creation date reads as a change. */
   changeKind: ChangeKind;
+  /** How it pays (lib/paymentCard), read live from Stripe. "No card" for a row
+   *  with no Stripe subscription behind it; null when cards were not asked
+   *  for, Stripe was not read, or its subscription was not in the read —
+   *  unknown, not "No card". */
+  card: PaymentCard | null;
 }
 
 export interface SubscribersData {
@@ -278,11 +284,6 @@ function planFor(sub: Stripe.Subscription, slugByPrice: ReadonlyMap<string, stri
   return price?.nickname?.toUpperCase() ?? "—";
 }
 
-function expandedCustomer(sub: Stripe.Subscription): Stripe.Customer | null {
-  const c = sub.customer;
-  if (!c || typeof c === "string" || ("deleted" in c && c.deleted)) return null;
-  return c as Stripe.Customer;
-}
 function customerIdOf(sub: Stripe.Subscription): string {
   return typeof sub.customer === "string" ? sub.customer : sub.customer.id;
 }
@@ -297,13 +298,16 @@ function pickMembership<T extends { role: string }>(memberships: T[]): T | undef
   return memberships.find((m) => m.role === "OWNER") ?? memberships[0];
 }
 
-export async function getSubscribersData(): Promise<SubscribersData> {
+/** `cards`: also read how each subscription pays (the Card column on
+ *  /admin/subscribers). Off for the pages that only need the billing figures —
+ *  it widens the Stripe read and may add a round of payment-method lookups. */
+export async function getSubscribersData(opts: { cards?: boolean } = {}): Promise<SubscribersData> {
   await requirePlatformAdmin();
   const stripeEnabled = isStripeEnabled();
 
   if (stripeEnabled) {
     try {
-      return await labelCustomRows(await fromStripe());
+      return await labelCustomRows(await fromStripe(Boolean(opts.cards)));
     } catch (err) {
       // Configured but unreachable is NOT the same as not configured, and the
       // page says which. Fall through to the platform's own record so the
@@ -350,26 +354,35 @@ async function labelCustomRows(data: SubscribersData): Promise<SubscribersData> 
 
 // ── Stripe-sourced: the list IS the set of Stripe subscriptions ────────────
 
-async function fromStripe(): Promise<SubscribersData> {
+async function fromStripe(withCards: boolean): Promise<SubscribersData> {
   const stripe = getStripe();
   const subs: Stripe.Subscription[] = [];
   let startingAfter: string | undefined;
   let truncated = false;
-  // Only expand the customer. Price/plan are included by default on items;
-  // expanding `data.items.data.price.product` is 5 levels deep and Stripe
-  // rejects expansion beyond 4.
+  // Only expand the customer (and, for the Card column, the payment methods the
+  // subscription and its customer point at — lib/paymentCard CARD_EXPAND, four
+  // levels at the deepest). Price/plan are included by default on items; expanding
+  // `data.items.data.price.product` is 5 levels deep and Stripe rejects
+  // expansion beyond 4.
   for (let page = 0; page < STRIPE_MAX_PAGES; page++) {
     const res = await stripe.subscriptions.list({
       status: "all",
       limit: STRIPE_PAGE_SIZE,
       ...(startingAfter ? { starting_after: startingAfter } : {}),
-      expand: ["data.customer", "data.discounts"],
+      expand: withCards ? [...CARD_EXPAND, "data.discounts"] : ["data.customer", "data.discounts"],
     });
     subs.push(...res.data);
     if (!res.has_more || res.data.length === 0) break;
     startingAfter = res.data[res.data.length - 1].id;
     if (page === STRIPE_MAX_PAGES - 1) truncated = true;
   }
+
+  // Step 4 of the card rule (one attached card) for the customers the list left
+  // empty — one parallel round, run beside the coupon and database reads.
+  // Canceled subscriptions are not listed on the page, so they are not asked about.
+  const cardsPending = withCards
+    ? paymentCardsFor(stripe, subs.filter((sub) => sub.status !== "canceled"))
+    : Promise.resolve(null);
 
   const coupons = await loadCoupons(
     stripe,
@@ -438,6 +451,7 @@ async function fromStripe(): Promise<SubscribersData> {
   const ledger = await db.planPrice.findMany({ select: { stripePriceId: true, planSlug: true } });
   const slugByPrice = new Map(ledger.map((p) => [p.stripePriceId, p.planSlug.toUpperCase()]));
   const planNames = await getPlanNamesBySlug();
+  const cardBook = (await cardsPending)?.cards ?? null;
 
   // The account's own currency decides what the total is denominated in. A
   // restricted key may not read the account; the commonest currency on the
@@ -553,6 +567,7 @@ async function fromStripe(): Promise<SubscribersData> {
       createdAt: new Date(sub.created * 1000),
       changedAt: event.at,
       changeKind: event.kind,
+      card: cardBook ? (cardBook.has(sub.id) ? cardBook.get(sub.id)! : paymentCardOf(sub, cust)) : null,
     };
   });
 
@@ -618,6 +633,12 @@ async function fromStripe(): Promise<SubscribersData> {
       createdAt: r.createdAt,
       changedAt: r.updatedAt,
       changeKind: "updated",
+      // A grant, a carried-over v2 record or a free row has no subscription to
+      // pay with: "No card". A row naming a subscription this read did not
+      // return is unknown, not "No card" — the account may hold it where a
+      // list cannot see it (a sandbox subscription on a test clock is left out
+      // of every list that does not name the clock or the customer).
+      card: withCards && (comped || !r.externalSubId) ? NO_CARD : null,
     });
   }
 
@@ -761,6 +782,7 @@ async function fromRecord(
       createdAt: r.createdAt,
       changedAt: r.updatedAt,
       changeKind: "updated",
+      card: null, // Stripe was not read
     };
   });
 

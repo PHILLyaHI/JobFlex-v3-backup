@@ -5,7 +5,7 @@
 // domains and shared devices; read by actions/trialWatch.
 import type { Metadata } from "next";
 import { requirePlatformAdmin } from "@/lib/orgContext";
-import { getTrialWatch } from "@/actions/trialWatch";
+import { getTrialPayments, getTrialWatch } from "@/actions/trialWatch";
 import { signupTrialState } from "@/lib/trialPolicyServer";
 import { AdminTrialsContent } from "@/components/v3/admin-trials/admin-trials-content";
 
@@ -15,5 +15,8 @@ export const metadata: Metadata = { title: "JobFlex Admin · Trial watch" };
 export default async function AdminTrialsPage() {
   await requirePlatformAdmin();
   const [data, policy] = await Promise.all([getTrialWatch(), signupTrialState({ fresh: true })]);
-  return <AdminTrialsContent data={data} policy={policy} />;
+  // Not awaited: the table renders from the database and each row's card
+  // streams in when Stripe answers (one list call — actions/trialWatch).
+  const payments = getTrialPayments(data.rows.map((r) => r.id));
+  return <AdminTrialsContent data={data} policy={policy} payments={payments} />;
 }

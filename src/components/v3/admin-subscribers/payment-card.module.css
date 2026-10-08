@@ -1,0 +1,24 @@
+/* The Card cell (payment-card.tsx). Scoped like admin-shared so it outranks the
+   dashboard module's resets; no shared class is named here. */
+/* A narrow column breaks between the brand and the digits, never inside them. */
+:global(.jf-blueprint .content) .method { min-width: 0; }
+:global(.jf-blueprint .content) .digits {
+  font-family: var(--font-mono);
+  font-size: 12px; font-weight: 600;
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+:global(.jf-blueprint .content) .none { color: var(--muted); font-weight: 500; white-space: nowrap; }
+:global(.jf-blueprint .content) .unknown { color: var(--muted-faint); }
+
+/* The card head's count with the with/without split (admin-subscribers):
+   whole parts separated by a middle dot, wrapping part by part. */
+:global(.jf-blueprint .content) .counts { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; min-width: 0; white-space: normal; }
+:global(.jf-blueprint .content) .counts > span { white-space: nowrap; }
+:global(.jf-blueprint .content) .counts > span + span::before { content: "·"; padding: 0 6px; }
+
+/* Trial watch: the card words on their own line under the status chip
+   (admin-trials), wrapping between brand and digits in the narrow column. */
+:global(.jf-blueprint .content) .trialCard { margin-top: 4px; font-size: 12px; font-weight: 500; line-height: 1.35; color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .trialCard .method { color: var(--ink); font-weight: 600; }

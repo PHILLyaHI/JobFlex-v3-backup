@@ -17,6 +17,10 @@ import type { CardlessRecord } from "@/lib/trialState";
 import { meterSpendCents, readTrialMeters } from "@/lib/trialMeter";
 import type { PaidService } from "@/lib/paidApiCosts";
 import type { TrialCapKey } from "@/lib/trialCaps";
+import type Stripe from "stripe";
+import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { CARD_EXPAND, paymentCardsFor, type PaymentCard } from "@/lib/paymentCard";
+import { STRIPE_MAX_PAGES, STRIPE_PAGE_SIZE } from "@/components/v3/admin-subscribers/billing-metrics";
 
 /** Where a company's card stands on a card-less trial (lib/cardlessTrial):
  *  null for a company that did not start one (a card-first signup). */
@@ -38,6 +42,70 @@ export type TrialWatchData = {
   viewsAvailable: boolean;
   rows: Array<TrialAssessment & { card: TrialCard | null; spend: TrialSpend }>;
 };
+
+/** How each listed company's subscription pays, by organization id
+ *  (lib/paymentCard). A company missing from it has nothing to show: no
+ *  Stripe subscription, Stripe not read, or a subscription the read did not
+ *  return (a sandbox one on a test clock is left out of every list). */
+export type TrialPayments = Record<string, PaymentCard>;
+
+/**
+ * THE CARD BESIDE EACH TRIAL (owner, 2026-10-07), off ONE subscriptions.list —
+ * the subscriptions created since the window opened, with a day of slack
+ * (Checkout makes the subscription before the account exists) — read with the
+ * same client as /admin/subscribers. The page streams it: the table renders
+ * from the database first and the cards follow when Stripe answers, so a slow
+ * Stripe never holds the watch back.
+ */
+export async function getTrialPayments(orgIds: string[]): Promise<TrialPayments> {
+  await requirePlatformAdmin();
+  const out: TrialPayments = {};
+  if (!orgIds.length || !isStripeEnabled()) return out;
+  const since = new Date(Date.now() - TRIAL_WINDOW_DAYS * 86_400_000);
+  try {
+    const billed = await db.subscription.findMany({
+      where: { organizationId: { in: orgIds }, provider: "STRIPE", externalSubId: { not: null } },
+      select: { organizationId: true, externalSubId: true, externalCustomerId: true },
+    });
+    if (!billed.length) return out;
+    const stripe = getStripe();
+    const subs: Stripe.Subscription[] = [];
+    let startingAfter: string | undefined;
+    for (let page = 0; page < STRIPE_MAX_PAGES; page++) {
+      const res = await stripe.subscriptions.list({
+        status: "all",
+        limit: STRIPE_PAGE_SIZE,
+        created: { gte: Math.floor(since.getTime() / 1000) - 86_400 },
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+        expand: [...CARD_EXPAND],
+      });
+      subs.push(...res.data);
+      if (!res.has_more || res.data.length === 0) break;
+      startingAfter = res.data[res.data.length - 1].id;
+    }
+    const byId = new Map(subs.map((sub) => [sub.id, sub]));
+    // Stripe lists newest first, so the first one seen is the customer's latest.
+    const byCustomer = new Map<string, Stripe.Subscription>();
+    for (const sub of subs) {
+      const cid = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+      if (!byCustomer.has(cid)) byCustomer.set(cid, sub);
+    }
+    const subOf = new Map<string, Stripe.Subscription>();
+    for (const b of billed) {
+      const hit = byId.get(b.externalSubId!) ?? (b.externalCustomerId ? byCustomer.get(b.externalCustomerId) : undefined);
+      if (hit) subOf.set(b.organizationId, hit);
+    }
+    const { cards } = await paymentCardsFor(stripe, [...new Set(subOf.values())]);
+    for (const [orgId, sub] of subOf) {
+      const card = cards.get(sub.id);
+      if (card) out[orgId] = card;
+    }
+    return out;
+  } catch (err) {
+    console.error("[trial-watch] Stripe card read failed:", err);
+    return {};
+  }
+}
 
 const countBy = (rows: Array<{ organizationId: string; _count: { _all: number } }>) => new Map(rows.map((r) => [r.organizationId, r._count._all]));
 

@@ -8,6 +8,10 @@
 // Stripe check, laid out on the blueprint sheet. The detail opens INLINE under
 // its row instead of a side drawer, which also reads better one-handed.
 //
+// The Card column (owner, 2026-10-07) says how each subscription pays, read
+// live from Stripe by lib/paymentCard; its filter and the with/without count
+// in the card head are counted over the same rows the table shows.
+//
 // The KPI strip is recomputed over the FILTERED rows through the same
 // computeMetrics() the server used — one MRR rule, never a second copy — so
 // the numerals always describe the table under them.
@@ -20,6 +24,9 @@ import { money, longDate } from "@/lib/format";
 import s from "@/components/v3/admin-overview/admin-shared.module.css";
 import { useAdminMotion } from "@/components/v3/admin-overview/admin-motion";
 import { Ic, StatusChip, statusLabel } from "@/components/v3/admin-overview/admin-ui";
+import type { PaymentCard } from "@/lib/paymentCard";
+import { PaymentCardLabel } from "./payment-card";
+import pc from "./payment-card.module.css";
 import {
   computeMetrics,
   changeKindLabel,
@@ -51,7 +58,14 @@ export interface SubscriberRowDTO extends BillingFacts {
   createdAt: string;
   changedAt: string;
   changeKind: ChangeKind;
+  /** null = Stripe was not read (neither "with card" nor "no card"). */
+  card: PaymentCard | null;
 }
+
+type CardFilter = "" | "with" | "none";
+/** "With card" is any way to pay — a card, Link, Cash App Pay, a bank. */
+const hasPayment = (c: PaymentCard | null) => c !== null && c.kind !== "none";
+const hasNoCard = (c: PaymentCard | null) => c !== null && c.kind === "none";
 
 const ADMIN = "/admin" as Route;
 
@@ -78,6 +92,7 @@ export function AdminSubscribersContent({
   const [plan, setPlan] = useState("");
   const [status, setStatus] = useState("");
   const [promo, setPromo] = useState("");
+  const [cardFilter, setCardFilter] = useState<CardFilter>("");
   const [openId, setOpenId] = useState<string | null>(null);
 
   const plans = useMemo(() => Array.from(new Set(rows.map((r) => r.plan))).sort(), [rows]);
@@ -89,7 +104,9 @@ export function AdminSubscribersContent({
     [rows],
   );
 
-  const filtered = useMemo(() => {
+  // Every filter but the card one: the with/without counts are taken here, so
+  // picking "With card" leaves exactly that many rows.
+  const narrowed = useMemo(() => {
     const q = query.trim().toLowerCase();
     return rows.filter((r) => {
       if (plan && r.plan !== plan) return false;
@@ -100,12 +117,22 @@ export function AdminSubscribersContent({
         r.orgName.toLowerCase().includes(q) ||
         (r.ownerEmail ?? "").toLowerCase().includes(q) ||
         (r.customerEmail ?? "").toLowerCase().includes(q) ||
-        (r.promoCode ?? "").toLowerCase().includes(q)
+        (r.promoCode ?? "").toLowerCase().includes(q) ||
+        (r.card?.label ?? "").toLowerCase().includes(q)
       );
     });
   }, [rows, query, plan, status, promo]);
+  const filtered = useMemo(
+    () =>
+      cardFilter === "with" ? narrowed.filter((r) => hasPayment(r.card)) : cardFilter === "none" ? narrowed.filter((r) => hasNoCard(r.card)) : narrowed,
+    [narrowed, cardFilter],
+  );
+  const withCard = narrowed.filter((r) => hasPayment(r.card)).length;
+  const noCard = narrowed.filter((r) => hasNoCard(r.card)).length;
+  const cardUnknown = narrowed.length - withCard - noCard;
+  const cardsRead = rows.some((r) => r.card !== null);
 
-  const filtersOn = Boolean(plan || status || promo || query);
+  const filtersOn = Boolean(plan || status || promo || query || cardFilter);
   // Same rule, same function — applied to whichever set is on screen.
   const view = useMemo(
     () => (filtersOn ? computeMetrics(filtered, metrics.currency) : metrics),
@@ -238,8 +265,19 @@ export function AdminSubscribersContent({
           <div className="card-titles">
             <div className="card-title">All subscriptions</div>
           </div>
-          <span className={s.count}>
-            {filtered.length} / {rows.length}
+          {/* Each part keeps its words together and the parts wrap, so the
+              head never runs past the card on a phone. */}
+          <span className={`${s.count} ${pc.counts}`} data-card-count>
+            {cardsRead && (
+              <>
+                <span>{withCard} with card</span>
+                <span>{noCard} no card</span>
+                {cardUnknown > 0 && <span>{cardUnknown} unknown</span>}
+              </>
+            )}
+            <span>
+              {filtered.length} / {rows.length}
+            </span>
           </span>
         </div>
 
@@ -285,7 +323,7 @@ export function AdminSubscribersContent({
             <input
               className={s.search}
               type="search"
-              placeholder="Search org, email or promo code"
+              placeholder="Search org, email, promo or card"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               aria-label="Search subscribers"
@@ -345,6 +383,22 @@ export function AdminSubscribersContent({
               </select>
             </span>
           )}
+          {cardsRead && (
+            <span className={`bp-sel bp-sel--admin ${s.fSel}`}>
+              <select
+                className="bp-sel-in"
+                value={cardFilter}
+                data-empty={cardFilter ? undefined : "1"}
+                onChange={(e) => setCardFilter(e.target.value as CardFilter)}
+                aria-label="Card"
+                data-card-filter
+              >
+                <option value="">All cards</option>
+                <option value="with">With card ({withCard})</option>
+                <option value="none">No card ({noCard})</option>
+              </select>
+            </span>
+          )}
           {filtersOn && (
             <button
               type="button"
@@ -355,6 +409,7 @@ export function AdminSubscribersContent({
                 setPlan("");
                 setStatus("");
                 setPromo("");
+                setCardFilter("");
               }}
             >
               Reset
@@ -371,13 +426,14 @@ export function AdminSubscribersContent({
             <thead>
               <tr>
                 <th>Subscriber</th>
-                <th style={{ width: "14%" }}>Plan</th>
-                <th className={s.num} style={{ width: "11%" }}>
+                <th style={{ width: "13%" }}>Plan</th>
+                <th className={s.num} style={{ width: "9%" }}>
                   Monthly
                 </th>
-                <th style={{ width: "14%" }}>Status</th>
-                <th style={{ width: "14%" }}>Promo</th>
-                <th className={s.num} style={{ width: "13%" }}>
+                <th style={{ width: "13%" }}>Status</th>
+                <th style={{ width: "19%" }}>Card</th>
+                <th style={{ width: "10%" }}>Promo</th>
+                <th className={s.num} style={{ width: "12%" }}>
                   Renews
                 </th>
               </tr>
@@ -447,6 +503,12 @@ function RowPair({
         <td data-l="Status">
           <StatusChip status={r.status} />
         </td>
+        <td data-l="Card" data-card={r.card?.kind ?? "unknown"}>
+          <PaymentCardLabel
+            card={r.card}
+            why={r.source === "record" && r.stripeConfirmed === false ? "Stripe did not return this subscription" : undefined}
+          />
+        </td>
         <td data-l="Promo">
           {r.promoCode ? (
             <span className={s.mono}>{r.promoCode}</span>
@@ -460,7 +522,7 @@ function RowPair({
       </tr>
       {open && (
         <tr className={s.detail}>
-          <td colSpan={6}>
+          <td colSpan={7}>
             <Detail row={r} />
           </td>
         </tr>
