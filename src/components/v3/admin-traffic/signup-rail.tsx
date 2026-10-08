@@ -8,9 +8,11 @@
 //
 // One read covers every span: the 30-day signup ledger (actions/
 // trafficDashboard getSignupLedger — Organization rows with the landing's
-// tags and the Subscription beside them), cut here to calendar days in the
-// page's timezone, like the map's own "today". Switching the span never
-// waits on the server. The read happens again every half minute while the
+// tags and the Subscription beside them), cut here to the page's days —
+// TRAFFIC_TZ's midnight (lib/traffic-visitor), the one the map's "today" and
+// the live view's signups are counted from, whatever zone the report's
+// clocks are shown in; only the clock on an older card follows that zone.
+// Switching the span never waits on the server. The read happens again every half minute while the
 // tab is in front, when the tab comes back, and at once when the live poll
 // brings a convert the rail does not hold — so the card follows the pin by
 // one poll (15 s in live mode) at the latest. A card the rail had not seen
@@ -21,12 +23,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Megaphone, RefreshCw } from "lucide-react";
 import { getSignupLedger } from "@/actions/trafficDashboard";
 import { signupLedgerSummary, type LiveVisitor, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
-import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS } from "@/lib/traffic-visitor";
-import { localHourAt } from "@/lib/home/dates";
-import { Ago, agoText, useNow } from "./ticker";
+import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS, TRAFFIC_TZ, trafficDayStartMs } from "@/lib/traffic-visitor";
+import { Ago, useNow } from "./ticker";
 import s from "./signup-rail.module.css";
 
-/** The spans: calendar days in the page's timezone, today counted as one. */
+/** The spans: the page's days (TRAFFIC_TZ), today counted as one. */
 const SPANS: Array<[number, string]> = [[1, "Today"], [2, "2 days"], [7, "7 days"], [30, "30 days"]];
 /** One read covers every span. */
 const READ_DAYS = 30;
@@ -35,51 +36,31 @@ const POLL_MS = 30_000;
 const FRESH_MS = 15 * 60_000;
 /** How long a card that just landed keeps its arrival mark. */
 const ARRIVAL_MS = 12_000;
-const DAY_MS = 86_400_000;
 
-function ymdIn(ms: number, tz: string): { y: number; m: number; d: number } | null {
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", { timeZone: tz, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(new Date(ms));
-    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
-    return { y: get("year"), m: get("month"), d: get("day") };
-  } catch { return null; }
+/** Midnight of the page's day, `daysBack` days before the one `at` falls in
+ *  (2026-10-04: the same midnight as the live view's "today" — lib/traffic-
+ *  visitor trafficDayStartMs — so the rail's Today is the map's Today even
+ *  when the report's timezone is switched). */
+function dayStart(at: number, daysBack: number): number {
+  let start = trafficDayStartMs(at);
+  for (let i = 0; i < daysBack; i++) start = trafficDayStartMs(start - 1);
+  return start;
 }
-/** Local midnight, `daysBack` days before the day `at` falls in, as UTC ms. */
-function dayStart(at: number, daysBack: number, tz: string): number {
-  const ymd = ymdIn(at, tz);
-  if (!ymd) return at - (daysBack + 1) * DAY_MS; // an unknown zone: a rolling window
-  return localHourAt(new Date(Date.UTC(ymd.y, ymd.m - 1, ymd.d - daysBack)), 0, tz).getTime();
+const DAY_HEAD = new Intl.DateTimeFormat("en-US", { timeZone: TRAFFIC_TZ, weekday: "short", month: "short", day: "numeric" });
+/** "Today", "Yesterday", "Thu, Oct 1" — by the page's day. */
+function dayLabel(ms: number, todayStart: number, yesterdayStart: number): string {
+  if (ms >= todayStart) return "Today";
+  if (ms >= yesterdayStart) return "Yesterday";
+  return DAY_HEAD.format(new Date(ms));
 }
-/** "Today", "Yesterday", "Thu, Oct 1". */
-function dayLabel(ms: number, at: number, tz: string): string {
-  const d = ymdIn(ms, tz);
-  const t = ymdIn(at, tz);
-  if (!d || !t) return "";
-  const key = (x: { y: number; m: number; d: number }) => Date.UTC(x.y, x.m - 1, x.d);
-  if (key(d) === key(t)) return "Today";
-  if (key(d) === key(t) - DAY_MS) return "Yesterday";
-  try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric" }).format(new Date(ms)); } catch { return ""; }
-}
-function sameDay(a: number, b: number, tz: string): boolean {
-  const x = ymdIn(a, tz);
-  const y = ymdIn(b, tz);
-  return Boolean(x && y && x.y === y.y && x.m === y.m && x.d === y.d);
-}
-/** "4 min ago" for a card made today; the clock for an older one — its day header says which day. */
-function whenTextFor(tz: string): (iso: string, at: number) => string {
-  return (iso, at) => {
-    const ms = Date.parse(iso);
-    if (sameDay(ms, at, tz)) return agoText(iso, at);
-    try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(new Date(ms)); } catch { return agoText(iso, at); }
-  };
+/** A clock in the zone the report is shown in; null when the zone is not one the browser knows. */
+function clockIn(tz: string, withDay: boolean): Intl.DateTimeFormat | null {
+  try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit", ...(withDay ? { weekday: "short", month: "short", day: "numeric" } : {}) }); } catch { return null; }
 }
 /** "Bothell, WA" — the short form of where the pin is; the long one when the state is unknown. */
 function placeOfVisitor(v: LiveVisitor): string {
   if (v.city && v.regionCode) return `${v.city}, ${v.regionCode}`;
   return v.place || v.city || v.country || "";
-}
-function clock(ms: number, tz: string): string {
-  try { return new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(ms)); } catch { return ""; }
 }
 
 export function SignupRail({ initial, timezone, fullHistory = false, liveSignups, adNames }: {
@@ -168,28 +149,32 @@ export function SignupRail({ initial, timezone, fullHistory = false, liveSignups
   // of the day moves once a minute, not once a second.
   const at = useNow();
   const minute = at ? Math.floor(at / 60_000) * 60_000 : 0;
-  const since = useMemo(() => (minute ? dayStart(minute, days - 1, timezone) : null), [minute, days, timezone]);
+  const todayStart = useMemo(() => (minute ? dayStart(minute, 0) : 0), [minute]);
+  const since = useMemo(() => (minute ? dayStart(minute, days - 1) : null), [minute, days]);
   const records = useMemo(() => (ledger && since !== null ? ledger.records.filter((r) => Date.parse(r.createdAt) >= since) : []), [ledger, since]);
   const summary = useMemo(() => signupLedgerSummary(records), [records]);
   const groups = useMemo(() => {
     const out: Array<{ label: string; items: SignupRecord[] }> = [];
+    const yesterdayStart = todayStart ? dayStart(todayStart, 1) : 0;
     for (const r of records) {
-      const label = days === 1 ? "" : dayLabel(Date.parse(r.createdAt), minute, timezone);
+      const label = days === 1 ? "" : dayLabel(Date.parse(r.createdAt), todayStart, yesterdayStart);
       const last = out[out.length - 1];
       if (last && last.label === label) last.items.push(r);
       else out.push({ label, items: [r] });
     }
     return out;
-  }, [records, days, minute, timezone]);
+  }, [records, days, todayStart]);
   const ready = Boolean(ledger) && since !== null;
   const floored = !fullHistory && since !== null && since < TRAFFIC_SINCE_MS;
-  const whenText = useMemo(() => whenTextFor(timezone), [timezone]);
+  // An older card reads the clock, in the zone the report is shown in; its day header says which day.
+  const timeOf = useMemo(() => clockIn(timezone, false), [timezone]);
+  const dateOf = useMemo(() => clockIn(timezone, true), [timezone]);
   // An empty "today" early in the day: say what yesterday brought, one press away.
   const yesterday = useMemo(() => {
     if (!ledger || !minute || days !== 1) return 0;
-    const from = dayStart(minute, 1, timezone);
+    const from = dayStart(minute, 1);
     return ledger.records.filter((r) => Date.parse(r.createdAt) >= from).length - records.length;
-  }, [ledger, minute, days, timezone, records.length]);
+  }, [ledger, minute, days, records.length]);
 
   return (
     <aside className={s.rail} aria-label="Signed up" data-pending={pending} data-span={days}>
@@ -225,7 +210,7 @@ export function SignupRail({ initial, timezone, fullHistory = false, liveSignups
                     <li key={r.orgId} className={s.card} data-state={r.state} data-fresh={minute - made < FRESH_MS} data-new={arrivals.has(r.orgId)} data-live={Boolean(live?.active)} data-signup-card={r.orgId}>
                       <div className={s.cardTop}>
                         <b className={s.org}>{r.orgName}</b>
-                        <span className={s.when} title={clock(made, timezone)}><Ago iso={r.createdAt} format={whenText}/></span>
+                        <span className={s.when} title={dateOf?.format(made) ?? ""}>{made >= todayStart || !timeOf ? <Ago iso={r.createdAt}/> : timeOf.format(made)}</span>
                       </div>
                       <div className={s.who}>{r.ownerName ? `${r.ownerName} · ` : ""}{r.ownerEmail || "no owner yet"}</div>
                       <div className={s.chips}>
