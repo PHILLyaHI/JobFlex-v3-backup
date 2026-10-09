@@ -17,9 +17,8 @@
 //     Material and labor are columns of every row, not two sections.
 //   · Every field (name, qty, unit, material, labor) is editable in place with
 //     a per-row delete, over ve.setLine / ve.removeLine / ve.addLine.
-//   · The Smart Proposal's MATERIALS REQUEST — thumbnail, dimensions, buy
-//     quantity, store chip, row total, retail unit price with the billed
-//     override beside it, and a guarded buy link — derived from the ledger.
+//   · No Materials request (owner, 2026-10-09): no store, link or picture on
+//     an estimate.
 //   · No "Save estimate": Convert writes the AiEstimate row itself.
 // What is re-decided here is only the GEOMETRY; every value is the desktop's.
 //
@@ -73,8 +72,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
-import { MaterialThumb } from "@/components/materials/MaterialThumb";
-import { merchantUrl } from "@/lib/merchantLinks";
 import { lineTotal, unitSelectOptions } from "@/lib/estimate/console-model";
 import {
   VIDEO_ACCEPT,
@@ -678,100 +675,10 @@ export function MobileVideoEstimator({
                 </div>
               </div>
 
-            </section>
-
-            {/* MATERIALS REQUEST — its own card too.
-                The Smart Proposal's shoppable list, on
-                  this page too. DERIVED from the ledger rather than mirrored
-                  from it: editing a quantity above moves its buy quantity here
-                  and deleting a line removes its row, so there is no second
-                  copy to keep in sync.
-
-                  Re-cut for a phone: the desktop's one flex row (thumb · name
-                  and meta · price · 34px link) becomes a stack — thumb beside
-                  the name and its meta, the two figures on their own baseline
-                  under them, and the buy link as a full-width ≥44px control
-                  rather than a 34px icon square. */}
-            <section className="mve-card">
-              <div className="mve-sec mve-req">
-                <div className="mve-req-head">
-                  <div className="mve-sec-h">Materials request</div>
-                  <span className="mve-req-count">
-                    {ve.reqRows.length} {ve.reqRows.length === 1 ? "item" : "items"}
-                  </span>
-                </div>
-
-                {ve.reqRows.length === 0 ? (
-                  <div className="mve-none">No materials on this estimate.</div>
-                ) : null}
-
-                {ve.reqRows.map((r) => {
-                  // merchantUrl is the render-time guard: it rejects Google
-                  // interstitials and model-fabricated retailer paths and swaps
-                  // them for the store's own search. Null means there is nowhere
-                  // real to send the contractor, so no button is drawn.
-                  const buy = merchantUrl(
-                    r.store,
-                    [r.name, r.dimensions].filter(Boolean).join(" "),
-                    r.productUrl,
-                  );
-                  return (
-                    <div className="mve-req-row" key={r.id}>
-                      <div className="mve-req-top">
-                        <span className="mve-thumb">
-                          <MaterialThumb src={r.imageUrl ?? null} alt="" />
-                        </span>
-                        <span className="mve-req-main">
-                          <span className="mve-req-n">{r.name || "Untitled line"}</span>
-                          <span className="mve-req-m">
-                            {r.dimensions ? <span>{r.dimensions}</span> : null}
-                            <span>
-                              Qty {r.qty} {r.unit}
-                            </span>
-                            {r.store ? (
-                              <span className="mve-store">{r.store}</span>
-                            ) : (
-                              <span className="mve-store mve-store--none">No retail source</span>
-                            )}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="mve-req-foot">
-                        <b>{money(r.total)}</b>
-                        <span>
-                          {/* Billed per measured unit; the listing is the
-                              package price at the store. */}
-                          {`${money(r.unitPrice)} / ${r.unit}`}
-                          {r.retailUnitPrice != null ? (
-                            <i className="mve-req-ov">
-                              {" "}· listing {money(r.retailUnitPrice)}
-                              {r.dimensions ? ` (${r.dimensions})` : ""}
-                            </i>
-                          ) : null}
-                        </span>
-                      </div>
-                      {buy ? (
-                        <a
-                          className="mve-req-link"
-                          href={buy}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          Buy{r.store ? ` at ${r.store}` : ""}
-                          <Icon id="i-arrow" />
-                        </a>
-                      ) : null}
-                    </div>
-                  );
-                })}
-
-                <div className="mve-reqtotal">
-                  <span>Total material cost</span>
-                  <b>{money(ve.reqTotal)}</b>
-                </div>
-              </div>
-
-              {/* The donor's bar. The primary is in the thumb zone below, and
+              {/* No Materials request card under this one any more (owner,
+                  2026-10-09): the estimate is not a shop list, so the bar
+                  that closed that card closes the totals instead.
+                  The donor's bar. The primary is in the thumb zone below, and
                   there is no "Save estimate" (owner, 2026-08-22): Convert
                   already writes the AiEstimate row before it creates the
                   proposal, so a separate save was a second name for a step that

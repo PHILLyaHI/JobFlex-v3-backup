@@ -35,8 +35,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Route } from "next";
-import { MaterialThumb } from "@/components/materials/MaterialThumb";
-import { merchantUrl } from "@/lib/merchantLinks";
 import { lineTotal, unitSelectOptions } from "@/lib/estimate/console-model";
 import { BlueprintSelect } from "@/components/v3/advanced-ai-blueprint/blueprint-select";
 import { HoverTitle } from "@/components/v3/advanced-ai-blueprint/hover-title";
@@ -575,91 +573,11 @@ export function VideoEstimatorContent({
               </div>
             </div>
           </div>
-        </section>
 
-        {/* ── MATERIALS REQUEST — the shoppable list, DERIVED from the ledger
-            rather than mirrored from it, exactly as the Smart Proposal's is.
-            Editing a quantity above moves its buy quantity here; deleting a
-            line removes its row. Nothing to keep in sync, because there is no
-            second copy. ── */}
-        <section className={cx("card", "card--flush", "vr-card")}>
-          <div className={cx("vr-req")}>
-            <div className={cx("vr-req-head")}>
-              <div className={cx("vr-sec-h")}>Materials request</div>
-              <span className={cx("vr-req-count")}>
-                {ve.reqRows.length} {ve.reqRows.length === 1 ? "item" : "items"}
-              </span>
-            </div>
-            <div>
-              {ve.reqRows.map((r) => {
-                // merchantUrl is the render-time guard: it rejects Google
-                // interstitials and model-fabricated retailer paths and swaps
-                // them for the store's own search. Null means there is nowhere
-                // real to send the contractor, so no button is drawn.
-                const buy = merchantUrl(
-                  r.store,
-                  [r.name, r.dimensions].filter(Boolean).join(" "),
-                  r.productUrl,
-                );
-                return (
-                  <div className={cx("vr-req-row")} key={r.id}>
-                    <span className={cx("vr-thumb")}>
-                      <MaterialThumb src={r.imageUrl ?? null} alt="" />
-                    </span>
-                    <span className={cx("vr-req-main")}>
-                      <span className={cx("vr-req-n")}>{r.name || "Untitled line"}</span>
-                      <span className={cx("vr-req-m")}>
-                        {r.dimensions ? <span>{r.dimensions}</span> : null}
-                        <span>
-                          Qty {r.qty} {r.unit}
-                        </span>
-                        {r.store ? (
-                          <span className={cx("vr-store")}>{r.store}</span>
-                        ) : (
-                          <span className={cx("vr-store", "vr-store--none")}>No retail source</span>
-                        )}
-                      </span>
-                    </span>
-                    <span className={cx("vr-req-price")}>
-                      <b>{money(r.total)}</b>
-                      <span>
-                        {/* Billed per measured unit; the listing is the package
-                            price at the store. Two figures, two meanings. */}
-                        {`${money(r.unitPrice)} / ${r.unit}`}
-                        {r.retailUnitPrice != null ? (
-                          <i className={cx("vr-req-ov")}>
-                            {" "}· listing {money(r.retailUnitPrice)}
-                            {r.dimensions ? ` (${r.dimensions})` : ""}
-                          </i>
-                        ) : null}
-                      </span>
-                    </span>
-                    {buy ? (
-                      <a
-                        className={cx("vr-req-link")}
-                        href={buy}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={`Buy ${r.name || "this item"}${r.store ? ` at ${r.store}` : ""}`}
-                      >
-                        <svg className={cx("ic")}>
-                          <use href="#i-arrow" />
-                        </svg>
-                      </a>
-                    ) : null}
-                  </div>
-                );
-              })}
-              {ve.reqRows.length === 0 ? (
-                <div className={cx("vr-none")}>No materials on this estimate.</div>
-              ) : null}
-            </div>
-            <div className={cx("vr-reqtotal")}>
-              <span>Total material cost</span>
-              <b>{money(ve.reqTotal)}</b>
-            </div>
-          </div>
-
+          {/* The page's own bar, closing the totals. It closed a Materials
+              request card until 2026-10-09, when the owner took that card out:
+              the estimate is not a shop list, and store products — some of
+              them wrong — embarrassed the contractor in front of the client. */}
           <div className={cx("vr-bar")}>
             <button
               className={cx("btn", "btn-danger")}

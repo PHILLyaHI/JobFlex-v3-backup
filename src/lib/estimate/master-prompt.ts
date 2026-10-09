@@ -27,7 +27,7 @@ export const UNIT_VOCABULARY =
 
 /**
  * The unit rule every pricing call carries. Kept separate from the master
- * text so the short calls (refine, re-shop) can include just this block.
+ * text so the short calls (refine) can include just this block.
  */
 export const UNIT_RULES =
   `MEASUREMENT UNIT RULES (MANDATORY). \`unit\` MUST be one of exactly these ten, spelled exactly as written: ${UNIT_VOCABULARY}. No other word is legal. ` +
@@ -44,13 +44,13 @@ export const UNIT_RULES =
   "`quantity` is the net measured quantity in that unit (waste is priced into the material unit price and stated in notes, never added to the quantity), `unitPrice` is the price per ONE of that unit, and quantity × unitPrice is the line total.";
 
 /**
- * The pricing rule: line prices are unit prices from the guidelines, the retail
- * list is a shopping reference. Carried by every call that sees product options.
+ * The pricing rule: line prices are unit prices from the guidelines. No store
+ * listing is searched or shown since 2026-10-09 (owner: the shop list showed
+ * the wrong products), so nothing here mentions one.
  */
 export const PRICING_RULES =
   "PRICING METHOD (MANDATORY). Every line is priced PER MEASURED UNIT from the PRICING GUIDELINES, the material catalog ranges, the quality tier and the location: a material unitPrice ($ of material per sqft / linear ft / unit / cu yards / sq boards) and a labor unitPrice ($ of labor per that same unit). " +
-  "The live retail product options you are shown are NOT the source of a line's price. They exist so the contractor gets a MATERIAL LIST — where to buy each item and what the package costs. Pick the best-fitting product for that list; do not turn its package price into the line's unitPrice, do not convert quantities into packages, and do not let a listing's price move a line away from the guideline range. " +
-  "Use a listing only as a sanity check on the material $/unit (a $3.20/sqft tile listing supports a $3-4/sqft material price; it does not become the line). " +
+  "Never turn a package price (a pail, a box, a bundle) into a line's unitPrice and never convert quantities into packages. " +
   "Never return a zero unitPrice or quantity on any line. The scope and the line names are written for the client: no math, no 'Calc:', no formulas — quantities and prices live in their fields.";
 
 export const ESTIMATOR_MASTER_PROMPT = `# General AI Construction Estimator - Photo-First Analysis
@@ -794,4 +794,4 @@ The \`scope\` field MUST read like a professional contract scope. It should:
    - If you count 14 doors → unit: "unit", quantity: 14 — NOT unit: "fixed", quantity: 1
    - If you calculate 220 sheets → unit: "unit", quantity: 220 — NOT unit: "fixed", quantity: 1
    - Only use "fixed" for things that truly have no measurable quantity (permits, mobilization, cleanup, a locked-in quote)
-8. **PRICE PER UNIT, NOT PER PACKAGE** - The retail material list is the contractor's shopping reference (where to buy, what the package costs). Line prices come from the pricing guidelines per measured unit.`;
+8. **PRICE PER UNIT, NOT PER PACKAGE** - Line prices come from the pricing guidelines per measured unit; a package (pail, box, bundle) is described in \`dimensions\`, never priced as the line.`;
