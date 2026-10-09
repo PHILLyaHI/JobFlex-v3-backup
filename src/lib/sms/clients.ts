@@ -20,9 +20,10 @@ function log(what: string, err: unknown) {
   console.error(`[sms/clients] ${what}: ${err instanceof Error ? err.message : String(err)}`);
 }
 
-/** "Ridgeline Roofing: your proposal "Roof replacement" ($11,306.52) is ready — see it and accept here: <link>. Reply STOP to opt out." */
+/** "Ridgeline Roofing: your proposal "Roof replacement" ($11,306.52) is ready — review it here: <link>. Reply STOP to opt out."
+ *  Owner (2026-10-09): the text invites a review, not an acceptance — the page is where they read it over and decide. */
 export function clientProposalText(org: string | null, title: string, total: number, link: string): string {
-  return brand(org, `your proposal "${clip(title, 50)}" (${money(total)}) is ready — see it and accept here: ${link} Reply STOP to opt out.`);
+  return brand(org, `your proposal "${clip(title, 50)}" (${money(total)}) is ready — review it here: ${link} Reply STOP to opt out.`);
 }
 
 /** "Ridgeline Roofing: reminder — we're scheduled at 4567 Rainier Ave S tomorrow, Fri Sep 25, 9 AM. Reply here with any questions." */

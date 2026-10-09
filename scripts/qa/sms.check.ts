@@ -114,7 +114,7 @@ check("the next local time rolls to tomorrow once passed", nextLocalTime("07:00"
 
 /* ── the client's texts, the allowance ── */
 check("the client gets the proposal link with the company name and the STOP line",
-  clientProposalText("Ridgeline Roofing", "Roof replacement — architectural shingles", 11306.52, "https://www.jobflex.app/portal/q/abc") === "Ridgeline Roofing: your proposal \"Roof replacement — architectural shingles\" ($11,306.52) is ready — see it and accept here: https://www.jobflex.app/portal/q/abc Reply STOP to opt out.",
+  clientProposalText("Ridgeline Roofing", "Roof replacement — architectural shingles", 11306.52, "https://www.jobflex.app/portal/q/abc") === "Ridgeline Roofing: your proposal \"Roof replacement — architectural shingles\" ($11,306.52) is ready — review it here: https://www.jobflex.app/portal/q/abc Reply STOP to opt out.",
   clientProposalText("Ridgeline Roofing", "Roof replacement — architectural shingles", 11306.52, "https://www.jobflex.app/portal/q/abc"));
 check("the evening-before reminder names the street and the hours",
   clientReminderText("Ridgeline Roofing", { title: "Roof tear-off", startsAt: oct7, endsAt: oct7end, address: "4567 Rainier Ave S, Seattle, WA" }, TZ) === "Ridgeline Roofing: reminder — we're scheduled at 4567 Rainier Ave S tomorrow, Wed Oct 7, 8 AM–4 PM (Roof tear-off). Reply here with any questions.",
