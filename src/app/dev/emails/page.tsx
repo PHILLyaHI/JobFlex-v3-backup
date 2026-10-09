@@ -30,7 +30,7 @@ export default function EmailGalleryPage() {
       </p>
 
       {rendered.map((f) => (
-        <section key={f.id} style={{ marginBottom: 48 }}>
+        <section key={f.id} id={f.id} style={{ marginBottom: 48 }}>
           <h2 style={{ fontFamily: "Inter,sans-serif", fontSize: 17, fontWeight: 800, margin: "0 0 4px" }}>{f.label}</h2>
           {f.note ? (
             <p style={{ fontFamily: "Inter,sans-serif", fontSize: 13, color: "#555", margin: "0 0 12px", maxWidth: "80ch" }}>{f.note}</p>

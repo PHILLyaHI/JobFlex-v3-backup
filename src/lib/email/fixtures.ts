@@ -25,11 +25,22 @@ import {
   buildTestEmail,
 } from "./build/platform";
 import { trafficDigestFixture } from "./traffic-fixture";
+import { firstEstimateTarget } from "@/lib/firstEstimate";
 
 const ORG = { kind: "org" as const, name: "Cedar & Oak Builders", logoUrl: null };
 const FOOT = { name: "Cedar & Oak Builders", contact: "(503) 555-0142", ref: "Ref A-2481" };
 
 const BRAND = { name: "Cedar & Oak Builders", logoUrl: null, phone: "(503) 555-0142" };
+
+/** The welcome's previews: [name, the landing's trade]. Painting stands for
+ *  the eighteen trades Smart Proposal serves; "general" has no trade at all. */
+const WELCOME_TRADES: Array<[string, string | null]> = [
+  ["roofing", "Roofing"],
+  ["fencing", "Fencing"],
+  ["hvac", "HVAC"],
+  ["painting", "Painting"],
+  ["general", null],
+];
 
 export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc }[] = [
   {
@@ -495,31 +506,26 @@ export const FIXTURES: { id: string; label: string; note?: string; doc: EmailDoc
       href: "https://example.com/auth/reset?token=demo",
     }),
   },
-  {
-    id: "b-welcome-first-estimate",
-    label: "18b · buildWelcomeFirstEstimate()",
-    note: "landing-e pass A: the variant-e welcome. Platform lockup, one button by trade, the trial's terms in the box, the first-charge date in the line under the button.",
-    doc: buildWelcomeFirstEstimate({
-      name: "Jordan Rivera",
-      href: "https://example.com/dashboard/advanced-ai/roof",
-      ctaLabel: "Measure my first roof",
-      trade: "roofing",
-      firstChargeDate: "Sep 25, 2026",
+  // The welcome by trade (2026-10-09): the button is the one the signup sends —
+  // lib/firstEstimate picks the page — with a card and without one.
+  ...WELCOME_TRADES.flatMap(([trade, landing], n) =>
+    ([false, true] as const).map((cardless) => {
+      const target = firstEstimateTarget(landing ? [landing] : [], landing);
+      return {
+        id: `b-welcome-${trade}${cardless ? "-cardless" : ""}`,
+        label: `18w${n + 1}${cardless ? "b" : "a"} · buildWelcomeFirstEstimate() · ${trade}${cardless ? " · no card" : ""}`,
+        note: `Landing ${landing ?? "none"} → ${target.href}. ${cardless ? "Card-less trial: the box says no card is needed and when the trial ends." : "Card on file: the first-charge date and how to cancel."}`,
+        doc: buildWelcomeFirstEstimate({
+          name: "Jordan Rivera",
+          href: "https://example.com" + target.href,
+          ctaLabel: target.label,
+          trade: target.trade,
+          firstChargeDate: "Oct 16, 2026",
+          cardless,
+        }),
+      };
     }),
-  },
-  {
-    id: "b-welcome-cardless",
-    label: "18c · buildWelcomeFirstEstimate({ cardless })",
-    note: "The card-less trial's welcome (TRIAL_REQUIRES_CARD off): the box says no card is needed and when the trial ends.",
-    doc: buildWelcomeFirstEstimate({
-      name: "Jordan Rivera",
-      href: "https://example.com/dashboard/advanced-ai/roof",
-      ctaLabel: "Measure my first roof",
-      trade: "roofing",
-      firstChargeDate: "Oct 8, 2026",
-      cardless: true,
-    }),
-  },
+  ),
   {
     id: "b-trial-confirm",
     label: "18c2 · buildTrialConfirm()",

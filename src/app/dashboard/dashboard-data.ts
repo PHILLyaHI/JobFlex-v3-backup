@@ -19,6 +19,7 @@ import { db } from "@/lib/db";
 import { money, relative } from "@/lib/format";
 import { parseTradeTypes } from "@/lib/tradeTypes";
 import { firstEstimateTarget } from "@/lib/firstEstimate";
+import { readCustomPages } from "@/lib/customPageAccess";
 import { actorsOf, whoOfEvent } from "@/lib/activityLog";
 import {
   BOARD_STATUSES,
@@ -178,18 +179,23 @@ export async function buildDashboardData(): Promise<DashboardData> {
     actors,
   ] = await Promise.all([
     // The first-run card (landing-e pass A; every shop since 2026-09-16): a
-    // shop that has not made an estimate yet. The three counts are the three
-    // things an "estimate" can be here — a proposal, an AI estimate, a roof
-    // measurement.
-    db.organization.findUnique({
-      where: { id: organizationId },
-      select: { landingIndustry: true, tradeTypesJson: true },
-    }),
+    // shop that has not made an estimate yet. The counts are the things an
+    // "estimate" can be here — a proposal, an AI estimate, a roof
+    // measurement, an HVAC estimate. The custom plan's pages ride along so the
+    // card's button never opens an upgrade offer (lib/firstEstimate).
+    Promise.all([
+      db.organization.findUnique({
+        where: { id: organizationId },
+        select: { landingIndustry: true, tradeTypesJson: true },
+      }),
+      readCustomPages(organizationId).catch(() => null),
+    ]).then(([org, pages]) => (org ? { ...org, pages } : null)),
     Promise.all([
       db.proposal.count({ where: { organizationId } }),
       db.aiEstimate.count({ where: { organizationId } }),
       db.roofMeasurement.count({ where: { organizationId } }),
-    ]).then((c) => c[0] + c[1] + c[2]),
+      db.hvacEstimate.count({ where: { organizationId } }),
+    ]).then((c) => c[0] + c[1] + c[2] + c[3]),
     // Owners/admins see the Lead Center nudge until the org is matchable
     // (geocoded address + at least one trade). Everyone else never sees it.
     role === "OWNER" || role === "ADMIN"
@@ -400,7 +406,7 @@ export async function buildDashboardData(): Promise<DashboardData> {
       needsTrades || needsAddress ? { needsCompany, needsAddress, needsTrades } : null,
     firstRun:
       firstRunOrg && estimatesSoFar === 0
-        ? firstEstimateTarget(parseTradeTypes(firstRunOrg.tradeTypesJson), firstRunOrg.landingIndustry)
+        ? firstEstimateTarget(parseTradeTypes(firstRunOrg.tradeTypesJson), firstRunOrg.landingIndustry, firstRunOrg.pages)
         : null,
     kpis: {
       revenue: money(revenue30),

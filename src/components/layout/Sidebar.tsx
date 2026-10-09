@@ -80,13 +80,10 @@ const groups: NavGroup[] = [
     title: "Automation",
     items: [
       { href: "/dashboard/advanced-ai", label: "Smart Proposal", icon: <Sparkles className="h-4 w-4" /> },
-      { href: "/dashboard/advanced-ai/roof", label: "Roof estimator", icon: <Home className="h-4 w-4" /> },
-      {
-        href: "/dashboard/advanced-ai/fence/studio",
-        label: "Fence estimator",
-        icon: <Fence className="h-4 w-4" />,
-        match: "/dashboard/advanced-ai/fence",
-      },
+      // The Blueprint estimators (2026-10-09); the classic /advanced-ai/roof
+      // and /advanced-ai/fence/studio are no longer linked from anywhere.
+      { href: "/dashboard/roof-estimator", label: "Roof estimator", icon: <Home className="h-4 w-4" /> },
+      { href: "/dashboard/fence-estimator", label: "Fence estimator", icon: <Fence className="h-4 w-4" /> },
       { href: "/dashboard/phone", label: "Phone", icon: <Phone className="h-4 w-4" /> },
       { href: "/dashboard/messages", label: "Messages", icon: <MessagesSquare className="h-4 w-4" /> },
       { href: "/dashboard/reviews", label: "Reviews", icon: <Star className="h-4 w-4" /> },
@@ -155,13 +152,10 @@ const ESTIMATOR_GROUPS: NavGroup[] = [
     title: "Automation",
     items: [
       { href: "/dashboard/advanced-ai", label: "Smart Proposal", icon: <Sparkles className="h-4 w-4" /> },
-      { href: "/dashboard/advanced-ai/roof", label: "Roof estimator", icon: <Home className="h-4 w-4" /> },
-      {
-        href: "/dashboard/advanced-ai/fence/studio",
-        label: "Fence estimator",
-        icon: <Fence className="h-4 w-4" />,
-        match: "/dashboard/advanced-ai/fence",
-      },
+      // The Blueprint estimators (2026-10-09); the classic /advanced-ai/roof
+      // and /advanced-ai/fence/studio are no longer linked from anywhere.
+      { href: "/dashboard/roof-estimator", label: "Roof estimator", icon: <Home className="h-4 w-4" /> },
+      { href: "/dashboard/fence-estimator", label: "Fence estimator", icon: <Fence className="h-4 w-4" /> },
       { href: "/dashboard/messages", label: "Messages", icon: <MessagesSquare className="h-4 w-4" /> },
     ],
   },

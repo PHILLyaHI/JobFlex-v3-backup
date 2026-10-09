@@ -977,6 +977,7 @@ async function createAccountFromPending(
       landingIndustry: rec.landingIndustry ?? null,
       firstChargeAt: trialEnd ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
       cardless: billing.flow === "cardless",
+      pages: planSlug === CUSTOM_PLAN_SLUG ? chosen : null,
     };
     after(() => sendWelcomeFirstEstimate(welcome).catch((e) => console.warn("[signup] welcome email failed:", e)));
   }

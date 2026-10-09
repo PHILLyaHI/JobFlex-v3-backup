@@ -18,8 +18,10 @@ export async function sendWelcomeFirstEstimate(i: {
   firstChargeAt: Date;
   /** A card-less trial (lib/cardlessTrial): no card is on file. */
   cardless?: boolean;
+  /** The custom plan's pages, or null on a catalog plan (lib/firstEstimate). */
+  pages?: readonly string[] | null;
 }) {
-  const target = firstEstimateTarget(i.tradeTypes, i.landingIndustry);
+  const target = firstEstimateTarget(i.tradeTypes, i.landingIndustry, i.pages);
   const base = (await appBaseUrl()).replace(/\/$/, "");
   const doc = buildWelcomeFirstEstimate({
     name: i.name,

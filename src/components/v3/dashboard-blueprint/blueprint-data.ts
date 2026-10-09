@@ -9,6 +9,7 @@
 // renderer can draw.
 
 import type { WhoLike } from "@/lib/team/who";
+import type { FirstEstimateTarget } from "@/lib/firstEstimate";
 
 /** One scheduled block in the This Week card. `m` is minutes-from-midnight,
  *  which is what the day list sorts on. */
@@ -92,7 +93,7 @@ export type DashboardData = {
   /** The first-run card (landing-e pass A, 2026-09-11): a variant-e shop with
    *  no estimate yet gets one card with one button, by trade; null otherwise
    *  and after the first estimate. */
-  firstRun: { trade: "roofing" | "fencing" | "general"; href: string; label: string } | null;
+  firstRun: FirstEstimateTarget | null;
   kpis: { revenue: string; pipeline: string; openProposals: string; newLeads: string };
   /** The same four figures unformatted. The handheld build counts them up and
    *  compacts them ("$132K"), which it cannot do from a formatted string

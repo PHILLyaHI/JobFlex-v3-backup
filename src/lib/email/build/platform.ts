@@ -7,6 +7,7 @@
 import type { BoxRow, EmailDoc, Lockup } from "../doc";
 import { truncate } from "../fit";
 import type { OrgBrand } from "./client";
+import type { FirstEstimateTrade } from "@/lib/firstEstimate";
 
 const TITLE_MAX = 70;
 
@@ -94,7 +95,7 @@ export interface WelcomeFirstEstimateInput {
   /** The button's words, e.g. "Measure my first roof". */
   ctaLabel: string;
   /** What the estimator does, in one line, for the prose. */
-  trade: "roofing" | "fencing" | "general";
+  trade: FirstEstimateTrade;
   /** "Sep 25, 2026" — the day the card is first charged (the trial's end). */
   firstChargeDate: string;
   /** A card-less trial: the box and the closing line say there is no card,
@@ -112,7 +113,9 @@ export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDo
       ? "Type an address, and the roof is measured from the aerial: squares, pitch, waste, a priced proposal — two minutes, no ladder."
       : i.trade === "fencing"
         ? "Draw the fence line on the map, pick the style and height, and the footage, posts, gates and price are on a proposal — two minutes, no tape."
-        : "Type the job the way you'd say it to a customer, and the estimate writes itself: line items, quantities, a priced proposal — two minutes.";
+        : i.trade === "hvac"
+          ? "Type the address, and the house comes back from the records: the load at your design day, the unit that fits, a priced replacement proposal — two minutes."
+          : "Type the job the way you'd say it to a customer, and the estimate writes itself: line items, quantities, a priced proposal — two minutes.";
   const box: BoxRow[] = i.cardless
     ? [
         { type: "field", label: "Trial", value: "7 days free" },

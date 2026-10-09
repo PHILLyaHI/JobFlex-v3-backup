@@ -63,6 +63,15 @@ const MOVED_INVENTORY: Record<string, string> = {
   "/mobile-hvac-inventory-v1": "/dashboard/inventory?trade=hvac&tab=stock",
 };
 
+/* THE CLASSIC ROOF PAGE (2026-10-09). /dashboard/advanced-ai/roof prices and
+   orders through the legacy measurement API, which on this deployment is the
+   vendor's sandbox: a real address is a dead end (ticket HQFESV). The
+   Blueprint roof estimator does the same job. 307, not 308 — the page's code
+   stays, and a temporary redirect is not cached by browsers if it comes back. */
+const MOVED_PAGES: Record<string, string> = {
+  "/dashboard/advanced-ai/roof": "/dashboard/roof-estimator",
+};
+
 /* THE CONSENT MODEL BY COUNTRY (owner, 2026-09-30; lib/consent). Vercel's
    x-vercel-ip-country decides notice or opt-in once, on the first page this
    browser asks for, and the answer — never the country — is kept a year in
@@ -92,6 +101,12 @@ async function route(req: NextRequest): Promise<NextResponse> {
     // The old address's own query rides along (?group=…); the trade and the tab are the new page's.
     for (const [k, v] of new URLSearchParams(query)) url.searchParams.set(k, v);
     return NextResponse.redirect(url, 308);
+  }
+  const movedPage = MOVED_PAGES[pathname];
+  if (movedPage) {
+    const url = req.nextUrl.clone();
+    url.pathname = movedPage;
+    return NextResponse.redirect(url, 307);
   }
   const shortcut = TRADE_SHORTCUTS[pathname];
   if (shortcut) {

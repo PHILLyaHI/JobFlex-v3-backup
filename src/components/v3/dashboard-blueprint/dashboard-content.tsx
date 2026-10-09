@@ -88,6 +88,8 @@ export function DashboardContent({ data }: { data: DashboardData }) {
                 ? "Type an address and the roof is measured from the aerial — squares, pitch, a priced proposal in about two minutes."
                 : data.firstRun.trade === "fencing"
                   ? "Draw the fence line on the map — footage, posts, gates and a priced proposal in about two minutes."
+                  : data.firstRun.trade === "hvac"
+                    ? "Type an address — the house, the load, the unit that fits and a priced proposal in about two minutes."
                   : "Type the job the way you'd say it to a customer — the estimate writes itself in about two minutes."}
             </div>
           </div>
