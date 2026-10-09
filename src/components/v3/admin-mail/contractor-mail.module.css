@@ -16,6 +16,7 @@
 :global(.jf-blueprint) .cardBtn:hover { background: var(--blueprint, #1854a0); border-color: var(--blueprint, #1854a0); color: #fff; }
 :global(.jf-blueprint) .cardBtn:focus-visible { outline: 2px solid var(--blueprint, #1854a0); outline-offset: 2px; }
 .cardRow { display: flex; justify-content: flex-end; margin-top: 8px; }
+:global(.jf-blueprint) .spaced { margin-top: 6px; align-self: flex-start; }
 
 .who { display: grid; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--ink-line, rgba(10,10,10,.12)); }
 .whoTop { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
