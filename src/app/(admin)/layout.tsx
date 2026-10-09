@@ -25,6 +25,7 @@ import { requirePlatformAdmin } from "@/lib/orgContext";
 import { unreadSupportCount } from "@/actions/support";
 import { NavRoleProvider } from "@/components/v3/blueprint-shell/nav-role";
 import { AdminShell } from "@/components/v3/admin-shell/admin-shell";
+import { ContractorMailProvider } from "@/components/v3/admin-mail/contractor-mail";
 import { ADMIN_SIDEBAR_FOLD_COOKIE } from "@/components/v3/blueprint-shell/sidebar-fold";
 
 export default async function AdminRootLayout({ children }: { children: React.ReactNode }) {
@@ -67,7 +68,8 @@ export default async function AdminRootLayout({ children }: { children: React.Re
   return (
     <NavRoleProvider identity={{ role: null, name: adminName }} badges={badges}>
       <AdminShell adminName={adminName} signOutMode={viaCookie ? "cookie" : "nextauth"} sidebarFolded={sidebarFolded}>
-        {children}
+        {/* One email composer for the whole console (2026-10-08): any card can open it on an account. */}
+        <ContractorMailProvider>{children}</ContractorMailProvider>
       </AdminShell>
     </NavRoleProvider>
   );

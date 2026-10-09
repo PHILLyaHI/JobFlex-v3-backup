@@ -118,6 +118,31 @@ export async function winbackOffer(orgId: string, now = new Date()): Promise<Win
   }
 }
 
+/** THE ADMIN'S OWN OFFER to an ended card-less trial (lib/adminMail,
+ *  2026-10-08): the same 10% the day-5 mail carries, made real at the moment
+ *  the admin sends it — the coupon exists, the record holds the offer until
+ *  OFFER_DAYS from now (or keeps a longer one already running), and the
+ *  sweep counts the admin's mail as its offer: it never sends a second
+ *  offer, and its last word follows LAST_AFTER_OFFER_DAYS later. Throws when
+ *  the trial has not ended or Stripe cannot make the coupon — no mail may
+ *  promise a discount that is not there. */
+export async function grantWinbackOffer(orgId: string, now = new Date()): Promise<{ until: string; existing: boolean }> {
+  const state = await cardlessTrialState(orgId, now);
+  if (!state || state.kind !== "ended") throw new Error("That trial has not ended — the come-back offer is for ended trials.");
+  await ensureWinbackCoupon();
+  const rec = (await readWinback(orgId)) ?? { endedAt: state.endedAt.toISOString(), sent: {} };
+  const running = !!rec.offerUntil && Date.parse(rec.offerUntil) > now.getTime();
+  if (!running) rec.offerUntil = new Date(now.getTime() + OFFER_DAYS * DAY_MS).toISOString();
+  rec.offerSentAt = now.toISOString();
+  for (const st of WINBACK_STAGES) {
+    if (st.key === "offer") break;
+    if (!rec.sent[st.key]) rec.sent[st.key] = `skipped:${now.toISOString()}`;
+  }
+  rec.sent.offer = now.toISOString();
+  await writeWinback(orgId, rec);
+  return { until: rec.offerUntil as string, existing: running };
+}
+
 /** What the shop made during its trial — the mail names it. */
 async function built(orgId: string): Promise<{ clients: number; proposals: number; jobs: number }> {
   const [clients, proposals, jobs] = await Promise.all([
@@ -154,6 +179,9 @@ export async function runTrialWinbackSweep(now = new Date()): Promise<WinbackSwe
       if (due.length === 0) { out.skipped++; continue; }
       const stage = due[due.length - 1];
       for (const earlier of due.slice(0, -1)) rec.sent[earlier.key] = `skipped:${now.toISOString()}`;
+      // They pressed Unsubscribe on one of our emails (lib/adminMail/optout): no more win-back.
+      const { readOptOut, unsubscribeHeaders, unsubscribeUrl } = await import("@/lib/adminMail/optout");
+      if (await readOptOut(orgId)) { out.skipped++; continue; }
       const org = await db.organization.findUnique({ where: { id: orgId }, select: { name: true, memberships: { where: { role: "OWNER" }, take: 1, select: { user: { select: { email: true, name: true } } } } } });
       const to = org?.memberships[0]?.user;
       if (!org || !to?.email) { out.skipped++; continue; }
@@ -168,11 +196,12 @@ export async function runTrialWinbackSweep(now = new Date()): Promise<WinbackSwe
       }
       const plan = await trialPlanSummary(orgId, state.record).catch(() => ({ name: "your plan", cents: 0, per: "mo" }));
       const doc = buildWinback({
-        stage: stage.key, name: to.name, business: org.name, planName: plan.name, price: plan.cents > 0 ? `$${(plan.cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}/${plan.per}` : "",
+        stage: stage.key, name: to.name, business: org.name, planName: plan.name, price: plan.cents > 0 ? `$${(plan.cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}${plan.per}` : "",
         built: await built(orgId), offer, href: `${base}/dashboard/trial`,
       });
-      const { subject, html } = renderEmail(doc);
-      await sendEmail({ to: to.email, subject, html });
+      const { subject, html, text } = renderEmail(doc);
+      // The plain-text twin and the mail client's own Unsubscribe button (2026-10-08).
+      await sendEmail({ to: to.email, subject, html, text, headers: unsubscribeHeaders(unsubscribeUrl(base, orgId)) });
       rec.sent[stage.key] = now.toISOString();
       await writeWinback(orgId, rec);
       out.mailed[stage.key]++;

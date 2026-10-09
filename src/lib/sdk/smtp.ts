@@ -98,6 +98,8 @@ export async function sendViaSmtp(opts: {
   html: string;
   from?: string;
   replyTo?: string;
+  text?: string;
+  headers?: Record<string, string>;
 }) {
   // Gmail rewrites From to the authenticated mailbox anyway, so default to it.
   const from = alignFrom(
@@ -115,6 +117,8 @@ export async function sendViaSmtp(opts: {
       subject: opts.subject,
       html: opts.html,
       replyTo: opts.replyTo,
+      ...(opts.text ? { text: opts.text } : {}),
+      ...(opts.headers ? { headers: opts.headers } : {}),
     });
     void stampSmtpSent();
     return { id: info.messageId ?? "", skipped: false as const };

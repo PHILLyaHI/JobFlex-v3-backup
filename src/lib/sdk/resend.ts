@@ -57,6 +57,10 @@ export async function sendEmail(opts: {
   html: string;
   from?: string;
   replyTo?: string;
+  /** The plain-text twin (2026-10-08): a letter with only HTML scores worse with spam filters. */
+  text?: string;
+  /** Extra headers, e.g. List-Unsubscribe (lib/adminMail/optout). */
+  headers?: Record<string, string>;
 }) {
   // Dev preview: when DEV_EMAIL_OVERRIDE is set, redirect every email to that one
   // inbox so you can see the design without a verified domain (Resend's test
@@ -79,7 +83,9 @@ export async function sendEmail(opts: {
     await mkdir(outbox, { recursive: true });
     const name = `${new Date().toISOString().replace(/[:.]/g, "-")}-${subject.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60)}.html`;
     const label = Array.isArray(to) ? to.join(", ") : to;
-    await writeFile(join(outbox, name), `<!-- to: ${label} | subject: ${subject} -->\n${opts.html}`, "utf8");
+    const extra = [opts.from ? `<!-- from: ${opts.from} -->` : "", opts.replyTo ? `<!-- reply-to: ${opts.replyTo} -->` : "", opts.headers ? `<!-- headers: ${JSON.stringify(opts.headers)} -->` : ""].filter(Boolean).join("\n");
+    const textPart = opts.text ? `\n<!-- text:\n${opts.text.replace(/-->/g, "—>")}\n-->` : "";
+    await writeFile(join(outbox, name), `<!-- to: ${label} | subject: ${subject} -->\n${extra ? `${extra}\n` : ""}${opts.html}${textPart}`, "utf8");
     return { id: "dev-outbox:" + name, skipped: true as const };
   }
 
@@ -93,6 +99,8 @@ export async function sendEmail(opts: {
         subject,
         html: opts.html,
         replyTo: opts.replyTo,
+        ...(opts.text ? { text: opts.text } : {}),
+        ...(opts.headers ? { headers: opts.headers } : {}),
       });
       // Resend returns { data, error } — it does NOT throw. Convert a failure to a
       // throw so retry can classify + back off (and so callers see it, never a

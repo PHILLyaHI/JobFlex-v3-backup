@@ -25,6 +25,7 @@ import { getSignupLedger } from "@/actions/trafficDashboard";
 import { signupLedgerSummary, type LiveVisitor, type SignupLedger, type SignupRecord } from "@/lib/traffic-live";
 import { TRAFFIC_SINCE_LABEL, TRAFFIC_SINCE_MS, TRAFFIC_TZ, trafficDayStartMs } from "@/lib/traffic-visitor";
 import { Ago, useNow } from "./ticker";
+import { EmailContractorButton } from "@/components/v3/admin-mail/contractor-mail";
 import s from "./signup-rail.module.css";
 
 /** The spans: the page's days (TRAFFIC_TZ), today counted as one. */
@@ -220,6 +221,8 @@ export function SignupRail({ initial, timezone, fullHistory = false, liveSignups
                         {r.industry && r.industry !== "default" && <em className={s.trade}>{r.industry}</em>}
                       </div>
                       {live && (live.place || live.device) && <div className={s.place}>{live.active ? "On the site now" : "Was on the map"}{placeOfVisitor(live) ? ` · ${placeOfVisitor(live)}` : ""}{live.device ? ` · ${live.device}` : ""}</div>}
+                      {/* Write to them from here (2026-10-08): the console's composer, on this account. */}
+                      {r.ownerEmail && <EmailContractorButton row orgId={r.orgId} seed={{ business: r.orgName, ownerName: r.ownerName, ownerEmail: r.ownerEmail }} />}
                     </li>
                   );
                 })}
