@@ -49,7 +49,7 @@ import { LazyBg } from "./lazy-bg";
 import { WarmLayout } from "./warm-layout";
 import { Hero } from "./hero";
 import { Intro } from "./intro";
-import { LOW_CTA, firstPersonCta } from "./cta-copy";
+import { firstPersonCta } from "./cta-copy";
 import { LandingVariantEffects } from "./landing-variant-effects";
 
 /* CRO stage 1 (2026-09-09): everything under the intro is code-split. The
@@ -85,6 +85,8 @@ import { GoogleOneTap } from "@/components/auth/google-one-tap";
 import { Nav } from "./nav";
 import { PRICING, REGISTER } from "./routes";
 import { SmoothWheel } from "./smooth-wheel";
+import { signupTrialOffer } from "@/lib/trialOfferServer";
+import { TrialOfferProvider } from "@/components/providers/trial-offer";
 import { signupTrialMode } from "@/lib/trialPolicyServer";
 import { customPlanOffered } from "@/lib/customPlanFlag";
 import type { InAppBrowser } from "@/lib/inAppBrowser";
@@ -115,6 +117,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
   // reads: the hero's trial line, the plan cards, the FAQ's card answer and
   // the footer.
   const requiresCard = (await signupTrialMode()) === "card";
+  const offer = await signupTrialOffer();
   // Every register link carries the trade, the visit's utm_* and the fbclid.
   const register = signupHref(REGISTER, { industry: variant, utm, fbclid });
   // …and so does the nav's Pricing link, for /pricing to hand on (pricing-visit.tsx).
@@ -129,8 +132,8 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
   const g = groupContentFor(variant);
   // CTA copy (pass B): first person with the trade's outcome at the top of
   // the page, "Start my free trial" from Proposals down.
-  const top = firstPersonCta(variant);
-  const low = LOW_CTA;
+  const top = variant ? firstPersonCta(variant) : `Start my ${offer.days}-day free trial`;
+  const low = `Start my ${offer.days}-day free trial`;
   // The showcase's Smart slide plays the trade's own job: the variant's
   // scenario, or the roofing / fencing scenarios written for the pages whose
   // hero is the roof or fence shot (smart-scenarios.ts).
@@ -156,7 +159,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
   const order = landingSectionOrder(variant);
   const compareBelow = order.indexOf("compare") > 1;
   const blocks: Record<string, ReactNode> = {
-    hero: <Hero variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} requiresCard={requiresCard} inAppBrowser={inAppBrowser} priceLine={priceLine} />,
+    hero: <Hero trialDays={offer.days} variant={v} variantKey={variant} utm={utm} registerHref={register} cta={top} fbclid={fbclid} requiresCard={requiresCard} inAppBrowser={inAppBrowser} priceLine={priceLine} />,
     compare: compareBelow ? <div className="lp-cv lp-cv--compare"><Intro /></div> : <Intro />,
     showcase: <div className="lp-cv lp-cv--showcase"><EstimatorsShowcase ownSlide={variant && isVariantReady(variant) ? v.showcaseSlide : undefined} scenario={smart} registerHref={register} cta={top} /></div>,
     hvac: variant === "hvac" ? <div className="lp-cv lp-cv--hvac"><HvacServiceSection registerHref={register} cta={top} /></div> : null,
@@ -181,6 +184,7 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
     final: <CtaFooter registerHref={register} cta={low} requiresCard={requiresCard} />,
   };
   return (
+    <TrialOfferProvider offer={offer}>
     <div className="jf-lp min-h-full bg-white">
       <Nav registerHref={register} pricingHref={pricing} cta={top} />
       <main>
@@ -204,5 +208,6 @@ export async function LandingE({ variant, explicitVariant = false, utm = {}, fbc
           loads after the page is idle, so it never competes with the hero. */}
       <GoogleOneTap />
     </div>
+    </TrialOfferProvider>
   );
 }

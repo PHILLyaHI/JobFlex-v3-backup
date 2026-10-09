@@ -42,7 +42,7 @@ export function buildWinback(i: WinbackInput): EmailDoc {
     return {
       subject: "Your JobFlex trial ended — your work is still there",
       lockup: PLATFORM_LOCKUP, kicker: { text: "Free trial", tone: "warn" }, headline: "Nothing is lost",
-      prose: [`Hi ${first} — your 7-day trial of ${i.planName} ended yesterday with no card on file, so ${i.business} is read-only for now.`, `${madeLine} Add a card and you carry on${price} from the next minute — no new set-up, nothing to redo.`],
+      prose: [`Hi ${first} — your free trial of ${i.planName} ended yesterday with no card on file, so ${i.business} is read-only for now.`, `${madeLine} Add a card and you carry on${price} from the next minute — no new set-up, nothing to redo.`],
       box, cta: { label: "Add a card and continue", href: i.href },
       after: ["The first charge is taken when you add the card; cancel anytime from Subscription. Reply to this email if anything is in the way — we read every one."],
       footer: PLATFORM_FOOTER,

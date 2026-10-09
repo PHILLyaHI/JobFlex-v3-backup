@@ -1,5 +1,6 @@
 "use client";
 
+import { TrialStartLabel } from "@/components/providers/trial-offer";
 import { Logo } from "./logo";
 import { LOGIN, PRICING, REGISTER } from "./routes";
 import Link from "next/link";
@@ -43,7 +44,7 @@ export function Nav({
           {/* No note under this one (owner, 2026-09-10): the bar stays a bar.
               The trial line lives under the hero pair. */}
           <a href={registerHref} className="lp-btn-dark" data-cta="nav">
-            {cta ?? "Start 7-Day Free Trial"}
+            {cta ?? <TrialStartLabel />}
           </a>
         </div>
 

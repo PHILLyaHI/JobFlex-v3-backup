@@ -1,7 +1,7 @@
 "use client";
 
 // THE TRIAL CARD SWITCH (2026-10-07), at the top of Admin → Trials: card
-// required at the plan step, or a card-less 7-day trial. One press, every
+// required at the plan step, or a card-less trial. One press, every
 // door follows (lib/trialPolicyServer signupTrialMode). The panel says what a
 // signup gets right now and why: the source (this switch or the deployment's
 // TRIAL_REQUIRES_CARD), its value, and whether the day's ceiling on card-less
@@ -34,8 +34,8 @@ export function TrialPolicyPanel({ initial }: { initial: SignupTrialState }) {
   const now = p.mode === "card"
     ? p.capReached
       ? "New signups add a card at the plan step — today's ceiling on card-less trials is reached."
-      : "New signups add a card at the plan step; nothing is charged until the 7-day trial ends."
-    : "New signups start a 7-day trial with no card — they confirm their email instead.";
+      : "New signups add a card at the plan step; nothing is charged until their assigned 3- or 7-day trial ends."
+    : "New signups start their assigned 3- or 7-day trial with no card — they confirm their email instead.";
   const source = p.source === "admin"
     ? `Admin switch${p.at ? ` · ${when(p.at)}` : ""}${p.by ? ` · ${p.by}` : ""}`
     : "Deployment default (env)";

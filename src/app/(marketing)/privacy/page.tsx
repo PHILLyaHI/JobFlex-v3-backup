@@ -198,7 +198,8 @@ export default function PrivacyPage() {
         Essential cookies support sign-in and security. Cookies and browser storage also remember privacy
         choices, promo and referral codes, trade and campaign attribution, drafts, and interface settings.
         Configured durations include 180 days for privacy choices and 30 days for attribution cookies;
-        session and provider cookies have their own lifetimes. Clearing storage may remove preferences
+        a first-party trial-offer cookie lasts 30 days to keep your offered trial duration consistent across visits and signup. We may compare signup offers, including trial lengths, and record the assigned offer with your signup and subscription. Your exact trial and billing terms are disclosed before enrollment.
+        Session and provider cookies have their own lifetimes. Clearing storage may remove preferences
         and require you to sign in again.
       </p>
       <p>

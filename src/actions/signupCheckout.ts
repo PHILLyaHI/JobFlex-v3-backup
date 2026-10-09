@@ -58,6 +58,8 @@ import { cardlessTrialsPaused, noteCardlessTrialStarted, TRIALS_PAUSED_MESSAGE }
 import { appBaseUrl } from "@/lib/appUrl";
 import { renderEmail } from "@/lib/email/renderEmail";
 import { sendEmail } from "@/lib/sdk/resend";
+import { signupTrialOffer } from "@/lib/trialOfferServer";
+import { storedTrialOffer, type TrialOffer } from "@/lib/trialOffer";
 import { buildTrialConfirm } from "@/lib/email/build/trial";
 
 /** How long an unpaid intent is honoured. Long enough to pay, short enough
@@ -68,6 +70,7 @@ const CONFIRM_TTL_MS = 24 * 60 * 60 * 1000;
 
 const pendingSchema = z.object({
   analytics: trafficIdentitySchema.optional().catch(undefined),
+  displayedTrialDays: z.union([z.literal(3), z.literal(7)]).optional(),
   name: z.string().trim().min(1, "Enter your name").max(120),
   businessName: z.string().trim().min(1, "Enter your business name").max(120),
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
@@ -131,6 +134,7 @@ type PendingRecord = z.infer<typeof pendingSchema> extends infer T
       viaGoogle?: boolean;
       image?: string | null;
       createdAt: number;
+      trialOffer?: TrialOffer;
       /** Set by requestCardlessTrial: the plan the card-less trial is for, and
        *  when the confirmation link went out (the intent then lives 24 hours). */
       cardless?: { planSlug: string; requestedAt: number };
@@ -189,6 +193,11 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
   const parsed = pendingSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message || "Check this step and try again." };
   const data = parsed.data;
+  const offered = await signupTrialOffer();
+  // A stale tab must see changed terms before any shorter trial is created.
+  if (data.displayedTrialDays !== undefined && data.displayedTrialDays !== offered.days) {
+    return { ok: false, error: "Your trial offer changed. Reload this page to review the current offer before continuing." };
+  }
   try {
     await enforceRateLimit(`signup-start:${await clientIp()}`, 5, HOUR, "sign-ups");
   } catch (err) {
@@ -218,6 +227,7 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
 
   const token = randomUUID();
   const record: PendingRecord = {
+    trialOffer: data.displayedTrialDays === undefined ? { variant: "b", days: 7 } : offered,
     analytics: data.analytics,
     name: data.name,
     businessName: data.businessName,
@@ -253,6 +263,7 @@ export async function startPendingSignup(raw: unknown): Promise<{ ok: true; toke
 export async function readPendingSignup(token: string): Promise<{
   email: string;
   businessName: string;
+  trialOffer: TrialOffer;
   customPages: string[];
   attribution: { kind: "promo" | "ref"; code: string } | null;
 } | null> {
@@ -261,6 +272,7 @@ export async function readPendingSignup(token: string): Promise<{
     ? {
         email: rec.email,
         businessName: rec.businessName,
+        trialOffer: storedTrialOffer(rec.trialOffer),
         customPages: normalizeCustomPages(rec.customPages),
         attribution: rec.attribution ?? null,
       }
@@ -591,7 +603,7 @@ export async function requestCardlessTrial(
 
   const base = (await appBaseUrl()).replace(/\/$/, "");
   const { subject, html } = renderEmail(
-    buildTrialConfirm({ name: rec.name, planName, href: `${base}/auth/register/confirm?t=${secret}` }),
+    buildTrialConfirm({ name: rec.name, planName, trialDays: storedTrialOffer(rec.trialOffer).days, href: `${base}/auth/register/confirm?t=${secret}` }),
   );
   try {
     await sendEmail({ to: rec.email, subject, html });
@@ -604,7 +616,7 @@ export async function requestCardlessTrial(
 
 /** What the plan step says when the switch went to "card" after the page loaded. */
 const TRIAL_NOW_TAKES_CARD =
-  "The free trial now starts with a card on file — nothing is charged until the 7 days end. Press Start free trial again to continue.";
+  "The free trial now starts with a card on file — nothing is charged until your displayed trial ends. Press Start free trial again to continue.";
 
 /** A minute between two confirmation emails, and three resends an hour. */
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -680,6 +692,7 @@ async function finishCardlessTrial(
     interval,
     customPages,
     attribution: rec.attribution ?? null,
+    trialOffer: rec.trialOffer,
   });
   if (!started.ok) return { ok: false, error: started.error };
   const sub = started.subscription;
@@ -717,6 +730,7 @@ async function finishCardlessTrial(
     interval,
     customPages: started.customPages,
     mode: started.mode,
+    trialDays: storedTrialOffer(rec.trialOffer).days,
     startedAt: new Date().toISOString(),
     endsAt: (trialEnd ?? new Date()).toISOString(),
   });
@@ -829,6 +843,16 @@ async function createAccountFromPending(
       await tx.membership.create({
         data: { userId: user.id, organizationId: org.id, role: "OWNER" },
       });
+      // Retain the offered terms after the browser cookie and signup intent expire.
+      await tx.syncState.upsert({
+        where: { key: `signupTrialOffer:${org.id}` },
+        create: {
+          key: `signupTrialOffer:${org.id}`,
+          cursor: JSON.stringify({ ...storedTrialOffer(rec.trialOffer), recordedAt: new Date().toISOString() }),
+        },
+        update: {},
+      });
+
       return { orgId: org.id, userId: user.id };
     });
     orgId = created.orgId;
@@ -975,7 +999,8 @@ async function createAccountFromPending(
       name: rec.name,
       tradeTypes: rec.tradeTypes ?? [],
       landingIndustry: rec.landingIndustry ?? null,
-      firstChargeAt: trialEnd ?? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+      firstChargeAt: trialEnd ?? new Date(Date.now() + storedTrialOffer(rec.trialOffer).days * 24 * 60 * 60 * 1000),
+      trialDays: storedTrialOffer(rec.trialOffer).days,
       cardless: billing.flow === "cardless",
       pages: planSlug === CUSTOM_PLAN_SLUG ? chosen : null,
     };

@@ -60,7 +60,8 @@ import {
   type SignupPlan,
   type SignupPromo,
 } from "@/actions/signupPaywall";
-import { TRIAL_DAYS, trialLine } from "@/lib/trialPolicy";
+import { useTrialOffer, useTrialOfferExposure } from "@/components/providers/trial-offer";
+import { trialLine } from "@/lib/trialPolicy";
 import {
   completePendingSignup,
   requestCardlessTrial,
@@ -74,7 +75,6 @@ import {
   CUSTOM_PAGES,
   CUSTOM_PAGE_CENTS,
   CUSTOM_PLAN_SLUG,
-  DEFAULT_CUSTOM_TRIAL_DAYS,
   CUSTOM_YEAR_MULTIPLIER,
   customPriceCents,
 } from "@/lib/customPlan";
@@ -85,9 +85,6 @@ import styles from "./auth-register.module.css";
 const PICKER_EXIT_MS = 220;
 
 type Step = 1 | 2 | 3 | 4;
-
-/** Fallback trial length, used only until the catalog answers. */
-const DEFAULT_TRIAL_DAYS = TRIAL_DAYS;
 
 /** What a step says when its server action THREW. A production build withholds
  *  a thrown message (the visitor read "Minified React error #441", 2026-10-07),
@@ -142,7 +139,7 @@ export function RegisterContent({
   offerCustom?: boolean;
   /* signupTrialMode (lib/trialPolicyServer), read on the server. True: the plan
      step opens Stripe Checkout and the card is taken there, as it always was.
-     False: the plan step starts a 7-day trial with no card (onStartCardless). */
+     False: the plan step starts the assigned trial with no card (onStartCardless). */
   requiresCard?: boolean;
   setup?: SetupPrefill | null;
   /* Instagram / Facebook / LINE / TikTok webview, read from the request's
@@ -163,6 +160,7 @@ export function RegisterContent({
      throwaway-mail domain — lib/disposableEmail). */
   initialError?: string | null;
 }) {
+  const offer = useTrialOffer();
   const router = useRouter();
   /* The trial takes a card when the server says so on the first render
      (signupTrialMode — the switch, the deployment's default and the day's
@@ -218,6 +216,7 @@ export function RegisterContent({
   const [step, setStep] = React.useState<Step>(
     setupMode ? 2 : ret ? (ret.sessionId && !ret.cancelled ? 4 : 3) : googlePrefill ? (twoStep ? 1 : 2) : 1,
   );
+  useTrialOfferExposure(step === 3);
   /* GOOGLE ON THIS PAGE proves who the visitor is and nothing more (owner,
      2026-09-03). The auth callback parks the verified identity and comes back
      here with ?gsu=<handle>; the handle is read once and step 1 is filled
@@ -247,9 +246,8 @@ export function RegisterContent({
      account exists — the step cannot price itself before there is an org to
      price for, and `signupPlans` is owner-scoped. */
   const [plans, setPlans] = React.useState<SignupPlan[]>([]);
-  /* The custom plan has no catalog row, so its trial arrives beside the list
-     (set in /admin/plans). The constant is only the pre-answer placeholder. */
-  const [customTrialDays, setCustomTrialDays] = React.useState(DEFAULT_CUSTOM_TRIAL_DAYS);
+  /* Custom and catalog plans share the saved offer returned by signupPlans. */
+  const [customTrialDays, setCustomTrialDays] = React.useState<number>(offer.days);
   /* THE CAROUSEL STARTS AT THE FIRST CARD. With `scroll-snap-type: x
      mandatory` Chrome picks its initial snap target while the plan sheet is
      still sliding in, and lands on the LAST card (verified at 390×844: the
@@ -439,7 +437,7 @@ export function RegisterContent({
   const trialDays =
     planSlug === CUSTOM_PLAN_SLUG
       ? customTrialDays
-      : plans.find((p) => p.slug === planSlug)?.trialDays || DEFAULT_TRIAL_DAYS;
+      : plans.find((p) => p.slug === planSlug)?.trialDays || offer.days;
   const customCents = customPriceCents(customPages, interval);
   /* Every feature any plan lists, in the order the catalog gives them, and
      de-duplicated case-insensitively ("Everything in Starter" is a plan's own
@@ -663,7 +661,7 @@ export function RegisterContent({
   React.useEffect(() => {
     if (step !== 3) return;
     let live = true;
-    void signupPlans()
+    void signupPlans(token ?? undefined)
       .then((res) => {
         if (!live) return;
         setPlans(res.plans);
@@ -683,7 +681,7 @@ export function RegisterContent({
     return () => {
       live = false;
     };
-  }, [step]);
+  }, [step, token]);
 
   async function onApplyPromo() {
     if (promoBusy) return;
@@ -808,7 +806,7 @@ export function RegisterContent({
 
   /* THE CARD-LESS TRIAL (TRIAL_REQUIRES_CARD off). The same two re-stamps
      the checkout needs, then a confirmation link is emailed
-     (requestCardlessTrial): the account and its 7-day trial are created when
+     (requestCardlessTrial): the account and its assigned trial are created when
      the link is opened (/auth/register/confirm), not here — the owner's rule,
      2026-10-01: the address is confirmed before the dashboard opens. The plan
      step then says where the link went, with a way to send it again. */
@@ -1099,6 +1097,7 @@ export function RegisterContent({
       setDoneNote(biz.trim() + " is ready to send its first proposal.");
       const res = await startPendingSignup({
         analytics: trafficIdentity(),
+        displayedTrialDays: offer.days,
         name: name.trim(),
         businessName: biz.trim(),
         email: email.trim(),
@@ -1691,7 +1690,7 @@ export function RegisterContent({
                 <svg className="ic" aria-hidden>
                   <use href="#i-check" />
                 </svg>
-                {trialLine(requiresCard)}
+                {trialLine(requiresCard, trialDays)}
               </p>
             </div>
 
@@ -1708,7 +1707,7 @@ export function RegisterContent({
                   We sent a link to <b>{confirmSentTo}</b>.
                 </p>
                 <p className="pw-confirm-p">
-                  Open it to create your shop and start the 7-day free trial — no card needed. The link works for 24 hours{resent ? "; the one sent before it no longer does" : ""}.
+                  Open it to create your shop and start the {trialDays}-day free trial — no card needed. The link works for 24 hours{resent ? "; the one sent before it no longer does" : ""}.
                 </p>
                 <div className="pw-confirm-row">
                   <button
@@ -1845,7 +1844,7 @@ export function RegisterContent({
                         ? busyLabel
                         : !checkoutReady
                           ? "Checkout is not configured"
-                          : "Start free trial"}
+                          : `Start ${trialDays}-day free trial`}
                     </button>
                   </div>
                 );
@@ -1977,7 +1976,7 @@ export function RegisterContent({
                     ? busyLabel
                     : !checkoutReady
                       ? "Checkout is not configured"
-                      : "Start free trial"}
+                      : `Start ${trialDays}-day free trial`}
                 </button>
               </div>
               ) : null}
@@ -1986,20 +1985,6 @@ export function RegisterContent({
                 <div className="fld-note">Loading plans…</div>
               ) : null}
             </div>
-
-            {/* The card terms, where the card is asked for (pass A) — under
-                the cards now, beside the start buttons they speak for. No
-                day is named: the trial's length is per plan (the note below
-                and each button say it), and "day 15" had gone stale. */}
-            <p className="pw-terms" id="pwTerms">
-              {requiresCard
-                ? "Your card won't be charged until the free trial ends. Cancel anytime from Subscription."
-                : "No card needed: the trial is 7 days, and you add a card only if you keep the plan."}
-              {" "}By starting a trial, you agree to our{" "}
-              <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
-              {" "}and acknowledge our{" "}
-              <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
-            </p>
 
             <div className={"pw-foot" + (planSlug ? " is-armed" : "")}>
               {/* PROMO — the same codes the ?promo / ?ref links carry. Applying
@@ -2041,12 +2026,16 @@ export function RegisterContent({
               </p>
             ) : null}
 
-            {requiresCard ? (
-              <p className="pw-note">
-                No charge today. <b>{trialDays} days free.</b> Cancel before it ends and you pay
-                nothing.
-              </p>
-            ) : null}
+            {/* One disclosure below the promo field, matching the saved offer. */}
+            <p className="pw-terms" id="pwTerms">
+              {requiresCard
+                ? `Your ${trialDays}-day free trial renews automatically at the selected plan price and billing interval shown above, unless you cancel before it ends. No charge today. Cancel from Subscription.`
+                : `No card needed: the trial is ${trialDays} days, and you add a card only if you keep the plan.`}
+              {" "}By starting a trial, you agree to our{" "}
+              <Link href="/terms" target="_blank" rel="noopener noreferrer"><u>Terms of service</u></Link>
+              {" "}and acknowledge our{" "}
+              <Link href="/privacy" target="_blank" rel="noopener noreferrer"><u>Privacy policy</u></Link>.
+            </p>
 
             {/* The testing exit. Small, quiet, cornered — an escape, not an
                 offer. Development builds only: the server refuses the

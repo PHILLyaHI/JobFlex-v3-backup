@@ -430,7 +430,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
   if (enough && n >= 30 && done.length === 0) {
     add({ id: "no-signups", tone: "bad", title: `No signups from ${n} ad visits`,
       evidence: `${pct(stats.bounce)} left the landing without a second page, ${pressed.length} pressed a button, ${form.length} opened the form, ${attempted.length} started a trial.`,
-      action: leak ? `Fix the biggest leak first — ${leak.from} → ${leak.to} loses ${pct(1 - leak.b / leak.a)}.` : "Get people to the form first: a clear price and a '7-day free trial' button in the first screen.", n });
+      action: leak ? `Fix the biggest leak first — ${leak.from} → ${leak.to} loses ${pct(1 - leak.b / leak.a)}.` : "Get people to the form first: a clear price and a button showing the exact free-trial duration in the first screen.", n });
   }
 
   // The phones that reported their first screen (landing_timing): the hero's
@@ -451,7 +451,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
       evidence: `${Math.round(bounce * n)} of ${n}; ${pct(fastShare)} of all visits were gone inside 5 seconds without scrolling${inAppBounce !== null && browserBounce !== null ? `; Facebook's in-app browser bounces ${pct(inAppBounce)} vs ${pct(browserBounce)} in a real browser` : ""}. Median time on the landing ${secs(stats.dwellMedian)}.`,
       action: slowScreen ? `The first screen is slow before it is anything else: on phones the headline shows ${secsMs(heroMedian)} after the tap (the first-screen finding). Fix that first, then judge the words.`
         : quick ? "Most of these never looked: accidental taps or a slow first screen in the in-app browser. Optimise the ad set for landing-page views (not link clicks), keep the first screen light, and check the hero loads under 2 s on 4G."
-        : "They looked and left: the ad's promise is not in the first screen. Put the ad's exact claim, the trade, the price and '7-day free trial' in the hero, above the fold.", n });
+        : "They looked and left: the ad's promise is not in the first screen. Put the ad's exact claim, the trade, the price and the exact free-trial duration in the hero, above the fold.", n });
   }
 
   // THE FIRST SCREEN AS THE PHONES DREW IT (landing_timing, 2026-10-04). The
@@ -591,7 +591,7 @@ export function analyse(sessions: LandingSession[], opts: { now?: number; timezo
     const top = placements.slice(0, 2).map((p) => `${p.placement} (${p.n})`).join(", ");
     add({ id: "reading", tone: "warn", title: "They read, but they don't press",
       evidence: `${pct(engaged)} stay 30 s or scroll past half the page; only ${pct(ctaRate)} press any button${top ? ` — the presses: ${top}` : ""}.`,
-      action: "The offer is not clear enough to act on: say the price and '7-day free trial' on the hero button itself, and repeat that button after the estimator section.", n });
+      action: "The offer is not clear enough to act on: say the price and the exact free-trial duration on the hero button itself, and repeat that button after the estimator section.", n });
   }
 
   // Pressed, never saw the form.

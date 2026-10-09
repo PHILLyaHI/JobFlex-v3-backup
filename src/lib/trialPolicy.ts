@@ -2,13 +2,13 @@
 //
 // THE CARD IS TAKEN UP FRONT (owner, 2026-10-06 — back from the card-less
 // experiment of 2026-10-01). The plan step opens Stripe Checkout for the plan
-// picked, the card is taken, the trial runs TRIAL_DAYS, and on day 8 Stripe
+// picked, the card is taken, the trial runs its saved 3- or 7-day offer, and then Stripe
 // charges that plan's price (/api/checkout/signup → completePendingSignup).
 // That is the default: no variable, or anything but "false".
 //
 // TRIAL_REQUIRES_CARD=false brings back the card-less trial: the plan step
 // asks for nothing, the address is confirmed by email, and the account
-// starts on a 7-day trial with no payment method on file (lib/cardlessTrial).
+// starts on its assigned trial with no payment method on file (lib/cardlessTrial).
 // The code stays, switched off. Trials already started that way keep their
 // ribbon, caps and add-card screen whatever the flag says — those read the
 // organization's own card-less record (lib/trialState), not this switch.
@@ -26,14 +26,13 @@ export function trialRequiresCardEnv(): boolean {
   return process.env.TRIAL_REQUIRES_CARD?.trim().toLowerCase() !== "false";
 }
 
-/** Every signup trial's length, on either path and whatever plan is picked —
- *  the catalog's per-plan trialDays no longer decide a new shop's trial. */
+/** Legacy fallback only. New signups use the persisted offer in trialOffer.ts. */
 export const TRIAL_DAYS = 7;
 
 /** The card-less trial's length (the same seven days). */
 export const CARDLESS_TRIAL_DAYS = TRIAL_DAYS;
 
 /** The line every trial badge, register button note and plan card carries. */
-export function trialLine(requiresCard: boolean): string {
-  return requiresCard ? "Start your 7-day free trial" : "7-Day Free Trial · No Credit Card Required";
+export function trialLine(requiresCard: boolean, days: number = TRIAL_DAYS): string {
+  return requiresCard ? `Start your ${days}-day free trial` : `${days}-Day Free Trial · No Credit Card Required`;
 }

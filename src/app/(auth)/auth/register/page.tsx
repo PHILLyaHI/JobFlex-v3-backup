@@ -28,6 +28,9 @@ import { db } from "@/lib/db";
 import { isPlaceholderOrgName, needsCompanySetup } from "@/lib/orgSetup";
 import { readGoogleSignup } from "@/lib/googleSignup";
 import { detectInAppBrowser } from "@/lib/inAppBrowser";
+import { signupTrialOffer } from "@/lib/trialOfferServer";
+import { readPendingSignup } from "@/actions/signupCheckout";
+import { TrialOfferProvider } from "@/components/providers/trial-offer";
 import { signupSteps, signupTrialMode } from "@/lib/trialPolicyServer";
 import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/disposableEmail";
 import { customPlanOffered } from "@/lib/customPlanFlag";
@@ -154,6 +157,7 @@ export default async function RegisterPage({
   return (
     <>
       <script dangerouslySetInnerHTML={{ __html: STEP1_PRELUDE }} />
+      <TrialOfferProvider trackExposure={false} offer={(typeof sp.signup === "string" ? (await readPendingSignup(sp.signup))?.trialOffer : null) ?? await signupTrialOffer()}>
       <RegisterResponsive
         requiresCard={(await signupTrialMode()) === "card"}
         steps={await signupSteps()}
@@ -165,6 +169,7 @@ export default async function RegisterPage({
         utm={hasUtm(utm) ? utm : null}
         inAppBrowser={inAppBrowser}
       />
+      </TrialOfferProvider>
     </>
   );
 }

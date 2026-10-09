@@ -12,6 +12,7 @@ export interface TrialReminderInput {
   name: string | null;
   /** The plan the trial runs on, by its catalog name. */
   planName: string;
+  trialDays?: number;
   /** "$79/mo" */
   price: string;
   endsAt: Date;
@@ -37,8 +38,8 @@ export function buildTrialReminder(i: TrialReminderInput): EmailDoc {
     headline: today ? "Your free trial ends today" : "Two days left in your free trial",
     prose: [
       today
-        ? `Hi ${first} — your 7-day trial of ${i.planName} ends today, and there is no card on file yet.`
-        : `Hi ${first} — your 7-day trial of ${i.planName} ends on ${date}, and there is no card on file yet.`,
+        ? `Hi ${first} — your ${i.trialDays ?? 7}-day trial of ${i.planName} ends today, and there is no card on file yet.`
+        : `Hi ${first} — your ${i.trialDays ?? 7}-day trial of ${i.planName} ends on ${date}, and there is no card on file yet.`,
       `Add a card to keep your workspace open: ${i.planName} carries on at ${i.price}, charged when the trial ends. Without one the workspace turns read-only — everything you made stays, and a card brings it back.`,
     ],
     box,
@@ -52,6 +53,7 @@ export interface TrialConfirmInput {
   name: string | null;
   /** The plan picked on the plan step, by its catalog name. */
   planName: string;
+  trialDays?: number;
   /** Absolute link to /auth/register/confirm?t=… */
   href: string;
 }
@@ -61,7 +63,7 @@ export interface TrialConfirmInput {
 export function buildTrialConfirm(i: TrialConfirmInput): EmailDoc {
   const first = i.name?.trim().split(/\s+/)[0] || "there";
   const box: BoxRow[] = [
-    { type: "field", label: "Plan", value: `${i.planName} · 7 days free` },
+    { type: "field", label: "Plan", value: `${i.planName} · ${i.trialDays ?? 7} days free` },
     { type: "cond", label: "Card", chip: "Not needed", tone: "ok" },
     { type: "field", label: "Link expires", value: "In 24 hours" },
   ];
@@ -71,7 +73,7 @@ export function buildTrialConfirm(i: TrialConfirmInput): EmailDoc {
     kicker: { text: "One step left" },
     headline: "Confirm your email to start your trial",
     prose: [
-      `Hi ${first} — open the link below and your shop is created with a 7-day free trial of ${i.planName}. No card needed.`,
+      `Hi ${first} — open the link below and your shop is created with a ${i.trialDays ?? 7}-day free trial of ${i.planName}. No card needed.`,
     ],
     box,
     cta: { label: "Confirm and start my trial", href: i.href },

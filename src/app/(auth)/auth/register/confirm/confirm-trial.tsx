@@ -60,7 +60,7 @@ export function ConfirmTrial() {
           <>
             <span className="pw-confirm-k">Confirming</span>
             <p className="pw-confirm-h">Creating your shop…</p>
-            <p className="pw-confirm-p">Your 7-day free trial starts in a moment. No card needed.</p>
+            <p className="pw-confirm-p">Your free trial starts in a moment. No card needed.</p>
           </>
         ) : view.kind === "done" ? (
           <>
@@ -69,7 +69,7 @@ export function ConfirmTrial() {
             <p className="pw-confirm-p">
               {view.signedIn
                 ? "Opening your dashboard…"
-                : `Your 7-day trial is on for ${view.email}. Sign in to open your dashboard.`}
+                : `Your free trial is on for ${view.email}. Sign in to open your dashboard.`}
             </p>
             <div className="pw-confirm-row">
               <Link className="btn pw-go" href={(view.signedIn ? "/dashboard" : "/auth/login?next=%2Fdashboard") as Route}>

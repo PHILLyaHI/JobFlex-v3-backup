@@ -36,7 +36,7 @@ export default function TermsPage() {
         Your plan and checkout specify pricing, billing intervals, features, limits, applicable taxes,
         and any trial. An authorized recurring subscription renews at the disclosed interval until
         canceled. Whether a payment method is required to start the trial is shown at the plan step
-        when you sign up. Nothing is charged during the 7-day free trial. With a payment method on file,
+        when you sign up. Promotional free trials may last from 1 to 14 days, including offers tested with different signup groups. The exact duration offered to you is shown before enrollment and confirmed at checkout; that duration governs your trial. We do not shorten an existing trial because an offer or experiment changes. Nothing is charged during your free trial. With a payment method on file,
         the price of the plan you chose is first charged when the trial ends, unless you cancel
         beforehand; without one, the trial ends without a charge and the workspace becomes read-only
         until one is added.

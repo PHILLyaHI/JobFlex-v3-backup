@@ -1,5 +1,6 @@
 "use client";
 
+import { useTrialOffer } from "@/components/providers/trial-offer";
 import { useState } from "react";
 import type { LandingVariantKey } from "./landing-variants";
 import { Reveal } from "./reveal";
@@ -40,18 +41,19 @@ const DATA_Q: Record<"roofing" | "fencing" | "hvac" | "other", Faq> = {
 };
 
 /* The card question, by signupTrialMode (lib/trialPolicyServer). */
-const CARD_Q: Record<"card" | "cardless", Faq> = {
+const cardQuestions = (days: number): Record<"card" | "cardless", Faq> => ({
   card: {
     q: "Do I need a credit card to start?",
-    a: "Yes, a card is required to start the trial; you are not charged for 7 days and can cancel in one tap.",
+    a: `Yes. A card is required to start your ${days}-day free trial. Your selected plan renews automatically at the disclosed price when the trial ends unless you cancel from Subscription first.`,
   },
   cardless: {
     q: "Do I need a credit card to start?",
-    a: "No. Confirm your email and the 7-day trial starts with no card on file. Add one before day 8 to keep your plan; without one the workspace turns read-only and nothing is charged.",
+    a: `No. Confirm your email to start your ${days}-day free trial. Add a card before it ends to keep your plan; without one the workspace turns read-only and nothing is charged.`,
   },
-};
+});
 
-function questions(variant: LandingVariantKey | undefined, requiresCard = true): Faq[] {
+function questions(variant: LandingVariantKey | undefined, requiresCard: boolean, days: number): Faq[] {
+  const CARD_Q = cardQuestions(days);
   const data = variant === "roofing" || variant === "fencing" || variant === "hvac" ? DATA_Q[variant] : DATA_Q.other;
   return [
     requiresCard ? CARD_Q.card : CARD_Q.cardless,
@@ -65,8 +67,8 @@ function questions(variant: LandingVariantKey | undefined, requiresCard = true):
     },
     data,
     {
-      q: "What happens after 7 days?",
-      a: "Pick a plan or don't. Nothing is charged until you do, and everything you made stays in the account.",
+      q: `What happens after ${days} days?`,
+      a: requiresCard ? "Your selected plan renews automatically at the price and billing interval shown in checkout unless you cancel before the trial ends. Manage or cancel it from Subscription." : "With a card added, your selected plan starts billing at the disclosed price when the trial ends. Without a card, nothing is charged and your saved work stays readable.",
     },
     {
       q: "Does it work from my phone?",
@@ -76,7 +78,8 @@ function questions(variant: LandingVariantKey | undefined, requiresCard = true):
 }
 
 export function LandingFaq({ variant, registerHref = "/auth/register", cta = "Start my free trial", requiresCard = true }: { variant?: LandingVariantKey; registerHref?: string; cta?: string; requiresCard?: boolean }) {
-  const items = questions(variant, requiresCard);
+  const { days } = useTrialOffer();
+  const items = questions(variant, requiresCard, days);
   /* Opened by a click, a tap, Enter or Space; each card on its own. Hover and
      keyboard focus only SHOW the answer (CSS); this set is what aria-expanded
      reports and what keeps an answer up on a touch screen. */

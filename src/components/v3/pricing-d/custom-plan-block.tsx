@@ -4,16 +4,16 @@
 // Rendered only while the custom plan is on sale: the CALLER decides, from
 // lib/customPlanFlag read on the server at request time, and passes nothing
 // when it is off. The price is lib/customPlan's — base plus each page — and
-// the trial the signup gives every plan (lib/trialPolicy TRIAL_DAYS).
+// the saved trial offer the signup gives every plan.
 //
 // White on a 2px ink line with a hard ink offset (pricing.css, .pr-custom),
 // so it reads the same on /pricing's white page and on the landing's ink
 // sheet.
 
+import { TrialDurationLabel, TrialStartLabel } from "@/components/providers/trial-offer";
 import { Reveal } from "@/components/v3/landing-e/reveal";
 import { priceCadence } from "@/lib/planCatalog";
 import { CUSTOM_BASE_CENTS, CUSTOM_PAGE_CENTS, CUSTOM_PAGES } from "@/lib/customPlan";
-import { TRIAL_DAYS } from "@/lib/trialPolicy";
 import "./pricing.css";
 
 /** Whole dollars — every price here is a round number. */
@@ -66,7 +66,7 @@ export function CustomPlanBlock({
                 <i>{priceCadence(true)} base</i>
               </p>
               <div className="mt-2.5">
-                <span className="pr-trial">{TRIAL_DAYS}-day free trial</span>
+                <span className="pr-trial"><TrialDurationLabel /></span>
               </div>
               <p className="pr-desc mt-5">
                 A full build with all {CUSTOM_PAGES.length} pages comes to {price(customTop)} a month —
@@ -74,7 +74,7 @@ export function CustomPlanBlock({
               </p>
             </div>
             <a href={registerHref} className="lp-pw-go mt-8" data-cta={cta}>
-              Start free trial
+              <TrialStartLabel />
             </a>
           </div>
         </div>

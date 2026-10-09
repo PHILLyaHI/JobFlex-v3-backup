@@ -20,6 +20,7 @@ import { resolveSignupDiscount, resolveSignupPrice } from "@/lib/signupPricing";
 import { customMetadata } from "@/lib/customBilling";
 import { signupTrialMode } from "@/lib/trialPolicyServer";
 import { CUSTOM_PLAN_OFF_SALE, customPlanOffered } from "@/lib/customPlanFlag";
+import { trialOfferMetadata } from "@/lib/trialOffer";
 import { CUSTOM_PLAN_SLUG } from "@/lib/customPlan";
 
 export const runtime = "nodejs";
@@ -70,10 +71,10 @@ export async function POST(req: Request) {
     planSlug: String(planSlug),
     interval,
     customPages: pending.customPages,
+    trialOffer: pending.trialOffer,
   });
   if (!priced.ok) return NextResponse.json({ error: priced.error }, { status: priced.status });
-  // trialDays is TRIAL_DAYS for every plan (lib/trialPolicy via signupPricing):
-  // seven days, then Stripe charges the picked plan's price.
+  // The saved offer determines the duration; then Stripe charges the selected price.
   const { trialDays, planLabel, isCustom, cents } = priced;
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = priced.lineItems;
   const discount = await resolveSignupDiscount({ stripe, mode, attribution: pending.attribution, trialDays, where: "checkout/signup" });
@@ -103,11 +104,12 @@ export async function POST(req: Request) {
         trialDays > 0 || isCustom
           ? {
               ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
-              ...(isCustom ? { metadata: customMetadata(null, pending.customPages) } : {}),
+              metadata: { ...(isCustom ? customMetadata(null, pending.customPages) : {}), ...trialOfferMetadata(pending.trialOffer) },
             }
           : undefined,
       ...(discounts ? { discounts } : { allow_promotion_codes: true }),
       metadata: {
+        ...trialOfferMetadata(pending.trialOffer),
         signupToken: String(token),
         planSlug: planLabel,
         interval,

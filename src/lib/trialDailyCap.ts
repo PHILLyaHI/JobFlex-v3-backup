@@ -51,7 +51,7 @@ export async function cardlessTrialsPaused(now = new Date()): Promise<boolean> {
 
 /** What the plan step says when the ceiling sends a signup to the card. */
 export const TRIALS_PAUSED_MESSAGE =
-  "Free trials without a card are full for today. Your 7-day trial still starts free — it just needs a card on file, and nothing is charged until it ends.";
+  "Free trials without a card are full for today. Your trial still starts free — it just needs a card on file, and nothing is charged until it ends.";
 
 /**
  * Count a trial that has just started, and tell support the first time in a

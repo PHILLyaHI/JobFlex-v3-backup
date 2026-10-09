@@ -1,5 +1,6 @@
 "use client";
 
+import { useTrialOffer } from "@/components/providers/trial-offer";
 import { useEffect, useRef, useState } from "react";
 import { expandPlanFeatures, formatPlanPrice, priceCadence, type PlanDTO } from "@/lib/planCatalog";
 import "./pricing-faq.css";
@@ -11,8 +12,8 @@ import "./pricing-faq.css";
    has it, grey dash where it does not — and the card's own full-width start
    button. Everything is read from the live catalogue (getPlanCatalog on the
    server): expandPlanFeatures gives the shared rows and what each plan
-   includes, formatPlanPrice the price. Every button starts the same 7-day
-   trial (lib/trialPolicy TRIAL_DAYS), whatever the catalogue row's own days.
+   includes, formatPlanPrice the price. Every button starts the visitor’s assigned
+   trial (lib/trialOffer), whatever the catalogue row's own days.
    The register reads no `plan` param, so every button is the register link.
 
    On a phone (≤768px) the row is the register's swipe carousel: cards
@@ -43,6 +44,7 @@ export function PricingPlans({
   plans: PlanDTO[];
   registerHref: string;
 }) {
+  const { days } = useTrialOffer();
   const { rows, included } = expandPlanFeatures(plans);
   const heroIndex = Math.max(0, plans.findIndex((p) => p.highlight));
   const railRef = useRef<HTMLDivElement>(null);
@@ -186,7 +188,7 @@ export function PricingPlans({
                 </button>
               ) : null}
               <a href={registerHref} className="lp-pw-go" data-cta="pricing">
-                Start free trial
+                Start {days}-day free trial
                 <span className="sr-only"> on {p.name}</span>
               </a>
             </article>

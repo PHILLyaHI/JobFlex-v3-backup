@@ -4,8 +4,7 @@
 // START. The plan step asks for no card. When the signup is finished
 // (completeCardlessSignup) a Stripe customer and a subscription on the chosen
 // plan are created at once, with:
-//   · trial_period_days = 7 (CARDLESS_TRIAL_DAYS, whatever the plan's own
-//     trial says);
+//   · trial_period_days from the saved signup offer (legacy intents keep 7);
 //   · no payment method, and trial_settings.end_behavior.missing_payment_method
 //     = "cancel" — a trial nobody added a card to simply ends; nothing is ever
 //     attempted on a card that does not exist;
@@ -15,7 +14,7 @@
 //
 // ADD A CARD, DURING THE TRIAL. Stripe Checkout in SETUP mode on the same
 // customer: the card is saved, made the customer's and the subscription's
-// default, and the trial converts to the paid plan on its own on day 8.
+// default, and the trial converts to the paid plan when its trial period ends.
 //
 // ADD A CARD, AFTER IT ENDED. The ended subscription cannot be resumed
 // (end_behavior "cancel" deletes it), so Checkout in SUBSCRIPTION mode on the
@@ -26,7 +25,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { getStripeClient } from "@/lib/sdk/stripe";
 import { resolveSignupDiscount, resolveSignupPrice, type SignupInterval } from "@/lib/signupPricing";
-import { CARDLESS_TRIAL_DAYS } from "@/lib/trialPolicy";
+import { trialOfferMetadata, type TrialOffer } from "@/lib/trialOffer";
 import { cardlessTrialState, patchCardlessRecord, readCardlessRecord, type CardlessRecord } from "@/lib/trialState";
 import { isCardlessTrialLapse, syncSubscriptionFromStripe } from "@/lib/stripeSync";
 import { db } from "@/lib/db";
@@ -59,6 +58,7 @@ export async function createCardlessSubscription(opts: {
   interval: SignupInterval;
   customPages: string[];
   attribution: { kind: "promo" | "ref"; code: string } | null;
+  trialOffer?: TrialOffer;
 }): Promise<CardlessStart> {
   const { stripe, mode } = await getStripeClient();
   const priced = await resolveSignupPrice({
@@ -67,13 +67,14 @@ export async function createCardlessSubscription(opts: {
     planSlug: opts.planSlug,
     interval: opts.interval,
     customPages: opts.customPages,
+    trialOffer: opts.trialOffer,
   });
   if (!priced.ok) return { ok: false, error: priced.error };
   const discount = await resolveSignupDiscount({
     stripe,
     mode,
     attribution: opts.attribution,
-    trialDays: CARDLESS_TRIAL_DAYS,
+    trialDays: priced.trialDays,
     where: "cardless-trial",
   });
   const meta: Record<string, string> = {
@@ -81,6 +82,7 @@ export async function createCardlessSubscription(opts: {
     planSlug: priced.planLabel,
     interval: opts.interval,
     jf_cardless: "1",
+    ...trialOfferMetadata(opts.trialOffer),
     ...(priced.isCustom ? { customPages: opts.customPages.join(",") } : {}),
   };
   try {
@@ -104,7 +106,7 @@ export async function createCardlessSubscription(opts: {
       {
         customer: customer.id,
         items: priced.lineItems,
-        trial_period_days: CARDLESS_TRIAL_DAYS,
+        trial_period_days: priced.trialDays,
         trial_settings: { end_behavior: { missing_payment_method: "cancel" } },
         // A card added later through Checkout becomes the subscription's own.
         payment_settings: { save_default_payment_method: "on_subscription" },
@@ -352,6 +354,7 @@ export async function runCardlessTrialSweep(now = new Date()): Promise<{ scanned
       const dollars = plan.cents / 100;
       const { subject, html } = renderEmail(
         buildTrialReminder({
+          trialDays: state.record.trialDays ?? 7,
           name: to.name,
           planName: plan.name,
           price: `$${Number.isInteger(dollars) ? dollars : dollars.toFixed(2)}${plan.per}`,

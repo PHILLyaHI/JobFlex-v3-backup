@@ -30,6 +30,7 @@ export type CardlessRecord = {
   interval: "MONTH" | "YEAR";
   customPages: string[];
   mode: "live" | "test";
+  trialDays?: number;
   startedAt: string;
   endsAt: string;
   /** Set when a card was attached during the trial (it converts on its own). */

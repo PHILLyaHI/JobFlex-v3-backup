@@ -1,6 +1,6 @@
 // /auth/register/confirm?t=… — the link in the card-less trial's confirmation
 // email (owner, 2026-10-01: the address is confirmed before the dashboard).
-// Opening it creates the shop and its 7-day trial (confirmCardlessTrial),
+// Opening it creates the shop and its assigned trial (confirmCardlessTrial),
 // signs the shop in and sends it to the dashboard. The page is the
 // register's own blueprint scope, one framed card, the same at every width.
 import type { Metadata } from "next";

@@ -16,6 +16,7 @@ export async function sendWelcomeFirstEstimate(i: {
   tradeTypes: readonly string[];
   landingIndustry: string | null;
   firstChargeAt: Date;
+  trialDays?: number;
   /** A card-less trial (lib/cardlessTrial): no card is on file. */
   cardless?: boolean;
   /** The custom plan's pages, or null on a catalog plan (lib/firstEstimate). */
@@ -29,6 +30,7 @@ export async function sendWelcomeFirstEstimate(i: {
     ctaLabel: target.label,
     trade: target.trade,
     firstChargeDate: DATE_FMT.format(i.firstChargeAt),
+    trialDays: i.trialDays,
     cardless: i.cardless,
   });
   const { subject, html } = renderEmail(doc);

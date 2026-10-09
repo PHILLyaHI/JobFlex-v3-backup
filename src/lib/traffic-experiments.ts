@@ -5,11 +5,13 @@ export interface TrafficExperiment {
   /** false = registered, not running: no flag request is made and the hook
    *  answers null, so the page renders exactly as it does with no experiment. */
   active: boolean;
+  assignment?: "server";
 }
 
 // Opt-in only. Add an approved page and its PostHog multivariate flag here.
 // Use a new key for each test; never reuse a completed experiment's key.
 export const TRAFFIC_EXPERIMENTS: readonly TrafficExperiment[] = [
+  { key: "signup_trial_length_v1", path: "/", variants: ["a", "b"], active: true, assignment: "server" },
   // The landing's default hero (no `?industry=`). SCAFFOLD ONLY (2026-09-20):
   // variant b's content is the owner's to write — landing-e/hero-experiment.tsx
   // holds the empty slot. To launch: fill the slot, create the multivariate
@@ -18,4 +20,4 @@ export const TRAFFIC_EXPERIMENTS: readonly TrafficExperiment[] = [
 ];
 
 /** Feature flags are fetched only while something is actually running. */
-export const TRAFFIC_EXPERIMENTS_ACTIVE = TRAFFIC_EXPERIMENTS.some((e) => e.active);
+export const TRAFFIC_EXPERIMENTS_ACTIVE = TRAFFIC_EXPERIMENTS.some((e) => e.active && e.assignment !== "server");

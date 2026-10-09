@@ -16,7 +16,8 @@ import { REFERRAL_DISCOUNT_PCT } from "@/lib/referralDiscount";
 //     the organization when that organization is created. One discount system,
 //     one binding path.
 import { getPlanCatalog } from "@/lib/planCatalogServer";
-import { TRIAL_DAYS } from "@/lib/trialPolicy";
+import { signupTrialOffer } from "@/lib/trialOfferServer";
+import { readPendingSignup } from "@/actions/signupCheckout";
 import { validateAttribution } from "@/lib/attribution";
 import { isStripeEnabled } from "@/lib/sdk/stripe";
 
@@ -40,17 +41,19 @@ export interface SignupPromo {
   kind: "promo" | "ref";
 }
 
-export async function signupPlans(): Promise<{
+export async function signupPlans(token?: string): Promise<{
   plans: SignupPlan[];
   /** A code already stamped on this org (from a ?promo / ?ref link). */
   promo: SignupPromo | null;
   /** False when Stripe is not configured — the step then offers only "skip". */
   checkoutReady: boolean;
   /** The custom plan's trial. It has no catalog row, so it rides alongside
-   *  the list rather than inside it. TRIAL_DAYS, like every plan's. */
+   *  the list rather than inside it, using the same saved offer. */
   customTrialDays: number;
 }> {
   const catalog = await getPlanCatalog();
+  const pending = token ? await readPendingSignup(token) : null;
+  const trialDays = (pending?.trialOffer ?? await signupTrialOffer()).days;
   // Whatever the visitor arrived with is carried in the client's attribution
   // pill and applied at account creation; there is no organization to read a
   // stamp from at this point in the flow.
@@ -67,15 +70,14 @@ export async function signupPlans(): Promise<{
         description: p.description,
         priceCents: p.priceCents,
         yearlyPriceCents: p.yearlyPriceCents,
-        // The signup trial is TRIAL_DAYS on every plan (lib/trialPolicy) —
-        // what Checkout gives (lib/signupPricing), so the step says the same.
-        trialDays: TRIAL_DAYS,
+        // Use the saved offer on every plan, matching Checkout's duration.
+        trialDays,
         features: p.features,
         highlight: p.highlight,
       })),
     promo,
     checkoutReady: isStripeEnabled(),
-    customTrialDays: TRIAL_DAYS,
+    customTrialDays: trialDays,
   };
 }
 

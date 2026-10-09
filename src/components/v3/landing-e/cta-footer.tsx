@@ -1,3 +1,4 @@
+import { TrialStartLabel } from "@/components/providers/trial-offer";
 import { CookieSettingsLink, DoNotSellLink } from "@/components/consent/cookie-settings-link";
 import { TrialLine } from "./trial-line";
 import { Logo } from "./logo";
@@ -49,7 +50,7 @@ export function CtaFooter({
               on one accent and is the only colour in this black section. */}
           <div className="mt-10 w-full sm:mt-12 sm:w-auto">
             <a href={registerHref} className="lp-btn-lime w-full sm:w-auto" data-cta="footer">
-              {cta ?? "Start 7-Day Free Trial"}
+              {cta ?? <TrialStartLabel />}
               <span aria-hidden>→</span>
             </a>
           </div>

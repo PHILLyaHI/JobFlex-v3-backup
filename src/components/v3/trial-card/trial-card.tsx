@@ -235,7 +235,7 @@ export function TrialSheet({
   const hit = !ended && !view.hasCard && caps ? capHit : null;
   const title = ended ? "Add a card to continue" : view.hasCard ? "Your card is on file" : hit ? TRIAL_CAP_TITLE : "Add a card to keep access";
   const lede = ended
-    ? `Your 7-day trial ended on ${when}. Everything you made is still here and readable; add a card and ${view.planName} starts again today — no new trial.`
+    ? `Your trial ended on ${when}. Everything you made is still here and readable; add a card and ${view.planName} starts again today — no new trial.`
     : view.hasCard
       ? `Nothing to do. The trial runs until ${when}, then ${view.planName} begins and the card is charged.`
       : hit

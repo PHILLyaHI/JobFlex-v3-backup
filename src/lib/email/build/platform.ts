@@ -98,6 +98,7 @@ export interface WelcomeFirstEstimateInput {
   trade: FirstEstimateTrade;
   /** "Sep 25, 2026" — the day the card is first charged (the trial's end). */
   firstChargeDate: string;
+  trialDays?: number;
   /** A card-less trial: the box and the closing line say there is no card,
    *  and when to add one to keep the workspace. */
   cardless?: boolean;
@@ -105,7 +106,7 @@ export interface WelcomeFirstEstimateInput {
 
 /** landing-e pass A (2026-09-11): the welcome for the test variant. One
  *  button — the trade's first estimate — and the trial's terms in the box:
- *  7 days free, the date of the first charge, cancel from Subscription. */
+ *  the assigned trial length, the date of the first charge, cancel from Subscription. */
 export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDoc {
   const first = i.name.trim().split(/\s+/)[0] || "there";
   const job =
@@ -118,12 +119,12 @@ export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDo
           : "Type the job the way you'd say it to a customer, and the estimate writes itself: line items, quantities, a priced proposal — two minutes.";
   const box: BoxRow[] = i.cardless
     ? [
-        { type: "field", label: "Trial", value: "7 days free" },
+        { type: "field", label: "Trial", value: `${i.trialDays ?? 7} days free` },
         { type: "field", label: "Trial ends", value: i.firstChargeDate },
         { type: "cond", label: "Card", chip: "None needed to start", tone: "ok" },
       ]
     : [
-        { type: "field", label: "Trial", value: "7 days free" },
+        { type: "field", label: "Trial", value: `${i.trialDays ?? 7} days free` },
         { type: "field", label: "First charge", value: i.firstChargeDate },
         { type: "cond", label: "Cancel", chip: "Anytime, from Subscription", tone: "ok" },
       ];

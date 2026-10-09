@@ -11,7 +11,7 @@ import type Stripe from "stripe";
 import { db } from "@/lib/db";
 import { getPlanBySlug } from "@/lib/planCatalogServer";
 import { CUSTOM_PLAN_SLUG, customPriceCents } from "@/lib/customPlan";
-import { TRIAL_DAYS } from "@/lib/trialPolicy";
+import { storedTrialOffer, type TrialOffer } from "@/lib/trialOffer";
 import { ensureRecurringPrice } from "@/lib/stripePriceCache";
 import { customLineItems } from "@/lib/customBilling";
 import { validateAttribution } from "@/lib/attribution";
@@ -27,8 +27,7 @@ export type SignupPrice =
       /** The subscription's lines: one price for a catalog plan; the custom
        *  plan's base + page × quantity (lib/customBilling). */
       lineItems: { price: string; quantity: number }[];
-      /** The signup trial — TRIAL_DAYS for every plan (owner, 2026-10-06:
-       *  seven days, then the picked plan's price), not the catalog row's own. */
+      /** The signup's saved trial offer, shared across plans and billing intervals. */
       trialDays: number;
       /** The slug recorded on the session / subscription metadata. */
       planLabel: string;
@@ -58,12 +57,14 @@ export async function resolveSignupPrice(opts: {
   planSlug: string;
   interval: SignupInterval;
   customPages: string[];
+  trialOffer?: TrialOffer;
 }): Promise<SignupPrice> {
   const { stripe, mode, interval } = opts;
+  const trialDays = storedTrialOffer(opts.trialOffer).days;
   if (opts.planSlug === CUSTOM_PLAN_SLUG) {
     const cents = customPriceCents(opts.customPages, interval);
     const lineItems = await customLineItems(stripe, mode, interval, opts.customPages);
-    return { ok: true, lineItems, trialDays: TRIAL_DAYS, planLabel: CUSTOM_PLAN_SLUG, isCustom: true, cents };
+    return { ok: true, lineItems, trialDays, planLabel: CUSTOM_PLAN_SLUG, isCustom: true, cents };
   }
   const plan = await getPlanBySlug(opts.planSlug);
   if (!plan || !plan.active || plan.isFree) {
@@ -77,7 +78,7 @@ export async function resolveSignupPrice(opts: {
     if (!row) {
       return { ok: false, status: 404, error: "That plan isn't available for checkout yet." };
     }
-    return { ok: true, lineItems: [{ price: row.stripePriceId, quantity: 1 }], trialDays: TRIAL_DAYS, planLabel: plan.slug, isCustom: false, cents };
+    return { ok: true, lineItems: [{ price: row.stripePriceId, quantity: 1 }], trialDays, planLabel: plan.slug, isCustom: false, cents };
   }
   if (cents <= 0) {
     return { ok: false, status: 404, error: "That plan is not available." };
@@ -90,7 +91,7 @@ export async function resolveSignupPrice(opts: {
     interval,
     cents,
   });
-  return { ok: true, lineItems: [{ price, quantity: 1 }], trialDays: TRIAL_DAYS, planLabel: plan.slug, isCustom: false, cents };
+  return { ok: true, lineItems: [{ price, quantity: 1 }], trialDays, planLabel: plan.slug, isCustom: false, cents };
 }
 
 /** The discount a signup's stored code earns: an influencer promo becomes its

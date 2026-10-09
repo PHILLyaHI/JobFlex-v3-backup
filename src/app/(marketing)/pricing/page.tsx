@@ -2,8 +2,10 @@
 //
 // The page body lives in components/v3/pricing-d so the route stays a thin data
 // read. Plans come from the same catalog every other plan surface reads; the
-// custom plan's trial comes from the value /admin/plans writes.
+// trial comes from the visitor's assigned signup offer.
 
+import { signupTrialOffer } from "@/lib/trialOfferServer";
+import { TrialOfferProvider } from "@/components/providers/trial-offer";
 import type { Metadata } from "next";
 import { getPlanCatalog } from "@/lib/planCatalogServer";
 import { PricingPage } from "@/components/v3/pricing-d/pricing-page";
@@ -27,10 +29,12 @@ export const metadata: Metadata = {
 export default async function Page() {
   const plans = await getPlanCatalog();
   return (
+    <TrialOfferProvider offer={await signupTrialOffer()}>
     <PricingPage
       plans={plans}
       requiresCard={(await signupTrialMode()) === "card"}
       customOffered={customPlanOffered()}
     />
+    </TrialOfferProvider>
   );
 }

@@ -4,6 +4,7 @@ import { getToken } from "next-auth/jwt";
 import { ROLE_ROUTE_GATES, isPathAllowed } from "@/lib/roleRoutes";
 import { isPartnerPublic, principalRedirect } from "@/lib/principalRoutes";
 import { REGION_COOKIE, REGION_MAX_AGE_S, consentModeFor } from "@/lib/consent";
+import { TRIAL_OFFER_COOKIE, TRIAL_OFFER_MAX_AGE } from "@/lib/trialOffer";
 
 // The standalone handheld URLs (/mobile-*, /trade-services) are protected too:
 // they render the same org data as their /dashboard twins and the (mobile)
@@ -79,7 +80,18 @@ const MOVED_PAGES: Record<string, string> = {
    request header read there rendered every page per request, /pricing's
    catalogue read included. No header (localhost) is the US: notice. */
 export async function middleware(req: NextRequest) {
+  const offerPath = req.nextUrl.pathname === "/" || req.nextUrl.pathname === "/pricing" || req.nextUrl.pathname.startsWith("/auth/register");
+  const existingOffer = req.cookies.get(TRIAL_OFFER_COOKIE)?.value;
+  let assigned: string | null = null;
+  if (offerPath && existingOffer !== "a" && existingOffer !== "b") {
+    assigned = crypto.getRandomValues(new Uint8Array(1))[0] < 128 ? "a" : "b";
+    // Forward it in this request too, so first paint and the next request agree.
+    req.cookies.set(TRIAL_OFFER_COOKIE, assigned);
+  }
   const res = await route(req);
+  if (assigned) res.cookies.set(TRIAL_OFFER_COOKIE, assigned, {
+    path: "/", maxAge: TRIAL_OFFER_MAX_AGE, httpOnly: true, sameSite: "lax", secure: req.nextUrl.protocol === "https:",
+  });
   if (!req.cookies.has(REGION_COOKIE)) {
     res.cookies.set(REGION_COOKIE, consentModeFor(req.headers.get("x-vercel-ip-country")), {
       path: "/",
@@ -131,7 +143,7 @@ async function route(req: NextRequest): Promise<NextResponse> {
   }
 
   const needsAuth = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
-  if (!needsAuth) return NextResponse.next();
+  if (!needsAuth) return NextResponse.next({ request: { headers: req.headers } });
 
   // Cookie-presence only — the real principal/role gate lives in the route
   // group layouts and server guards (requirePlatformAdmin / requireInfluencer).

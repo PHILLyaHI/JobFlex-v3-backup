@@ -40,6 +40,7 @@ export function Hero({
   cta,
   fbclid,
   requiresCard = true,
+  trialDays = 7,
   inAppBrowser = null,
   priceLine = null,
 }: {
@@ -53,6 +54,7 @@ export function Hero({
   /** signupTrialMode (lib/trialPolicyServer): the words of the trial's badge
    *  under the buttons (lib/trialPolicy trialLine). */
   requiresCard?: boolean;
+  trialDays?: number;
   variant?: LandingVariant;
   /** The variant's key, for the Google button's cookie and callback. */
   variantKey?: LandingVariantKey;
@@ -211,7 +213,7 @@ export function Hero({
               {cta ?? variant.primaryCta}
               <span aria-hidden>→</span>
             </a>
-            <span className="lp-hero-after-note">{trialLine(requiresCard)}</span>
+            <span className="lp-hero-after-note">{trialLine(requiresCard, trialDays)}</span>
           </div>
         ) : null}
       </div>

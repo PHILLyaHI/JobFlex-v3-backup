@@ -1,5 +1,5 @@
 /* THE TRIAL'S PROMISE (owner, 2026-10-01; words by TRIAL_REQUIRES_CARD —
-   lib/trialPolicy trialLine: "Start your 7-day free trial" with the card, the
+   lib/trialPolicy trialLine: "Start your assigned free trial" with the card, the
    default since 2026-10-06; the card-less line with the flag off). It is not
    the small mono note the card-first trial once carried under its buttons: it
    is its own line under the heading, set as a Blueprint stamp — an ink (or white)
@@ -13,6 +13,8 @@
    only the pointer, a faint hover wash and a focus ring say it can be
    pressed, so it never reads as a third button. Clicks are `cta_click` with
    placement "badge" (cta-tracker.tsx) and `spot` naming which badge. */
+"use client";
+import { useTrialOffer } from "@/components/providers/trial-offer";
 import { trialLine } from "@/lib/trialPolicy";
 
 export function TrialLine({
@@ -35,13 +37,14 @@ export function TrialLine({
   /** Which badge was pressed, for the click event (hero, final, pricing…). */
   spot?: string;
 }) {
+  const { days } = useTrialOffer();
   const cls = `lp-trial-line lp-trial-line--${tone} lp-trial-line--${size} ${className}`;
   const body = (
     <>
       <svg viewBox="0 0 24 24" aria-hidden>
         <path d="M4 12.5l5 5L20 6.5" />
       </svg>
-      {trialLine(requiresCard)}
+      {trialLine(requiresCard, days)}
     </>
   );
   return href ? (
