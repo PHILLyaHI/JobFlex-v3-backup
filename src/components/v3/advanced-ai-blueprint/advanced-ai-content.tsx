@@ -23,10 +23,10 @@ import { clientErrorText } from "@/lib/staleDeploy";
 // ── ONE LINE SHAPE, NO SECOND COPIES ───────────────────────────────
 // Line items are held as `ConsoleLine[]` from `@/lib/estimate/console-model` —
 // the shape shared with the handheld studio. Totals come from `computeTotals`
-// (cost → margin → discount → tax) and the Materials request from
-// `materialsRequest(lines)`. Deriving the request rather than mirroring them is
-// what makes it reactive: delete a line and its purchase row goes with it,
-// because there was never a second array to forget to update.
+// (cost → margin → discount → tax), derived rather than mirrored, so deleting
+// a line takes its money with it — there is no second array to forget.
+// There is no Materials request card any more (owner, 2026-10-09): a list of
+// store products, some of them wrong, has no place on an estimate.
 //
 // ── CONTROLLED INPUTS, AND WHY THE `rev` TRICK WENT ────────────────
 // The port kept the donor's uncontrolled `defaultValue` inputs plus a `rev`
@@ -46,8 +46,6 @@ import { createPortal } from "react-dom";
 import s from "./advanced-ai.module.css";
 import { useSmartProposalMotion } from "./advanced-ai-motion";
 import { BlueprintSelect } from "./blueprint-select";
-import { MaterialThumb } from "@/components/materials/MaterialThumb";
-import { merchantUrl } from "@/lib/merchantLinks";
 import { toast } from "@/components/ui/Toast";
 import {
   reportPlanLimit,
@@ -72,8 +70,6 @@ import {
   estimateFromLines,
   lineTotal,
   linesFromEstimate,
-  materialsRequest,
-  materialsRequestTotal,
   newLineId,
   blankLine,
   unitSelectOptions,
@@ -97,7 +93,6 @@ import {
   STATES,
   money,
   moneySigned,
-  moneyU,
 } from "./advanced-ai-data";
 import { InventoryLinkChoice } from "@/components/v3/inventory-link/inventory-link-choice";
 import { isTradeId } from "@/lib/inventory";
@@ -300,8 +295,6 @@ export function AdvancedAiContent({ seed }: { seed?: { brief: string; address: s
     () => computeTotals({ lines, discount, taxPct: tax.pct }),
     [lines, discount, tax.pct],
   );
-  const reqRows = useMemo(() => materialsRequest(lines), [lines]);
-  const reqTotal = useMemo(() => materialsRequestTotal(reqRows), [reqRows]);
 
   // The intake no longer asks for a project type (owner, 2026-09-02): the
   // planner names the kind of work from the brief itself. Kept as an empty
@@ -995,83 +988,6 @@ export function AdvancedAiContent({ seed }: { seed?: { brief: string; address: s
       <div className={cx("sp-grid")}>
         <div className={cx("sp-main")}>
           {ledger}
-
-          {/* MATERIALS REQUEST — derived from the ledger, not mirrored from it. */}
-          <section className={cx("card")}>
-            <div className={cx("sp-h")}>
-              <div className={cx("sp-h-txt")}>
-                <h2 className={cx("sp-t")}>Materials request</h2>
-              </div>
-              <span className={cx("sp-req-count")}>
-                {reqRows.length} {reqRows.length === 1 ? "item" : "items"}
-              </span>
-            </div>
-            <div>
-              {reqRows.map((r) => {
-                // merchantUrl is the render-time guard: it rejects Google
-                // interstitials and AI-fabricated retailer paths and swaps them
-                // for the store's own search. Null means there is nowhere real
-                // to send the contractor, so no button is drawn.
-                const buy = merchantUrl(r.store, [r.name, r.dimensions].filter(Boolean).join(" "), r.productUrl);
-                return (
-                  <div className={cx("sp-req-row")} key={r.id}>
-                    <span className={cx("sp-thumb")}>
-                      <MaterialThumb src={r.imageUrl ?? null} alt="" />
-                    </span>
-                    <span className={cx("sp-req-main")}>
-                      <span className={cx("sp-req-n")}>{r.name || "Untitled line"}</span>
-                      <span className={cx("sp-req-m")}>
-                        {r.dimensions && <span>{r.dimensions}</span>}
-                        <span>
-                          Qty {r.qty} {r.unit}
-                        </span>
-                        {r.store ? (
-                          <span className={cx("sp-store")}>{r.store}</span>
-                        ) : (
-                          <span className={cx("sp-store", "sp-store--none")}>No retail source</span>
-                        )}
-                      </span>
-                    </span>
-                    <span className={cx("sp-req-price")}>
-                      <b>{money(r.total)}</b>
-                      <span>
-                        {/* Two figures, two meanings: the line is billed per
-                            measured unit; the listing is what the store charges
-                            for the package. Neither replaces the other. */}
-                        {`${moneyU(r.unitPrice)} / ${r.unit}`}
-                        {r.retailUnitPrice != null && (
-                          <i className={cx("sp-req-ov")}>
-                            {" "}· listing {moneyU(r.retailUnitPrice)}
-                            {r.dimensions ? ` (${r.dimensions})` : ""}
-                          </i>
-                        )}
-                      </span>
-                    </span>
-                    {buy && (
-                      <a
-                        className={cx("sp-req-link")}
-                        href={buy}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        aria-label={`Buy ${r.name || "this item"}${r.store ? ` at ${r.store}` : ""}`}
-                      >
-                        <svg className={cx("ic")}>
-                          <use href="#i-arrow" />
-                        </svg>
-                      </a>
-                    )}
-                  </div>
-                );
-              })}
-              {reqRows.length === 0 && (
-                <div className={cx("sp-empty")}>No materials on this estimate.</div>
-              )}
-            </div>
-            <div className={cx("sp-reqtotal")}>
-              <span>Total material cost</span>
-              <b>{money(reqTotal)}</b>
-            </div>
-          </section>
 
           {/* SCOPE */}
           <section className={cx("card")}>

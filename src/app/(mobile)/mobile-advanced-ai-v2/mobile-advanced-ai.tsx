@@ -42,7 +42,7 @@
 //    the actions price), location + State select, site photos
 //  · the brief textarea and all four sample briefs
 //  · the narrated generation
-//  · scope, materials, labor, the shoppable materials request, assumptions,
+//  · scope, materials, labor, assumptions,
 //    totals, margin, discount, tax, client price
 //  · add / edit / duplicate / move / remove line, with a row-level ✕ as well
 //  · refine → real computed diff → Discard or Apply, and Undo after Apply
@@ -83,8 +83,6 @@ import {
   estimateFromLines,
   lineTotal,
   linesFromEstimate,
-  materialsRequest,
-  materialsRequestTotal,
   newLineId,
   NO_DISCOUNT,
   unitSelectOptions,
@@ -92,7 +90,6 @@ import {
   type ConsoleLine,
   type DiscountState,
 } from "@/lib/estimate/console-model";
-import { merchantUrl, usableImageUrl } from "@/lib/merchantLinks";
 import { isPlanLimitError } from "@/lib/planLimits";
 import { clientErrorText, isStaleDeployError } from "@/lib/staleDeploy";
 import {
@@ -105,19 +102,11 @@ import type { ClarifyQuestion, GeneratedEstimate } from "@/lib/estimatorSchema";
 import { InventoryLinkChoice } from "@/components/v3/inventory-link/inventory-link-choice";
 import { isTradeId } from "@/lib/inventory";
 
-/** "material live · Home Depot" out of a computed line's note, for the meta
- *  row. A phone has no hover, so the source is printed rather than hidden. */
-function materialSourceOf(note: string): string {
-  const m = /material (live|cached|from trade anchor)/i.exec(note);
-  if (!m) return "";
-  return m[1].toLowerCase() === "from trade anchor" ? "material: anchor" : `material: ${m[1].toLowerCase()}`;
-}
-
 const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
-/** Unit prices are shopped to the cent — rounding them would misquote the shelf. */
+/** Unit prices keep their cents — rounding them would misquote the line. */
 const cash = (n: number) =>
   `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const mb = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -226,31 +215,6 @@ function CountUp({ value, className }: { value: number; className?: string }) {
   );
 }
 
-/** Product thumbnail with the house fallback — see components/materials/MaterialThumb. */
-function Thumb({ src, alt }: { src?: string; alt: string }) {
-  // The URL that failed, not a boolean: a refine can re-shop this row onto a
-  // new image, and a bare `failed` flag would keep the fallback showing for a
-  // picture that was never tried. No reset effect needed either.
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const usable = usableImageUrl(src);
-  return (
-    <span className={styles.mthumb}>
-      {usable && failedSrc !== usable ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          className={styles.mthumbImg}
-          src={usable}
-          alt={alt}
-          loading="lazy"
-          onError={() => setFailedSrc(usable)}
-        />
-      ) : (
-        <Icon id="i-advanced-ai-box" className={styles.mthumbIc} />
-      )}
-    </span>
-  );
-}
-
 type Banner = {
   tone: "danger" | "warning" | "info";
   title: string;
@@ -270,15 +234,8 @@ type MenuRow = {
   danger?: boolean;
 };
 
-/** The search text a retail link is resolved against: what it is, and how big. */
-const buyQuery = (l: { name: string; dimensions?: string }) =>
-  [l.name, l.dimensions].filter(Boolean).join(" ").trim();
-/** A line carries supply when it bills material $ or was matched to a product.
- *  A labor-only task (demolition, haul-away) has nothing to buy. */
-const hasSupply = (l: ConsoleLine) =>
-  (Number(l.materialPrice) || 0) > 0 || Boolean(l.store || l.productUrl || l.retailPrice != null);
-const buyUrlFor = (l: ConsoleLine) =>
-  hasSupply(l) ? merchantUrl(l.store, buyQuery(l), l.productUrl) : null;
+/** A labor-only task (demolition, haul-away) bills no material $. */
+const laborOnly = (l: ConsoleLine) => !((Number(l.materialPrice) || 0) > 0);
 /** Clamp a typed figure onto [0, cap]; garbage reads as 0. */
 const clampNum = (raw: string, cap: number) =>
   Math.min(cap, Math.max(0, parseFloat(raw) || 0));
@@ -575,8 +532,6 @@ export function MobileSmartProposal() {
     () => computeTotals({ lines, discount, taxPct, marginPct: margin }),
     [lines, discount, taxPct, margin],
   );
-  const reqRows = useMemo(() => materialsRequest(lines), [lines]);
-  const reqTotal = useMemo(() => materialsRequestTotal(reqRows), [reqRows]);
 
   // No project type is asked any more; the actions still take the field, so it
   // rides through empty and the planner names the work from the brief.
@@ -980,34 +935,23 @@ export function MobileSmartProposal() {
   /* ---------- row actions sheet ----------------------------------------- */
   const sheetLine = findLine(sheetRef2);
   const editLine = findLine(editRef);
-  const sheetBuy = sheetLine ? buyUrlFor(sheetLine) : null;
 
   const menuRows = useMemo<MenuRow[]>(() => {
     if (!sheetLine) return [];
     return [
       { act: "edit", icon: "i-file", tone: styles.miBp, title: "Edit line",
         sub: "Description, quantity, material and labor" },
-      { act: "link", icon: "i-arrow", tone: styles.miSky, title: "Open retail link",
-        sub: sheetBuy
-          ? `Opens ${sheetLine.store ?? "the listing"} in a new tab`
-          : "No retail source on this line",
-        disabled: !sheetBuy },
       { act: "dup", icon: "i-copy", title: "Duplicate line", sub: "Copies it in below" },
       { act: "del", icon: "i-trash", tone: styles.miDanger, title: "Remove line",
         sub: "Deletes it from the estimate", danger: true },
     ];
-  }, [sheetLine, sheetBuy]);
+  }, [sheetLine]);
 
   const runMenu = (act: string) => {
     if (!sheetLine) return;
     const id = sheetLine.id;
     if (act === "edit") {
       openEdit(sheetLine);
-      return;
-    }
-    if (act === "link") {
-      if (sheetBuy) window.open(sheetBuy, "_blank", "noopener,noreferrer");
-      setSheetRef2(null);
       return;
     }
     setSheetRef2(null);
@@ -1080,8 +1024,6 @@ export function MobileSmartProposal() {
           <div className={styles.lines}>
             {list.map((l, i) => {
               const t = lineTotal(l);
-              const buy = buyUrlFor(l);
-              const supply = hasSupply(l);
               const armed = armedDel === l.id;
               return (
                 <div
@@ -1102,14 +1044,12 @@ export function MobileSmartProposal() {
                       {l.badge ? <span className={styles.lbadge}>{l.badge}</span> : null}
                       {l.flag === "auto" ? <span className={`${styles.lbadge} ${styles.lflag}`}>added</span> : null}
                       {l.flag === "adjusted" ? <span className={`${styles.lbadge} ${styles.lflag}`}>adjusted</span> : null}
-                      {/* On a phone there is no hover, so the source rides in
-                          title= for a long-press and is spelled out on the
-                          line's own meta row below. */}
+                      {/* The measured-from-your-description note rides in
+                          title= for a long-press. */}
                       {l.flag === "computed" ? <span className={`${styles.lbadge} ${styles.lflag}`} title={l.flagNote ?? undefined}>computed</span> : null}
                     </span>
                     <span className={styles.lmeta}>
                       {l.qty} {l.unit} × {cash(l.materialPrice + l.laborPrice)}
-                      {l.flag === "computed" && l.flagNote ? ` · ${materialSourceOf(l.flagNote)}` : ""}
                     </span>
                   </button>
                   <div className={styles.lrowActs}>
@@ -1153,25 +1093,10 @@ export function MobileSmartProposal() {
                     </span>
                   </div>
                   <div className={styles.lfoot}>
-                    {/* "Own supply" only where there IS a supply: a labor-only
-                        task has nothing to source, so the badge would be noise.
-                        On a shopping list, "not a retail link" is real
-                        information. */}
-                    {buy ? (
-                      <a
-                        className={styles.llinkBtn}
-                        href={buy}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {l.store ? `Buy at ${l.store}` : "Retail link"}
-                        <Icon id="i-arrow" />
-                      </a>
-                    ) : supply ? (
-                      <span className={styles.lown}>Own supply</span>
-                    ) : (
-                      <span className={styles.lown}>Labor only</span>
-                    )}
+                    {/* No store link on a line (owner, 2026-10-09): the
+                        estimate is not a shop list. A labor-only task still
+                        says so — that is about the job, not a store. */}
+                    {laborOnly(l) ? <span className={styles.lown}>Labor only</span> : null}
                     <span className={`${styles.ltotal} ${t ? "" : styles.isZero}`}>
                       {t ? money(t) : "—"}
                     </span>
@@ -1528,7 +1453,7 @@ export function MobileSmartProposal() {
                         </h2>
                         <p className={styles.stepHint}>
                           {phase === "busy"
-                            ? "Materials are priced against live retail listings, labor is costed per unit, and the scope is written last."
+                            ? "Materials and labor are costed per unit from the trade price book, and the scope is written last."
                             : "This is what gets priced. Tap any line to go back and change it."}
                         </p>
                       </div>
@@ -1661,71 +1586,6 @@ export function MobileSmartProposal() {
               </section>
 
               {renderLines()}
-
-              {/* MATERIALS REQUEST — derived from the very lines above via
-                  materialsRequest(), never a second copy. Delete a line and its
-                  row goes; change a quantity and this follows; override a price
-                  and the REAL shelf price keeps being quoted with the override
-                  beside it, because claiming Home Depot sells it for whatever
-                  was typed is the one thing a purchasing list must not do. */}
-              {reqRows.length ? (
-                <section className={styles.card} key="mreq">
-                  <div className={styles.cardHead}>
-                    <span className={styles.cardLbl}>Materials request</span>
-                    <span className={styles.cardSum}>{reqRows.length} items</span>
-                  </div>
-                  <div className={styles.mrows}>
-                    {reqRows.map((r) => {
-                      const buy = merchantUrl(r.store, buyQuery(r), r.productUrl);
-                      return (
-                        <div className={styles.mrow} key={r.id}>
-                          <Thumb src={r.imageUrl} alt={r.name} />
-                          <div className={styles.mbody}>
-                            <div className={styles.mname}>{r.name}</div>
-                            <div className={styles.mmeta}>
-                              {r.dimensions ? <span>{r.dimensions}</span> : null}
-                              {r.store ? (
-                                <span>{r.store}</span>
-                              ) : (
-                                <span className={styles.mUnshopped}>Not shopped</span>
-                              )}
-                            </div>
-                            <div className={styles.mline}>
-                              <span className={styles.mqty}>
-                                {r.qty} {r.unit} × {cash(r.unitPrice)}
-                                {r.retailUnitPrice != null ? (
-                                  <em className={styles.mover}>
-                                    (listing {cash(r.retailUnitPrice)}
-                                    {r.dimensions ? ` · ${r.dimensions}` : ""})
-                                  </em>
-                                ) : null}
-                              </span>
-                              <span className={styles.mtotal}>{money(r.total)}</span>
-                            </div>
-                          </div>
-                          {buy ? (
-                            <a
-                              className={styles.mbuy}
-                              href={buy}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              <Icon id="i-arrow" />
-                              Buy at {r.store ?? "the retailer"}
-                            </a>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className={styles.cardFoot}>
-                    <div className={styles.mreqTotal}>
-                      <span>Request total</span>
-                      <b>{money(reqTotal)}</b>
-                    </div>
-                  </div>
-                </section>
-              ) : null}
 
               {/* TOTALS — an estimate sheet: right-aligned tabular numerals and
                   a ruled total row. Every figure is computeTotals'. */}
@@ -2110,10 +1970,6 @@ export function MobileSmartProposal() {
                 clampNum(form.qty, MAX_QTY) *
                   (clampNum(form.material, MAX_MONEY) + clampNum(form.labor, MAX_MONEY)),
               )}
-              {editLine?.retailPrice != null &&
-              Math.abs(editLine.retailPrice - (parseFloat(form.material) || 0)) > 0.005
-                ? ` · listing is ${cash(editLine.retailPrice)} per package`
-                : ""}
             </span>
           </div>
         </form>

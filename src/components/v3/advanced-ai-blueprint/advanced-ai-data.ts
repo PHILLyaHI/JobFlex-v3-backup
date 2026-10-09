@@ -228,7 +228,7 @@ export const moneySigned = (n: number): string => (n > 0 ? "−" : "") + money(M
 export const GEN_STAGES: { id: string; label: string; dwellMs: number }[] = [
   { id: "brief", label: "Reading the brief", dwellMs: 0 },
   { id: "plan", label: "Planning materials", dwellMs: 7000 },
-  { id: "price", label: "Live pricing", dwellMs: 14000 },
+  { id: "price", label: "Pricing the work", dwellMs: 14000 },
   { id: "build", label: "Building the estimate", dwellMs: 0 },
 ];
 

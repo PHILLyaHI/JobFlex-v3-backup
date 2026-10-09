@@ -11,6 +11,7 @@ import { EyeOff, Info, Megaphone, RefreshCw } from "lucide-react";
 import { getSignupLedger, setSignupHidden } from "@/actions/trafficDashboard";
 import type { SignupLedger, SignupRecord, SignupState } from "@/lib/traffic-live";
 import { TIER_CHANCE, TIER_LABEL, TRIAL_TIERS, dollars, trialChance, type TrialProjection } from "@/lib/trialProjection";
+import { EmailContractorButton } from "@/components/v3/admin-mail/contractor-mail";
 import s from "./traffic.module.css";
 
 const SPANS: Array<[number, string]> = [[1, "Today"], [7, "7 days"], [30, "30 days"], [90, "90 days"], [365, "A year"]];
@@ -147,6 +148,8 @@ function LedgerRow({ r, when, onHide, pending }: { r: SignupRecord; when: (iso: 
       </div>
       <div className={s.ledgerWhen}>
         <b>{when(r.createdAt)}</b>
+        {/* Write to them from here (2026-10-08): the console's composer, on this account. */}
+        {r.ownerEmail && <EmailContractorButton spaced orgId={r.orgId} seed={{ business: r.orgName, ownerName: r.ownerName, ownerEmail: r.ownerEmail }} />}
         <button type="button" className={s.ledgerHide} onClick={onHide} disabled={pending} title="Take this account out of every statistic on the admin pages">
           <EyeOff size={12} aria-hidden="true"/>Hide from stats
         </button>

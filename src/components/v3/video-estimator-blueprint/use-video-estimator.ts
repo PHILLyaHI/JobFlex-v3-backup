@@ -62,8 +62,6 @@ import {
   linesFromEstimate,
   mergeRefined,
   type ClarifyAnswer,
-  materialsRequest,
-  materialsRequestTotal,
   unitPriceOf,
   type ConsoleLine,
   type DiscountState,
@@ -96,7 +94,7 @@ export const VIDEO_STAGES = [
   { id: "audio", label: "Listening to the audio", dwellMs: 0 },
   { id: "read", label: "Reading the walkthrough", dwellMs: 0 },
   { id: "plan", label: "Planning materials", dwellMs: 7000 },
-  { id: "price", label: "Live pricing", dwellMs: 14000 },
+  { id: "price", label: "Pricing the work", dwellMs: 14000 },
   { id: "build", label: "Building the estimate", dwellMs: 0 },
 ] as const;
 export type StageId = (typeof VIDEO_STAGES)[number]["id"];
@@ -507,8 +505,6 @@ export function useVideoEstimator(opts: {
   /** The shoppable list, DERIVED from the ledger rather than stored beside it —
    *  editing a quantity moves its buy quantity, deleting a line removes its row,
    *  and there is no second copy to keep in sync. */
-  const reqRows = useMemo(() => materialsRequest(lines), [lines]);
-  const reqTotal = useMemo(() => materialsRequestTotal(reqRows), [reqRows]);
 
   // ── Editing the ledger by hand ──────────────────────────────────────────
   // The Smart Proposal console's own affordances: every field a contractor most
@@ -538,8 +534,7 @@ export function useVideoEstimator(opts: {
     [touch],
   );
 
-  /** A blank fused row — never shopped, so it carries no retail price and the
-   *  request card shows it as having no retail source rather than inventing one. */
+  /** A blank fused row for the contractor to fill in. */
   const addLine = useCallback(() => {
     setLines((rows) => [...rows, blankLine()]);
     touch();
@@ -797,8 +792,6 @@ export function useVideoEstimator(opts: {
     timelineDays,
     locationUsed,
     lines,
-    reqRows,
-    reqTotal,
     setLine,
     removeLine,
     addLine,

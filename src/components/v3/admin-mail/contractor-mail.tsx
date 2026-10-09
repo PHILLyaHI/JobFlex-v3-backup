@@ -64,17 +64,22 @@ export function ContractorMailProvider({ children }: { children: ReactNode }) {
 }
 
 /** The button a card or row carries. Renders nothing outside the console.
- *  `row` sets it on a line of its own at the card's foot, right-aligned. */
-export function EmailContractorButton({ orgId, seed, className = "", label = "Email", row = false }: { orgId: string; seed?: MailSeed; className?: string; label?: string; row?: boolean }) {
+ *  `row` sets it on a line of its own at the card's foot, right-aligned;
+ *  `spaced` gives it a little room above, left-aligned, in a stacked cell.
+ *  Its click and its keys stop at the button, so a row that opens something
+ *  of its own on click or Enter (the Users table) does not open as well. */
+export function EmailContractorButton({ orgId, seed, className = "", label = "Email", row = false, spaced = false }: { orgId: string; seed?: MailSeed; className?: string; label?: string; row?: boolean; spaced?: boolean }) {
   const mail = useContractorMail();
   if (!mail) return null;
   const button = (
     <button
       type="button"
-      className={`${s.cardBtn} ${className}`}
+      className={`${s.cardBtn}${spaced ? ` ${s.spaced}` : ""} ${className}`}
       data-email-contractor={orgId}
       aria-label={`Email ${seed?.ownerName || seed?.business || "this contractor"}`}
       onClick={(e) => { e.stopPropagation(); mail.open(orgId, seed); }}
+      // Only the keys that press it stop here; Escape still reaches the sheet.
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") e.stopPropagation(); }}
     >
       <Mail size={13} aria-hidden="true" />
       {label}

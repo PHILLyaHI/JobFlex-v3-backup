@@ -87,6 +87,6 @@ export const SAMPLES: string[] = [
 export const STAGES: { label: string; dwellMs: number }[] = [
   { label: 'Reading the brief…', dwellMs: 0 },
   { label: 'Planning materials…', dwellMs: 7000 },
-  { label: 'Live pricing…', dwellMs: 14000 },
+  { label: 'Pricing the work…', dwellMs: 14000 },
   { label: 'Building the estimate…', dwellMs: 0 },
 ];

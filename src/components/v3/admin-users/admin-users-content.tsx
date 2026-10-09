@@ -49,6 +49,7 @@ import {
   errorMessage,
 } from "./admin-kit";
 import { useAdminMotion } from "./use-admin-motion";
+import { EmailContractorButton } from "@/components/v3/admin-mail/contractor-mail";
 
 const cx = makeCx(s, shared);
 
@@ -368,6 +369,11 @@ export function AdminUsersContent({
                             {/* On the members line: the name above ellipsises, the stamp must not. */}
                             {u.orgInternal ? <span className={cx("stamp", "au-internal-stamp")}>Internal</span> : null}
                           </div>
+                          {/* Write to the account's owner (2026-10-08): the console's
+                              composer; owners only — the email goes to the owner. */}
+                          {u.orgId && u.roles.includes("OWNER") ? (
+                            <EmailContractorButton spaced orgId={u.orgId} seed={{ business: u.orgName, ownerName: u.name ?? undefined, ownerEmail: u.email }} />
+                          ) : null}
                         </>
                       ) : (
                         <span className={cx("au-dash")}>—</span>
