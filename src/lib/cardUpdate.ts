@@ -31,6 +31,9 @@ export async function openCardUpdate(orgId: string, origin: string): Promise<{ u
   });
   if (sub?.provider !== "STRIPE" || !sub.externalCustomerId || !sub.externalSubId) return null;
   const { stripe } = await getStripeClient();
+  const live = await stripe.subscriptions.retrieve(sub.externalSubId);
+  const customer = typeof live.customer === "string" ? live.customer : live.customer.id;
+  if (customer !== sub.externalCustomerId || !["active", "trialing", "past_due", "unpaid"].includes(live.status)) return null;
   const back = `${origin}/dashboard/subscription`;
   const meta = { organizationId: orgId, jf_purpose: CARD_UPDATE_PURPOSE, subscriptionId: sub.externalSubId };
   const session = await stripe.checkout.sessions.create({
@@ -68,6 +71,14 @@ export async function finishCardUpdate(orgId: string, sessionOrId: string | Stri
   const subId = session.metadata?.subscriptionId;
   const customer = typeof session.customer === "string" ? session.customer : session.customer?.id;
   if (!subId || !customer) return { ok: false, error: "There is no subscription to put the card on." };
+  const current = await db.subscription.findUnique({ where: { organizationId: orgId } });
+  if (current?.provider !== "STRIPE" || current.externalSubId !== subId || current.externalCustomerId !== customer) {
+    return { ok: false, error: "Your subscription changed after this card form was opened. Review your current subscription first." };
+  }
+  const live = await stripe.subscriptions.retrieve(subId);
+  if (!["active", "trialing", "past_due", "unpaid"].includes(live.status)) {
+    return { ok: false, error: "This subscription has ended. Choose a plan to restart it." };
+  }
   const si =
     typeof session.setup_intent === "string" ? await stripe.setupIntents.retrieve(session.setup_intent) : session.setup_intent;
   const pm = si && (typeof si.payment_method === "string" ? si.payment_method : si.payment_method?.id);
@@ -83,7 +94,7 @@ export async function finishCardUpdate(orgId: string, sessionOrId: string | Stri
   for (const inv of open.data) {
     owedCents += inv.amount_remaining ?? inv.amount_due ?? 0;
     try {
-      await stripe.invoices.pay(inv.id, { payment_method: pm });
+      await stripe.invoices.pay(inv.id, { payment_method: pm }, { idempotencyKey: `card-update:${session.id}:${inv.id}` });
     } catch (err) {
       declined = true;
       console.warn(`[card-update] ${orgId}: ${inv.id} declined on the new card:`, err instanceof Error ? err.message : err);

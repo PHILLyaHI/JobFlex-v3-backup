@@ -1,7 +1,8 @@
 import { db } from "@/lib/db";
 import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
 import { CUSTOM_PLAN_TIER } from "@/lib/customPlan";
-import { PLAN_STATUS_SELECT, planLapsed } from "@/lib/planStatus";
+import { planLapsed } from "@/lib/planStatus";
+import { readAccessSubscription } from "@/lib/subscriptionAccess";
 
 /**
  * Resolve an org's effective feature tier.
@@ -18,10 +19,7 @@ import { PLAN_STATUS_SELECT, planLapsed } from "@/lib/planStatus";
  * failed renewal Stripe is still retrying (PAST_DUE) keeps its tier.
  */
 export async function getOrgPlanById(organizationId: string): Promise<Plan> {
-  const sub = await db.subscription.findUnique({
-    where: { organizationId },
-    select: { plan: true, ...PLAN_STATUS_SELECT },
-  });
+  const sub = await readAccessSubscription(organizationId);
   if (!sub?.plan || planLapsed(sub)) return "FREE";
 
   const upper = sub.plan.toUpperCase();

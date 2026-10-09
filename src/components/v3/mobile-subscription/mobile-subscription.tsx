@@ -82,6 +82,7 @@ import {
   type PlanDTO,
 } from "@/lib/planCatalog";
 import type { SubscriptionInvoice } from "@/actions/billing";
+import { BillingRecovery } from "../payment-ribbon/billing-recovery";
 import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
 import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/next-charge-lines";
 import { CancelSubscription } from "@/components/billing/CancelSubscription";
@@ -164,6 +165,7 @@ export function MobileSubscription({
   currentSlug,
   plans,
   status,
+  accessBlocked,
   nextBill,
   trialEndsAt,
   cancelAtPeriodEnd,
@@ -386,6 +388,8 @@ export function MobileSubscription({
             <h1 className="jfms-pageTitle">Subscription</h1>
             <p className="jfms-pageSub">Your plan, what it bills, and what it has cost.</p>
           </div>
+
+          <BillingRecovery isOwner status={status} blocked={accessBlocked} />
 
           {/* ============ PLAN LIMIT BANNER ============
               Raised only by a real cap at ≥90%, and it names that cap. */}

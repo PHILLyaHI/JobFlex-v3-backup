@@ -13,11 +13,12 @@
 // CardUpdateNotice is the return's word: a toast on /dashboard/subscription
 // after Checkout, then the query string is dropped.
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/Toast";
 import s from "../trial-card/trial-card.module.css";
 
-function useUpdateCard() {
+export function useUpdateCard() {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const leaving = React.useRef(false);
@@ -54,24 +55,21 @@ function useUpdateCard() {
 }
 
 export function PaymentRibbon({ isOwner, only }: { isOwner: boolean; only?: "dock" }) {
-  const { go, busy, error } = useUpdateCard();
   const button = (label: string) =>
     isOwner ? (
-      <button type="button" className={s.button} onClick={() => void go()} disabled={busy} aria-busy={busy || undefined} data-payment-ribbon="update-card">
-        {busy ? "Opening…" : label}
-      </button>
+      <Link className={s.button} href="/dashboard/subscription" data-payment-ribbon="review-payment">{label}</Link>
     ) : null;
   // At handheld width the owner's dock is the stamp and the button alone —
   // a line of text beside both broke mid-word in the 300px between them.
   const dock = (
     <div className={`${s.dock} ${s.isEnded}`} role="alert" data-payment-ribbon="dock">
       <span className={s.stamp}>Payment failed</span>
-      {!isOwner || error ? (
+      {!isOwner ? (
         <p className={s.dockText}>
-          {error ?? "Ask the owner to update the card"}
+          Ask the owner to review billing
         </p>
       ) : null}
-      {button("Update your card")}
+      {button("Review payment")}
     </div>
   );
   if (only === "dock") return dock;
@@ -81,11 +79,10 @@ export function PaymentRibbon({ isOwner, only }: { isOwner: boolean; only?: "doc
       <div className={`${s.ribbon} ${s.isEnded}`} role="alert" data-payment-ribbon="ribbon">
         <span className={s.stamp}>Payment failed</span>
         <p className={s.ribbonText}>
-          <b>Update your card.</b>{" "}
-          <span>The last charge for your plan was declined. Your workspace stays open while we try again.</span>
-          {error ? <span role="alert"> {error}</span> : null}
+          <b>Check your payment.</b>{" "}
+          <span>The payment for your plan did not go through. Review the invoice, retry payment or update your card.</span>
         </p>
-        {button("Update card") ?? (
+        {button("Review payment") ?? (
           <span className={s.ribbonText}>
             <span>Ask the owner to update the card.</span>
           </span>
@@ -105,7 +102,7 @@ export function CardUpdateNotice({ kind, detail }: { kind: CardUpdateNoticeKind;
     shown.current = true;
     if (kind === "paid") toast.success("Card updated", "The payment went through — your plan is active again.");
     else if (kind === "saved") toast.success("Card updated", "It will be used for your next bill.");
-    else if (kind === "declined") toast.error("The new card was declined too", "Try another card — your workspace stays open while we retry.");
+    else if (kind === "declined") toast.error("Payment could not be completed", "Review the payment details on Subscription or try another card.");
     else if (kind === "cancelled") toast.info("No card was added", "Your card on file is unchanged.");
     else toast.error("Couldn't update the card", detail ?? "Try again in a minute.");
     router.replace("/dashboard/subscription");

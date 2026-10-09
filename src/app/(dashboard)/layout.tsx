@@ -158,7 +158,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="px-6 lg:px-10 py-8 max-w-[1400px] mx-auto pb-24 md:pb-8">
             {showTrial && activeOrgId && <TrialRibbon view={showTrial} isOwner={activeRole === "OWNER"} orgId={activeOrgId} />}
             {/* A declined renewal Stripe is retrying (components/v3/payment-ribbon). */}
-            {!trial && subscription?.status === "PAST_DUE" && <PaymentRibbon isOwner={activeRole === "OWNER"} />}
+            {!trial && ["PAST_DUE", "UNPAID"].includes(subscription?.status ?? "") && <PaymentRibbon isOwner={activeRole === "OWNER"} />}
             <DashboardAnnouncementDismiss
               announcements={announcements.map((a) => ({
                 id: a.id,

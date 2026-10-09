@@ -35,6 +35,8 @@
   text-align: center;
 }
 
+.jf-upgate.jf-upgate .jf-upgate-recovery { width: min(660px, 100%); min-width: 0; }
+
 .jf-upgate.jf-upgate .jf-upgate-kick {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 10px;

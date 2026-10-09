@@ -30,7 +30,8 @@ import {
   normalizeCustomPages,
   type CustomPageId,
 } from "@/lib/customPlan";
-import { PLAN_STATUS_SELECT, planLapsed } from "@/lib/planStatus";
+import { planLapsed } from "@/lib/planStatus";
+import { readAccessSubscription } from "@/lib/subscriptionAccess";
 
 /** The error an add-on's server code throws for an org that did not buy it. */
 export class CustomPageLockedError extends Error {
@@ -59,7 +60,7 @@ export function isCustomPageLockedError(err: unknown): err is CustomPageLockedEr
  *  when the plan cannot be read — callers that must fail closed (requirePage)
  *  let it propagate. */
 async function readPageAccess(organizationId: string): Promise<{ lapsed: boolean; pages: string[] | null }> {
-  const sub = await db.subscription.findUnique({ where: { organizationId }, select: { plan: true, ...PLAN_STATUS_SELECT } });
+  const sub = await readAccessSubscription(organizationId);
   if (planLapsed(sub)) return { lapsed: true, pages: [] };
   return { lapsed: false, pages: await readCustomPages(organizationId, sub?.plan ?? null) };
 }

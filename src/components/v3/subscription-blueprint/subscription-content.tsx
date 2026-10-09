@@ -55,6 +55,7 @@ import { initSubscriptionContent } from "./subscription-behavior";
 import { SubscriptionSprite } from "./subscription-sprite";
 // Type-only: erased at compile, so the loader's server imports never reach
 // this client bundle.
+import { BillingRecovery } from "../payment-ribbon/billing-recovery";
 import type { SubscriptionViewProps } from "@/app/(dashboard)/dashboard/subscription/subscription-load";
 import { CancelSubscription } from "@/components/billing/CancelSubscription";
 import { nextChargeLines, usd } from "@/app/(dashboard)/dashboard/subscription/next-charge-lines";
@@ -237,6 +238,8 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
           </Link>
         </div>
       </div>
+
+      <BillingRecovery isOwner status={props.status} blocked={props.accessBlocked} />
 
       {/* CURRENT PLAN HERO */}
       <section className={cx("sub-hero", RV)}>

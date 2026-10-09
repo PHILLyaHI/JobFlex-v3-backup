@@ -172,7 +172,7 @@ export default async function DashboardBlueprintLayout({
       .findUnique({ where: { organizationId: ctx.organizationId }, select: { plan: true, status: true } })
       .catch(() => undefined);
     plan = planRow === undefined ? null : (planRow?.plan ?? "FREE");
-    paymentFailed = planRow?.status === "PAST_DUE";
+    paymentFailed = ["PAST_DUE", "UNPAID"].includes(planRow?.status ?? "");
   } catch {
     // Signed out, or no membership yet. The page decides what happens next.
   }

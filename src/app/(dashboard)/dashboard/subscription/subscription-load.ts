@@ -30,6 +30,8 @@ import { LIMIT_DEFS } from "@/lib/planLimits";
 import { titleCaseSlug, type PlanDTO } from "@/lib/planCatalog";
 import type { SubscriptionInvoice } from "@/actions/billing";
 import { readPlanGrant } from "@/lib/planGrant";
+import { readAccessSubscription } from "@/lib/subscriptionAccess";
+import { planLapsed } from "@/lib/planStatus";
 
 // The result shape. These interfaces lived in ./subscription-view.tsx until
 // 2026-08-13, when that desktop view was superseded by the blueprint page at
@@ -54,6 +56,7 @@ export interface SubscriptionViewProps {
   /** Active catalog plans, display-ordered. */
   plans: PlanDTO[];
   status: string;
+  accessBlocked?: boolean;
   nextBill: string | null;
   trialEndsAt: string | null;
   /** A cancellation is booked for the end of this cycle (billing.ts's
@@ -145,7 +148,7 @@ export async function loadSubscriptionData(
   organizationId: string,
 ): Promise<SubscriptionViewProps> {
   const [sub, planContext, plans, limitOverview, code] = await Promise.all([
-    db.subscription.findUnique({ where: { organizationId } }),
+    readAccessSubscription(organizationId),
     getOrgPlanContext(organizationId),
     getPlanCatalog(),
     getOrgLimitOverview(organizationId),
@@ -200,7 +203,7 @@ export async function loadSubscriptionData(
   const grant = sub?.provider === "MANUAL" && sub.status === "ACTIVE" ? await readPlanGrant(organizationId) : null;
   const complimentary =
     sub?.provider === "MANUAL" && sub.status === "ACTIVE"
-      ? { endsAt: grant?.endsAt ?? sub.currentPeriodEnd?.toISOString() ?? null, after: grant?.fallback ?? ("free" as const) }
+      ? { endsAt: grant ? grant.endsAt : sub.currentPeriodEnd?.toISOString() ?? null, after: grant?.fallback ?? ("free" as const) }
       : null;
   const { plan: planDto, rawPlan } = planContext;
 
@@ -301,6 +304,7 @@ export async function loadSubscriptionData(
     currentSlug: planDto?.slug ?? rawPlan.toLowerCase(),
     plans,
     status,
+    accessBlocked: planLapsed(sub),
     nextBill: !complimentary && sub?.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
     trialEndsAt: sub?.trialEndsAt ? sub.trialEndsAt.toISOString() : null,
     cancelAtPeriodEnd: Boolean(sub?.canceledAt),

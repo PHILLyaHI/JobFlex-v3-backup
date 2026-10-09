@@ -55,6 +55,7 @@
 // budgets and ledgers; this is the plan's caps only.
 // ─────────────────────────────────────────────────────────────────────────
 import { planLapsed } from "@/lib/planStatus";
+import { readAccessSubscription } from "@/lib/subscriptionAccess";
 import { db } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import {
@@ -254,10 +255,7 @@ async function resolvePlan(
   actor?: LimitActor,
 ): Promise<{ limits: PlanLimits; cycleStart: Date; resets: UsageResetMarks; exempt: boolean }> {
   const [sub, resets, exempt] = await Promise.all([
-    db.subscription.findUnique({
-      where: { organizationId },
-      select: { plan: true, status: true, currentPeriodEnd: true, trialEndsAt: true },
-    }),
+    readAccessSubscription(organizationId),
     readUsageResetMarks(organizationId),
     (actor && "actorId" in actor ? Promise.resolve(actor.actorId) : currentUserId()).then((uid) => isPlanLimitExempt(organizationId, uid)),
   ]);

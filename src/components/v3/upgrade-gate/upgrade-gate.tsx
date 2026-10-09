@@ -30,6 +30,7 @@ import { addCustomPages, previewCustomPagesChange } from "@/actions/billing";
 import { toast } from "@/components/ui/Toast";
 import { CUSTOM_PAGE_CENTS, CUSTOM_PAGES, PLAN_ENDED_MARK, pageForPath } from "@/lib/customPlan";
 import "./upgrade-gate.css";
+import { BillingRecovery } from "../payment-ribbon/billing-recovery";
 
 function money(cents: number): string {
   const d = cents / 100;
@@ -100,25 +101,8 @@ export function UpgradeGate({
   if (ended) {
     return (
       <div className="jf-upgate" data-nest="">
-        <div className="jf-upgate-card">
-          <div className="jf-upgate-kick">Plan ended</div>
-          <svg className="jf-upgate-lock" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4" y="11" width="16" height="10" rx="1.5" />
-            <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-          </svg>
-          <h1 className="jf-upgate-h">{label} is closed.</h1>
-          <p className="jf-upgate-p">
-            Your plan has ended, so its tools are closed. Everything you made is still here — proposals, clients and
-            jobs stay open. {isOwner ? "Choose a plan to open this again." : "Ask the account owner to choose a plan."}
-          </p>
-          <div className="jf-upgate-row">
-            <Link className="jf-upgate-go" href={"/dashboard/subscription" as Route}>
-              {isOwner ? "Choose a plan" : "See subscription"}
-            </Link>
-            <Link className="jf-upgate-back" href={"/dashboard" as Route}>
-              Back to overview
-            </Link>
-          </div>
+        <div className="jf-upgate-recovery">
+          <BillingRecovery isOwner={isOwner} pageLabel={label} blocked />
         </div>
       </div>
     );

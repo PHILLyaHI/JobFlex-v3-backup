@@ -6,7 +6,8 @@
 // plan values are uppercase ("STARTER") while slugs are lowercase, and SQLite
 // has no case-insensitive query mode (same rationale as limitsEngine.ts).
 
-import { PLAN_STATUS_SELECT, planLapsed } from "@/lib/planStatus";
+import { planLapsed } from "@/lib/planStatus";
+import { readAccessSubscription } from "@/lib/subscriptionAccess";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { PLAN_TIERS, type Plan } from "@/lib/entitlements";
@@ -137,10 +138,7 @@ export async function getOrgPlanContext(organizationId: string): Promise<{
   plan: PlanDTO | null;
   rawPlan: string;
 }> {
-  const sub = await db.subscription.findUnique({
-    where: { organizationId },
-    select: { plan: true, ...PLAN_STATUS_SELECT },
-  });
+  const sub = await readAccessSubscription(organizationId);
   // No subscription row → nothing to display as a plan (the Free tier is no
   // longer presented; the limits engine still enforces the internal cap-floor
   // row on its own). Tier stays FREE — the boolean-feature floor is unchanged.
