@@ -305,6 +305,12 @@ export interface CatalogItem {
   cost?: number;
   source: "shop" | "ahri" | "neep" | "manufacturer";
   verifiedOn?: string;
+  /** The product line the row belongs to ("XR14", "GLXT7C"); a shop row without one is grouped by its model with the size code stripped. */
+  family?: string;
+  /** Off the engine's pick list — the shop does not sell it, or the state does not allow it. The row stays in the catalog (2026-10-09). */
+  offList?: boolean;
+  /** The shop's own note on the row ("our volume box", "ask Johnstone for the suffix"). */
+  shopNote?: string;
 }
 
 export type CheckStatus = "pass" | "fix" | "verify";

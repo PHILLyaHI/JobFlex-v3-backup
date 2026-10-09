@@ -96,6 +96,7 @@ export function expandFamily(f: UsFamily): CatalogItem[] {
       brand: f.brand,
       model,
       tier: f.tier,
+      family: f.family,
       refrigerant: f.refrigerant,
       staging: f.staging,
       coldClimate: f.coldClimate,

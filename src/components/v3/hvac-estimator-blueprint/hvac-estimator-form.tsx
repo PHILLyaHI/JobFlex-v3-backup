@@ -623,7 +623,8 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
   const ready = !!model && (!def.needs.load || (def.needs.zone ? (jobInput.zoneSqft ?? 0) > 0 : model.conditionedSqft > 0));
   // Everything downstream reads one list: the shop's rows plus the unit the
   // contractor typed for this estimate.
-  const catalogItems = React.useMemo(() => (custom ? [...(catalog?.items ?? []).filter((c) => c.id !== custom.id), custom] : catalog?.items ?? []), [catalog, custom]);
+  // Rows the shop turned off on the catalog page (offList) never reach the engine; a typed unit always does.
+  const catalogItems = React.useMemo(() => { const live = (catalog?.items ?? []).filter((c) => !c.offList); return custom ? [...live.filter((c) => c.id !== custom.id), custom] : live; }, [catalog, custom]);
   const engineRaw = React.useMemo<EngineResult | null>(() => (model && catalog && ready ? runEngine(model, { catalog: catalogItems, job, input: jobInput, outdoorKind: outdoorKind ?? undefined }) : null), [model, catalog, catalogItems, ready, job, jobInput, outdoorKind]);
   // AC or heat pump outside, each priced as the whole job at its Better tier,
   // when the job allows both and the catalog fits both.
@@ -2267,7 +2268,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                 <div className={cx("how-b")}><b>Load the US catalog</b> puts the most-sold American families on the pick list — Goodman, Carrier, Trane, Lennox, Rheem, Mitsubishi and the water-heater makers — as Good · Better · Best ladders with their published ratings. Download the CSV, put your costs in the <b>cost</b> column, delete what you don’t sell, and import it back with “Replace”. A hyphenated size (GLXT7C-036) is the family plus the nominal size — swap in your distributor’s exact model there. Or bring your own: one row per unit the shop installs. Columns: <b>{CATALOG_CSV_COLUMNS.join(", ")}</b> — kind, brand and model are required; a <b>cost</b> lets the ledger price from your number instead of the rate-card default; heat-pump rows want heat47/17/5 for the capacity curve. <a className={cx("link")} href={templateHref} download="jobflex-hvac-catalog-template.csv">Download the template</a>. An <b>AHRI</b> subscriber export or the <b>NEEP</b> cold-climate list (saved as CSV) imports as is — the columns are read by meaning and the import says which it used.</div>
               </details>
               <div className={cx("acts")}>
-                <a className={cx("btn", "btn-primary")} href="/dashboard/inventory?trade=hvac#catalog"><svg className={cx("ic")}><use href="#i-box" /></svg>Manage catalog</a>
+                <a className={cx("btn", "btn-primary")} href="/dashboard/hvac-estimator/catalog"><svg className={cx("ic")}><use href="#i-box" /></svg>Manage catalog</a>
                 <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void onLoadUs()}>Load the US catalog</button>
                 <label className={cx("btn", "btn-ghost")} htmlFor="hv-csv"><svg className={cx("ic")}><use href="#i-download" /></svg>Import CSV<input id="hv-csv" type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => void onCsv(e.target.files?.[0])} /></label>
                 <label className={cx("chk")} htmlFor="hv-replace" style={{ height: 38 }}><input id="hv-replace" type="checkbox" checked={replaceCat} onChange={(e) => setReplaceCat(e.target.checked)} /><span>Replace the current catalog</span></label>

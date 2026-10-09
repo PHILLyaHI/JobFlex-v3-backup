@@ -1,0 +1,193 @@
+/* ============================================================
+   HVAC EQUIPMENT CATALOG — blueprint sheet (2026-10-09)
+   The head, buttons, KPI strip, cards, tables, plates and forms are the
+   service menu's (hvac-services.module.css), so the two HVAC books read as
+   one design; the category rail, the state bar, the switch and the code
+   badges are this page's own.
+   ── NO @keyframes (Lightning CSS rejects them in a module) ──
+   ── Light mode only. ──
+   ============================================================ */
+
+:global(.jf-blueprint .content) .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding-top: 6px; margin-bottom: 14px; }
+:global(.jf-blueprint .content) .kicker { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+:global(.jf-blueprint .content) .kicker::before { content: ''; width: 7px; height: 7px; background: var(--sky); border-radius: 50%; }
+:global(.jf-blueprint .content) .page-title { font-size: 46px; font-weight: 900; letter-spacing: -0.03em; text-transform: uppercase; line-height: 0.95; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .page-actions { display: flex; gap: 10px; align-items: center; }
+:global(.jf-blueprint .content) svg.ic { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+:global(.jf-blueprint .content) .btn { display: inline-flex; align-items: center; gap: 9px; padding: 0 16px; height: 40px; border: var(--border); border-radius: var(--radius); font-size: 12px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; text-decoration: none; cursor: pointer; transition: transform 0.12s var(--ease), box-shadow 0.12s var(--ease), background 0.12s; }
+:global(.jf-blueprint .content) .btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+:global(.jf-blueprint .content) .btn:active { transform: translate(0, 0); box-shadow: none; }
+:global(.jf-blueprint .content) .btn-primary { background: var(--blueprint); color: #fff; }
+:global(.jf-blueprint .content) .btn-primary:hover { background: var(--blueprint-dark); }
+:global(.jf-blueprint .content) .btn-ghost { background: #fff; color: var(--ink); }
+:global(.jf-blueprint .content) .btn-ghost:hover { background: var(--paper-deep); }
+:global(.jf-blueprint .content) .btn--sm { height: 34px; padding: 0 12px; font-size: 11px; }
+:global(.jf-blueprint .content) .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+:global(.jf-blueprint .content) .btn:disabled:hover { transform: none; box-shadow: none; }
+
+/* ── kpis ── */
+:global(.jf-blueprint .content) .kpis { display: grid; grid-template-columns: repeat(4, 1fr); border: var(--border); border-radius: var(--radius); background: #fff; overflow: hidden; box-shadow: 3px 3px 0 var(--shadow); margin-bottom: 18px; }
+:global(.jf-blueprint .content) .kpi { padding: 18px 22px 20px; border-right: 1.5px solid var(--ink); min-width: 0; }
+:global(.jf-blueprint .content) .kpi:last-child { border-right: none; }
+:global(.jf-blueprint .content) .kpi-lbl { font-size: 11px; font-weight: 800; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+:global(.jf-blueprint .content) .kpi-val { font-size: 34px; font-weight: 900; letter-spacing: -0.005em; line-height: 1; font-variant-numeric: tabular-nums; }
+:global(.jf-blueprint .content) .kpi-val--sm { font-size: 24px; line-height: 1.15; overflow-wrap: anywhere; }
+:global(.jf-blueprint .content) .kpi-sub { font-family: var(--font-mono); font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+/* ── cards + stack ── */
+:global(.jf-blueprint .content) .stack { display: grid; gap: 18px; }
+:global(.jf-blueprint .content) .card { background: #fff; border: var(--border); border-radius: var(--radius); padding: 18px 22px 22px; position: relative; box-shadow: 3px 3px 0 var(--shadow); min-width: 0; }
+:global(.jf-blueprint .content) .card-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+:global(.jf-blueprint .content) .card-t { font-size: 15px; font-weight: 800; letter-spacing: -0.01em; }
+:global(.jf-blueprint .content) .card-s { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+:global(.jf-blueprint .content) .hint { font-size: 13px; line-height: 1.5; color: var(--muted); margin: 0; }
+:global(.jf-blueprint .content) .none { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 32px 18px; border: 1.5px dashed var(--muted-faint, #b9b4a8); border-radius: var(--radius); text-align: center; font-size: 14px; font-weight: 500; color: var(--muted); }
+
+/* ── tables ── */
+:global(.jf-blueprint .content) .tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+:global(.jf-blueprint .content) .tbl th { text-align: left; font-size: 11px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); padding: 6px 10px 8px 0; border-bottom: 1.5px solid var(--ink); }
+:global(.jf-blueprint .content) .tbl td { padding: 10px 10px 10px 0; border-bottom: 1px solid var(--hair-soft, #e3e1da); vertical-align: middle; }
+:global(.jf-blueprint .content) .tbl tr:last-child td { border-bottom: none; }
+:global(.jf-blueprint .content) .tbl .mono { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+:global(.jf-blueprint .content) .tbl .who { font-weight: 800; }
+:global(.jf-blueprint .content) .tbl .sub { display: block; font-size: 12.5px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+:global(.jf-blueprint .content) .tbl-edit th:nth-child(2) { width: 90px; }
+:global(.jf-blueprint .content) .tbl-edit th:nth-child(3) { width: 120px; }
+:global(.jf-blueprint .content) .tbl-edit th:nth-child(4) { width: 130px; }
+:global(.jf-blueprint .content) .tbl-edit th:nth-child(5) { width: 80px; }
+:global(.jf-blueprint .content) .tbl-edit th:nth-child(6) { width: 120px; }
+:global(.jf-blueprint .content) .fam td { background: var(--paper, #f6f4ee); border-bottom: 1.5px solid var(--ink); padding-top: 12px; padding-bottom: 10px; }
+:global(.jf-blueprint .content) .fam-name { font-weight: 800; font-size: 14px; }
+:global(.jf-blueprint .content) .fam-n { white-space: nowrap; }
+:global(.jf-blueprint .content) .row-off td { opacity: 0.5; }
+:global(.jf-blueprint .content) .row-off td:nth-child(5), :global(.jf-blueprint .content) .row-off td.row-acts { opacity: 1; }
+:global(.jf-blueprint .content) .row-acts { white-space: nowrap; text-align: right; }
+:global(.jf-blueprint .content) .row-acts .link + .link { margin-left: 10px; }
+:global(.jf-blueprint .content) .edit-row td { background: var(--paper, #f6f4ee); }
+:global(.jf-blueprint .content) .acts { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+:global(.jf-blueprint .content) .acts-cat { margin-top: 12px; }
+/* the file picker behind the Import button (a class, not an inline style — React 19 reports the inline form as a hydration mismatch) */
+:global(.jf-blueprint .content) .file-in { display: none; }
+:global(.jf-blueprint .content) .sure { font-size: 13px; }
+:global(.jf-blueprint .content) .link { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; font-weight: 700; color: var(--blueprint); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+:global(.jf-blueprint .content) .link:disabled { opacity: 0.5; cursor: default; }
+:global(.jf-blueprint .content) .link-danger { color: var(--danger, #a83232); }
+
+/* ── plates, badges ── */
+:global(.jf-blueprint .content) .plate { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; font-family: var(--font-mono); font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap; }
+:global(.jf-blueprint .content) .plate--active { color: var(--success, #2e7d32); border-color: var(--success, #2e7d32); }
+:global(.jf-blueprint .content) .plate--sent { color: var(--blueprint); border-color: var(--blueprint); }
+:global(.jf-blueprint .content) .plate--expired { color: var(--muted); border-color: var(--muted); }
+:global(.jf-blueprint .content) .tag { margin-left: 8px; padding: 1px 6px; font-size: 10.5px; vertical-align: 1px; }
+:global(.jf-blueprint .content) .fit { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: var(--radius); border: 1.5px solid; font-family: var(--font-mono); font-size: 10.5px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; cursor: help; }
+:global(.jf-blueprint .content) .fit-ok { color: var(--success, #2e7d32); border-color: var(--success, #2e7d32); background: #eef7ee; }
+:global(.jf-blueprint .content) .fit-confirm { color: var(--warning, #b88420); border-color: var(--warning, #b88420); background: #fbf4e4; }
+:global(.jf-blueprint .content) .fit-no { color: var(--danger, #a83232); border-color: var(--danger, #a83232); background: #fbeeee; }
+:global(.jf-blueprint .content) .fit-txt-confirm { color: var(--warning, #b88420); }
+:global(.jf-blueprint .content) .fit-txt-no { color: var(--danger, #a83232); }
+
+/* ── the switch ── */
+:global(.jf-blueprint .content) .switch { position: relative; width: 44px; height: 24px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; padding: 0; cursor: pointer; transition: background 0.12s; }
+:global(.jf-blueprint .content) .switch-knob { position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; border-radius: 50%; background: var(--ink); transition: transform 0.12s var(--ease); }
+:global(.jf-blueprint .content) .switch-on { background: var(--blueprint); border-color: var(--blueprint); }
+:global(.jf-blueprint .content) .switch-on .switch-knob { background: #fff; transform: translateX(20px); }
+:global(.jf-blueprint .content) .switch-sm { width: 38px; height: 22px; }
+:global(.jf-blueprint .content) .switch-sm .switch-knob { width: 15px; height: 15px; }
+:global(.jf-blueprint .content) .switch-sm.switch-on .switch-knob { transform: translateX(16px); }
+:global(.jf-blueprint .content) .switch:disabled { opacity: 0.5; cursor: wait; }
+:global(.jf-blueprint .content) .brand-h { align-items: center; }
+:global(.jf-blueprint .content) .brand-sw { display: inline-flex; align-items: center; gap: 10px; }
+
+/* ── the state bar + tools ── */
+:global(.jf-blueprint .content) .tools { padding: 14px 18px; }
+:global(.jf-blueprint .content) .statebar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-bottom: 12px; margin-bottom: 12px; border-bottom: 1.5px solid var(--hair-soft, #e3e1da); }
+:global(.jf-blueprint .content) .fld-state { flex: 0 0 220px; }
+:global(.jf-blueprint .content) .statebar-txt { flex: 1 1 320px; min-width: 0; font-size: 13px; line-height: 1.45; color: var(--muted); }
+:global(.jf-blueprint .content) .statebar-txt b { color: var(--ink); }
+:global(.jf-blueprint .content) .tools-row { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
+:global(.jf-blueprint .content) .tools-row :global(.search) { flex: 0 0 320px; max-width: 320px; background: #fff; padding: 0 12px; gap: 10px; }
+:global(.jf-blueprint .content) .tools-row :global(.search .ic) { width: 16px; height: 16px; flex: 0 0 16px; }
+:global(.jf-blueprint .content) .views { display: flex; gap: 6px; flex: 1 1 0; min-width: 0; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .view { display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border: 1.5px solid var(--hair, #d8d4ca); border-radius: var(--radius); background: #fff; font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; white-space: nowrap; }
+:global(.jf-blueprint .content) .view.on { border-color: var(--ink); color: var(--ink); background: var(--paper, #f6f4ee); }
+:global(.jf-blueprint .content) .view-n { font-family: var(--font-mono); font-size: 11px; }
+:global(.jf-blueprint .content) .tools-row :global(.search):focus-within { outline: 2px solid var(--blueprint); outline-offset: -1px; }
+:global(.jf-blueprint .content) .tools-row :global(.search) input:focus-visible { outline: none; }
+
+/* ── the category rail ── */
+:global(.jf-blueprint .content) .cats { display: flex; gap: 8px; flex-wrap: wrap; }
+:global(.jf-blueprint .content) .cat { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 14px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; font-size: 12.5px; font-weight: 800; letter-spacing: 0.02em; cursor: pointer; white-space: nowrap; }
+:global(.jf-blueprint .content) .cat.on { background: var(--ink); color: #fff; }
+:global(.jf-blueprint .content) .cat-n { font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: var(--muted); }
+:global(.jf-blueprint .content) .cat.on .cat-n { color: rgba(255, 255, 255, 0.75); }
+
+/* ── forms ── */
+:global(.jf-blueprint .content) .frm { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; }
+:global(.jf-blueprint .content) .frm .wide { grid-column: 1 / -1; }
+:global(.jf-blueprint .content) .frm-edit { margin: 4px 0; padding: 12px; border: 1.5px solid var(--ink); background: #fff; }
+:global(.jf-blueprint .content) .fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+:global(.jf-blueprint .content) .lbl { font-size: 11px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
+:global(.jf-blueprint .content) .in, :global(.jf-blueprint .content) .sel { font: inherit; font-size: 13px; padding: 8px 10px; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; color: var(--ink); width: 100%; min-height: 38px; }
+:global(.jf-blueprint .content) .in:disabled { opacity: 0.5; }
+:global(.jf-blueprint .content) .chk { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+:global(.jf-blueprint .content) .money { display: inline-flex; align-items: center; border: 1.5px solid var(--ink); border-radius: var(--radius); background: #fff; }
+:global(.jf-blueprint .content) .money-sign { padding: 0 6px; font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+:global(.jf-blueprint .content) .in-money { width: 84px; min-height: 0; height: 32px; padding: 0 8px 0 0; border: 0; font-family: var(--font-mono); font-size: 14px; font-weight: 700; text-align: right; }
+:global(.jf-blueprint .content) .in-money::placeholder { font-weight: 500; font-size: 11px; color: var(--muted); }
+:global(.jf-blueprint .content) .in-money:focus-visible { outline: none; }
+:global(.jf-blueprint .content) .money:focus-within { outline: 2px solid var(--blueprint); outline-offset: 1px; }
+:global(.jf-blueprint .content) .note { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 9px 12px; border: 1.5px solid var(--ink); border-left-width: 5px; background: #fff; font-size: 13px; }
+:global(.jf-blueprint .content) .note-ok { border-color: var(--success, #2e7d32); }
+:global(.jf-blueprint .content) .note-err { border-color: var(--danger, #a83232); color: var(--danger, #a83232); }
+:global(.jf-blueprint .content) .note-x { margin-left: auto; width: 28px; height: 28px; border: 0; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
+
+@media (max-width: 900px) {
+  :global(.jf-blueprint .content) .kpis { grid-template-columns: 1fr 1fr; }
+  :global(.jf-blueprint .content) .kpi:nth-child(2) { border-right: none; }
+  :global(.jf-blueprint .content) .kpi:nth-child(-n+2) { border-bottom: 1.5px solid var(--ink); }
+  :global(.jf-blueprint .content) .frm { grid-template-columns: 1fr 1fr; }
+  :global(.jf-blueprint .content) .page-title { font-size: 34px; }
+  :global(.jf-blueprint .content) .card { padding: 14px 14px 16px; }
+}
+
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .kpi { padding: 12px 14px 14px; }
+  :global(.jf-blueprint .content) .kpi-val { font-size: 26px; }
+  :global(.jf-blueprint .content) .statebar { gap: 10px; }
+  :global(.jf-blueprint .content) .fld-state { flex: 1 1 100%; }
+  :global(.jf-blueprint .content) .statebar .btn--sm { height: 44px; }
+  :global(.jf-blueprint .content) .tools-row { flex-wrap: wrap; }
+  :global(.jf-blueprint .content) .tools-row :global(.search) { flex: 1 1 100%; max-width: none; height: 44px; }
+  :global(.jf-blueprint .content) .views { flex: 1 1 100%; width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+  :global(.jf-blueprint .content) .views::-webkit-scrollbar { display: none; }
+  :global(.jf-blueprint .content) .view { flex: 0 0 auto; height: 40px; }
+  :global(.jf-blueprint .content) .acts-cat .btn--sm { height: 44px; }
+  :global(.jf-blueprint .content) .cats { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; padding-bottom: 4px; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+  :global(.jf-blueprint .content) .cats::-webkit-scrollbar { display: none; }
+  :global(.jf-blueprint .content) .cat { height: 44px; flex: 0 0 auto; }
+  :global(.jf-blueprint .content) .frm { grid-template-columns: 1fr; }
+  :global(.jf-blueprint .content) .in, :global(.jf-blueprint .content) .sel { min-height: 44px; }
+  :global(.jf-blueprint .content) .in-money { height: 42px; }
+  :global(.jf-blueprint .content) .switch { width: 50px; height: 28px; }
+  :global(.jf-blueprint .content) .switch-knob { width: 21px; height: 21px; }
+  :global(.jf-blueprint .content) .switch-on .switch-knob { transform: translateX(22px); }
+  :global(.jf-blueprint .content) .switch-sm { width: 46px; height: 26px; }
+  :global(.jf-blueprint .content) .switch-sm .switch-knob { width: 19px; height: 19px; }
+  :global(.jf-blueprint .content) .switch-sm.switch-on .switch-knob { transform: translateX(20px); }
+  :global(.jf-blueprint .content) .tbl-wrap { overflow: visible; }
+  :global(.jf-blueprint .content) .tbl-edit { display: block; }
+  :global(.jf-blueprint .content) .tbl-edit thead { display: none; }
+  :global(.jf-blueprint .content) .tbl-edit tbody, :global(.jf-blueprint .content) .tbl-edit tr { display: block; }
+  :global(.jf-blueprint .content) .tbl-edit tr { padding: 10px 0 12px; border-bottom: 1.5px solid var(--hair, #e3e1da); }
+  :global(.jf-blueprint .content) .tbl-edit tr:last-child { border-bottom: none; }
+  :global(.jf-blueprint .content) .tbl-edit td { display: block; padding: 4px 0; border: 0; }
+  :global(.jf-blueprint .content) .tbl-edit td[data-l]:not([data-l=""])::before { content: attr(data-l); display: inline-block; min-width: 86px; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-right: 8px; }
+  :global(.jf-blueprint .content) .tbl-edit td[data-l="Model"]::before { display: none; }
+  :global(.jf-blueprint .content) .fam td { background: transparent; border-bottom: 0; padding: 4px 0; }
+  :global(.jf-blueprint .content) .fam { background: var(--paper, #f6f4ee); margin: 0 -14px; padding: 10px 14px; }
+  :global(.jf-blueprint .content) .tbl-edit td.row-acts { text-align: left; display: flex; gap: 16px; margin-top: 4px; }
+  :global(.jf-blueprint .content) .row-acts .link + .link { margin-left: 0; }
+  :global(.jf-blueprint .content) .row-acts .link { min-height: 44px; display: inline-flex; align-items: center; }
+  :global(.jf-blueprint .content) .tbl-edit th { width: auto; }
+}
