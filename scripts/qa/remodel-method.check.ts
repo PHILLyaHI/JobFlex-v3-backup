@@ -212,7 +212,8 @@ const det: Array<[string, string]> = [
   ["install 400 sq ft epoxy floor", "epoxy-flooring"],
   ["build a 6 ft cedar fence 150 ft", "fencing"],
   ["water heater replacement 50 gal", "water-heater-replacement"],
-  ["commercial roof TPO 12000 sqft", "roofing"],
+  // A TPO membrane is commercial roofing's own procedure since 2026-10-09; it was filed under residential roofing before.
+  ["commercial roof TPO 12000 sqft", "commercial-roofing"],
   ["full kitchen remodel 12x14 with an island, Kirkland WA", "kitchen-remodel"],
   ["full bathroom remodel Kirkland WA", "bathroom-remodel"],
 ];

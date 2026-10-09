@@ -35,8 +35,12 @@ const STOP_WORDS = new Set([
  *  lowercase; values must be valid specialty ids in `lib/ai/specialties.ts`. */
 const PRIMARY_TRADE_TOKEN: Record<string, string> = {
   fence: 'fencing', fencing: 'fencing', fences: 'fencing',
-  roof: 'roofing', roofing: 'roofing', shingle: 'roofing', shingles: 'roofing', asphalt: 'roofing',
-  electrical: 'electrical', electrician: 'electrical', wiring: 'electrical', breaker: 'electrical', panel: 'electrical',
+  // "asphalt" alone is a driveway as often as a roof: asphalt SHINGLES vote below.
+  roof: 'roofing', roofing: 'roofing', reroof: 'roofing', reroofing: 'roofing', shingle: 'roofing', shingles: 'roofing',
+  // "panel" alone is a fence, siding, solar or door panel as often: the
+  // electrical panel votes below.
+  electrical: 'electrical', electrician: 'electrical', wiring: 'electrical', breaker: 'electrical',
+  circuit: 'electrical', circuits: 'electrical', outlet: 'electrical', outlets: 'electrical', receptacle: 'electrical', receptacles: 'electrical',
   plumbing: 'plumbing', plumber: 'plumbing',
   hvac: 'hvac', minisplit: 'hvac', condenser: 'hvac', furnace: 'hvac',
   epoxy: 'epoxy-flooring', polyaspartic: 'epoxy-flooring', polyurea: 'epoxy-flooring',
@@ -75,7 +79,24 @@ const PRIMARY_TRADE_TOKEN: Record<string, string> = {
  * keyword pass (appliance repair, plumbing).
  */
 const REPAIR_WORDS = /\b(?:repair|fix|broken|not\s+working|won'?t|doesn'?t|leak\w*|clog\w*|running|noisy|stuck)\b/i;
-const PHRASE_VOTES: Array<{ re: RegExp; id: string; bonus: number; unlessRepair?: boolean }> = [
+const PHRASE_VOTES: Array<{ re: RegExp; id: string; bonus: number; unlessRepair?: boolean; unless?: RegExp }> = [
+  // 2026-10-09: briefs the token pass filed under the wrong trade — a re-roof
+  // with "architectural shingles" under architect, "asphalt shingles" under
+  // asphalt paving, a deck "on existing framing" under framing, new circuits
+  // "in the garage" under garage building; AC, lights, switches and sod named
+  // no trade at all.
+  { re: /\bre-?roof\w*|\basphalt\s+shingles?|\broof\s+replacement|\breplac\w*\s+(?:the\s+|a\s+|my\s+|our\s+)?(?:\w+\s+){0,3}roof\b/i, id: 'roofing', bonus: 150, unless: /\bcommercial\b|\btpo\b|\bepdm\b|\bmodified\s+bitumen|\bbuilt-up\b|\bmembrane\b/i },
+  { re: /\b(?:electrical|breaker|main|service|sub-?)\s*panels?\b|\bpanel\s+upgrade\b|\b\d{3}\s*-?\s*amps?\b/i, id: 'electrical', bonus: 150 },
+  { re: /\b(?:tpo|epdm|modified\s+bitumen|built-up\s+roof\w*)\b|\bcommercial\b[^.]{0,30}\bre-?roof|\bcommercial\s+roof/i, id: 'commercial-roofing', bonus: 220 },
+  { re: /\bwater\s+heaters?\b/i, id: 'water-heater-replacement', bonus: 150, unless: /\btankless\b/i },
+  { re: /\btankless\b/i, id: 'tankless-water-heater', bonus: 170 },
+  { re: /\b(?:composite|cedar|wood|trex|pressure[-\s]treated|ipe|redwood)\s+deck\b|\bdeck\s+(?:boards?|railings?|stairs|steps|joists|ledger|surface)\b|\b(?:build|rebuild|resurfac\w*|replace|new|stain|seal|refinish|repair|re-?deck)\s+(?:an?\s+|the\s+|my\s+|our\s+)?(?:[\w-]+\s+){0,3}?deck\b/i, id: 'decking', bonus: 150, unless: /\broof(?:ing)?\s+deck/i },
+  { re: /\bframe\s+(?:an?\s+|the\s+|new\s+)?(?:[\w-]+\s+){0,3}?(?:walls?|partitions?|closets?|rooms?|soffits?|openings?)\b/i, id: 'framing-contractor', bonus: 150 },
+  { re: /\blight(?:ing)?\s+fixtures?|\blight\s+switch(?:es)?|\bswitch(?:es)?\b(?!\s+(?:covers?|plates?))|\brecessed\s+(?:lights?|lighting|cans?)|\bcan\s+lights?|\bceiling\s+fans?|\bsconces?\b|\bgfci\b|\bdimmers?\b/i, id: 'electrical', bonus: 150 },
+  { re: /\bev\s+charg\w*|\bcar\s+charg\w*|\b(?:tesla|level\s+2)\s+(?:wall\s+)?charg\w*/i, id: 'ev-charger', bonus: 260 },
+  // The same weight as "furnace" naming the trade: a water heater that shares the furnace's vent stays a water heater.
+  { re: /\ba\/?c\b|\bair\s+condition\w*|\bcentral\s+air|\bheat\s+pump|\bductless|\bair\s+handler/i, id: 'hvac', bonus: 100, unless: /\bheat\s+pump\s+water\s+heater/i },
+  { re: /\bsod\b|\bshrubs?\b|\bmulch\b|\bflower\s*beds?\b|\bplant(?:ing)?\s+(?:\d+\s+)?(?:shrubs?|trees?|flowers?|perennials?|hedges?|bushes)/i, id: 'landscaping', bonus: 150 },
   { re: /\btub[\s-]*to[\s-]*shower|\bshower\s+conversion|\bconvert\w*\s+(?:the\s+|a\s+|my\s+)?(?:bath)?tub\b|\bwalk[-\s]in\s+shower/i, id: 'bathroom-remodel', bonus: 150 },
   { re: /\b(?:replace|replacing|install|installing|new|swap|add|adding|set)\b[^.]{0,30}\b(?:toilets?|vanit(?:y|ies)|(?:bath)?tubs?|lavator(?:y|ies)|bathroom\s+sink|bath\s+fan)\b/i, id: 'bathroom-remodel', bonus: 150, unlessRepair: true },
   { re: /\b(?:replace|replacing|install|installing|new|swap|add|adding|vent|move|moving)\b[^.]{0,30}\b(?:dish\s?washer|(?:garbage\s+)?disposal|range\s+hood|hood|cook\s?top|wall\s+oven|(?:gas|electric|induction)\s+range|range|over[-\s]the[-\s]range\s+microwave|microwave|ice\s?maker|kitchen\s+sink|kitchen\s+faucet)\b/i, id: 'kitchen-remodel', bonus: 150, unlessRepair: true },
@@ -137,6 +158,8 @@ function tokenize(s: string): string[] {
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, ' ')
     .split(/\s+/)
+    // "re-roof", "re-tile", "re-pipe" are the trade's own word too.
+    .flatMap(t => (/^re-[a-z]{3,}/.test(t) ? [t, t.slice(3)] : [t]))
     .filter(t => t.length >= MIN_TOKEN_LEN && !STOP_WORDS.has(t));
 }
 
@@ -206,6 +229,7 @@ export function detectSpecialty(description: string): DetectionResult | null {
   const repair = REPAIR_WORDS.test(description);
   for (const v of PHRASE_VOTES) {
     if (v.unlessRepair && repair) continue;
+    if (v.unless?.test(description)) continue;
     if (!v.re.test(description)) continue;
     primaryVotes.set(v.id, (primaryVotes.get(v.id) ?? 0) + v.bonus);
     phraseVoted.add(v.id);
@@ -222,7 +246,10 @@ export function detectSpecialty(description: string): DetectionResult | null {
       score += w;
       matches.set(tok, (matches.get(tok) ?? 0) + w);
     }
-    if (score === 0 && !phraseVoted.has(p.spec.id)) continue;
+    // A trade the brief names outright is in the running even when its own
+    // description shares no word with the brief — "shingles", "furnace" and
+    // "mini-split" voted for roofing and HVAC and were dropped right here.
+    if (score === 0 && !phraseVoted.has(p.spec.id) && !primaryVotes.has(p.spec.id)) continue;
 
     // Base-trade bias: if the specialty id (with hyphens → spaces) is a
     // verbatim substring of the description OR matches a single description
@@ -231,7 +258,8 @@ export function detectSpecialty(description: string): DetectionResult | null {
     // sub-specialties ('residential-fence-repair', 'pump-station') when the
     // user's wording is generic.
     const idAsPhrase = p.spec.id.replace(/-/g, ' ');
-    if (descLower.includes(idAsPhrase)) {
+    // Whole words only: "architect" is not in "architectural shingles".
+    if (new RegExp(`\\b${idAsPhrase}\\b`).test(descLower)) {
       score += idAsPhrase.length * 4;
     } else if (tokenSet.has(p.spec.id)) {
       score += p.spec.id.length * 4;
