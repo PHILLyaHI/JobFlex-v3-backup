@@ -99,6 +99,11 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const dateShort = (iso: string) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 const RATE_CARD_KEY = "jf.hvac.rateCard.v1";
 
+/** The two-letter state an address ends with ("…, TX 75034" / "…, WA"), or "". */
+function stateOfAddress(addr: string): string {
+  return ((addr.match(/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$)/) ?? [])[1] ?? "").toUpperCase();
+}
+
 type SlotKey = "outdoor" | "indoor" | "panel";
 interface Slot { thumb: string; read?: NameplateRead; busy?: boolean; error?: string }
 const SLOTS: Array<{ key: SlotKey; title: string; sub: string; hint: "outdoor" | "indoor" | "panel" }> = [
@@ -267,9 +272,11 @@ function Chip({ p }: { p?: Provenance }) {
 }
 
 type FieldKind = "num" | "text" | "select" | "bool";
-function Field({ label, path, model, kind, options, onChange, placeholder, step }: {
+function Field({ label, path, model, kind, options, onChange, placeholder, step, area }: {
   label: string; path: string; model: BuildingModel; kind: FieldKind;
   options?: Array<[string, string]>; onChange: (path: string, v: unknown) => void; placeholder?: string; step?: string;
+  /** An area in square inches: "20x25" / "20 × 25" typed here is multiplied out (2026-10-08 — it used to be dropped as not a number). */
+  area?: boolean;
 }) {
   const raw = getPath(model, path);
   const p = model.provenance[path];
@@ -306,7 +313,8 @@ function Field({ label, path, model, kind, options, onChange, placeholder, step 
           onBlur={(e) => {
             const v = e.target.value.trim();
             if (kind === "num") {
-              const n = Number(v.replace(/,/g, ""));
+              const wh = area ? v.match(/^(\d+(?:\.\d+)?)\s*(?:x|×|\*|by)\s*(\d+(?:\.\d+)?)$/i) : null;
+              const n = wh ? Math.round(Number(wh[1]) * Number(wh[2])) : Number(v.replace(/,/g, ""));
               // Blank clears a typed answer (the plate or the record shows again); a
               // negative count, size or amperage is a typo, not a fact.
               if (v === "") { if (raw !== undefined && raw !== null) onChange(path, undefined); return; }
@@ -481,6 +489,10 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
   /** The design (target tons, systems, kind) a hand pick was made against; a different design clears the pick. */
   const pickDesignRef = React.useRef<string>("");
   const [stateCode, setStateCode] = React.useState("");
+  // True once the contractor picked the state by hand for the address in the box;
+  // typing another address clears it, so a house in Texas is never judged under
+  // the Washington rules the last address left in the select.
+  const [statePicked, setStatePicked] = React.useState(false);
   const [county, setCounty] = React.useState("");
   const [countyPicked, setCountyPicked] = React.useState(false);
   const [site, setSite] = React.useState<SiteFacts | null>(null);
@@ -870,6 +882,9 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
   };
 
   // ── 1 · site lookup ───────────────────────────────────────────────────────
+  /** The state a job runs under: the one picked for this address, else the
+   *  one the address carries ("…, Frisco, TX 75034"), else the select. */
+  const stateFor = (addr: string) => (statePicked && stateCode ? stateCode : stateOfAddress(addr) || stateCode);
   const lookupSite = async () => {
     const text = (addrRef.current?.value ?? "").trim();
     const full = picked?.formatted && picked.typed !== true ? picked.formatted : text;
@@ -878,22 +893,24 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
       // A tank swap or a service call does not wait for the parcel: the form
       // is up at once on the address and the state, and the house record
       // (county, year built, area) fills in behind it when the lookup lands.
-      const st = (stateCode || (full.match(/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$)/) ?? [])[1] || "").toUpperCase();
+      const st = stateFor(full);
       if (!st) { setSiteError("Add the state to the address (e.g. WA)."); return; }
+      const sameState = st === stateCode;
       const hadIntake = analysis || Object.keys(plates).length > 0 || Object.keys(typed).length > 0 || restored || pickId || Object.keys(jobInput).length > 0;
       const isSameHouse = site?.address === full;
       if (hadIntake && !isSameHouse && !window.confirm("Start over? The answers, plates and service picks for this house will be cleared.")) return;
       setSiteError("");
       setRestored(null); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); setSavedId(null); setPermit(null); setReportUrl(null); setPermitMsg(""); setTitle(null);
       if (!isSameHouse) { setTyped({}); setAnalysis(null); setPlates({}); setJobInput({}); setLinesetFt(undefined); }
-      setSite({ address: full, state: st, county: countyPicked && county ? county : undefined, sources: {} });
+      setSite({ address: full, state: st, county: sameState && countyPicked && county ? county : undefined, sources: {} });
       setSiteLocal(true);
       setStateCode(st);
+      if (!sameState) { setCounty(""); setCountyPicked(false); }
       setSiteWarnings([]);
       setTimeout(() => go("intake"), 60);
       setSiteBusy(true);
       try {
-        const res = await hvacSiteFacts({ address: full, state: st, county: countyPicked && county ? county : undefined, lat: picked?.lat, lng: picked?.lng });
+        const res = await hvacSiteFacts({ address: full, state: st, county: sameState && countyPicked && county ? county : undefined, lat: picked?.lat, lng: picked?.lng });
         // The contractor may have moved on to another address meanwhile.
         if ((addrRef.current?.value ?? "").trim() !== text) return;
         if (!res.ok) {
@@ -905,6 +922,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
         setSite(res.facts);
         setSiteLocal(false);
         setStateCode(res.facts.state);
+        setStatePicked(false);
         if (res.facts.county) {
           const hit = designConditionsFor(res.facts.state, res.facts.county);
           setCounty(hit.match === "county" || hit.match === "fuzzy" ? hit.conditions.county : res.facts.county);
@@ -925,7 +943,8 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
     setSiteBusy(true);
     setSiteError("");
     try {
-      const res = await hvacSiteFacts({ address: full, state: stateCode || undefined, county: countyPicked && county ? county : undefined, lat: picked?.lat, lng: picked?.lng });
+      const st = stateFor(full);
+      const res = await hvacSiteFacts({ address: full, state: st || undefined, county: st === stateCode && countyPicked && county ? county : undefined, lat: picked?.lat, lng: picked?.lng });
       if (!res.ok) { setSiteError(res.error); reportPlanLimitResult(res); return; }
       setRestored(null);
       setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg("");
@@ -950,6 +969,40 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
     } finally {
       setSiteBusy(false);
     }
+  };
+
+  /** The house entered by hand (2026-10-08, owner: "make an option to enter
+   *  the address manually if the map does not find it"): no lookup, no
+   *  record — the address and the state start the job at once, the county
+   *  is picked, and the intake takes the square footage, the year built and
+   *  the rest. The era table fills what is not typed, badged as a default. */
+  const startByHand = () => {
+    const text = (addrRef.current?.value ?? "").trim();
+    if (!text) { setSiteError("Type the address first — street, city, state."); return; }
+    const st = stateFor(text);
+    if (!st) { setSiteError("Pick the state (or end the address with it, e.g. WA) — the design day and the code rules come from it."); return; }
+    const hadIntake = analysis || Object.keys(plates).length > 0 || Object.keys(typed).length > 0 || !!restored || !!pickId || !!custom || outdoorKind !== null;
+    const sameHouse = site?.address === text;
+    if (hadIntake && !sameHouse && !window.confirm("Start over? The answers, plates and picks for this house will be cleared.")) return;
+    const sameState = st === stateCode;
+    const hasCounty = sameState && countyPicked && !!county;
+    setSiteError("");
+    setRestored(null); setPickId(null); setOutdoorKind(null); setCustom(null); setSwapMsg(""); setSavedId(null); setPermit(null); setReportUrl(null); setPermitMsg(""); setTitle(null);
+    if (!sameHouse) { setTyped({}); setAnalysis(null); setPlates({}); setJobInput({}); setLinesetFt(undefined); }
+    setSite({ address: text, state: st, county: hasCounty ? county : undefined, sources: {} });
+    setSiteLocal(true);
+    setStateCode(st);
+    if (!sameState) { setCounty(""); setCountyPicked(false); }
+    const rest = def.needs.load ? " The next step takes the square footage and the year built; the era table fills the rest until you say otherwise." : "";
+    if (def.needs.load && !hasCounty) {
+      // No record means no county: it is picked here, where the select is,
+      // and the step waits — a note on a step the contractor has left is no note.
+      setSiteWarnings([`Entered by hand — no house record. Pick the county for the design day, then Continue.${rest}`]);
+      window.setTimeout(() => document.getElementById("hv-county")?.focus(), 60);
+      return;
+    }
+    setSiteWarnings([`Entered by hand — no house record.${rest}`]);
+    setTimeout(() => go("intake"), 60);
   };
 
   // ── 2 · the walk + plates ────────────────────────────────────────────────
@@ -1276,12 +1329,12 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
               <span className={cx("lbl")}>Address{initialAddress && <span className={cx("chip", "chip-stated")}>from the client</span>}</span>
               <span className={cx("addr")}>
                 <svg className={cx("ic")}><use href="#i-pin" /></svg>
-                <input ref={addrRef} id="hv-addr" className={cx("addr-in")} placeholder="e.g. 4518 Bluestem Hollow Dr, Frisco, TX 75034" defaultValue={initialAddress ?? ""} autoComplete="off" onChange={() => setPicked(null)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void lookupSite(); } }} />
+                <input ref={addrRef} id="hv-addr" className={cx("addr-in")} placeholder="e.g. 4518 Bluestem Hollow Dr, Frisco, TX 75034" defaultValue={initialAddress ?? ""} autoComplete="off" onChange={() => { setPicked(null); setStatePicked(false); }} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void lookupSite(); } }} />
               </span>
             </label>
-            {(site || /state/i.test(siteError)) && <label className={cx("field")} htmlFor="hv-state">
+            {<label className={cx("field")} htmlFor="hv-state">
               <span className={cx("lbl")}>State</span>
-              <span className={cx("bp-sel", "hvsel")}><select id="hv-state" className={cx("bp-sel-in", "sel")} value={stateCode} onChange={(e) => { setStateCode(e.target.value); setCounty(""); setCountyPicked(false); }}>
+              <span className={cx("bp-sel", "hvsel")}><select id="hv-state" className={cx("bp-sel-in", "sel")} value={stateCode} onChange={(e) => { setStateCode(e.target.value); setStatePicked(!!e.target.value); setCounty(""); setCountyPicked(false); }}>
                 <option value="">auto</option>
                 {STATES.map((st) => <option key={st} value={st}>{st}</option>)}
               </select></span>
@@ -1303,11 +1356,15 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
             </label>}
           </div>
           {site && def.needs.load && conditions && /metro station|ENERGY STAR/.test(conditions.conditions.source) && <div className={cx("note")} style={{ marginTop: 8 }}>{/metro station/.test(conditions.conditions.source) ? "The county's figure is the most extreme station within 40 miles; the design runs on the metro station instead. " : "The county's figure is the most extreme station within 40 miles of the county centre — conservative for a house in the valley. "}Set the address&apos;s own Manual J design temperatures above if your permit office or your Manual J table gives different ones.</div>}
-          {siteError && <div className={cx("call", "bad")} style={{ marginTop: 12 }}>{siteError}</div>}
+          {siteError && <div className={cx("call", "bad")} style={{ marginTop: 12 }}>{siteError}{!/address first|Pick the state|Add the state/.test(siteError) && <> Not on the map? <b>Enter it by hand</b> — the form takes the square footage, the year built and the rest.</>}</div>}
           <div className={cx("acts")}>
-            <button type="button" className={cx("btn", "btn-primary")} disabled={siteBusy} onClick={() => void lookupSite()}>
+            {site && siteLocal && !siteBusy && (
+              <button type="button" id="hv-hand-continue" className={cx("btn", "btn-primary")} disabled={S.intake.locked} title={S.intake.locked ? S.intake.reason : undefined} onClick={() => go("intake")}>Continue<svg className={cx("ic")}><use href="#i-arrow" /></svg></button>
+            )}
+            <button type="button" className={cx("btn", site && siteLocal ? "btn-ghost" : "btn-primary")} disabled={siteBusy} onClick={() => void lookupSite()}>
               <svg className={cx("ic")}><use href="#i-pin" /></svg>{siteBusy ? "Looking up…" : site ? "Look up another" : "Look up the house"}
             </button>
+            <button type="button" id="hv-by-hand" className={cx("btn", "btn-ghost")} disabled={siteBusy} onClick={startByHand} title="No lookup: the address and the state start the job; you type the house">Enter it by hand</button>
             <span className={cx("acts-note")}>{siteBusy ? "Looking up the record" : site ? (siteLocal ? "Running on the address and the state" : sourceRows.some((r) => r.state === "found") ? `${sourceRows.filter((r) => r.state === "found").length} of ${sourceRows.length} sources found` : "Nothing on record — running on defaults") : def.needs.load ? "Parcel · footprint · elevation · county design day" : "Parcel · county · year built"}</span>
           </div>
           {sourceRows.length > 0 && (
@@ -1596,7 +1653,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                     <Field label="Duct condition" path="ducts.condition" model={model} kind="select" onChange={onTyped} options={[["good", "Good"], ["fair", "Fair"], ["poor", "Poor"], ["unknown", "Not seen"]]} />
                     <Field label="Ducts insulated" path="ducts.insulated" model={model} kind="bool" onChange={onTyped} />
                     <Field label="Supply registers" path="ducts.supplyRegisters" model={model} kind="num" onChange={onTyped} placeholder="8" />
-                    <Field label="Return grille (sq in, W×H)" path="ducts.returnGrilleSqIn" model={model} kind="num" onChange={onTyped} placeholder="20×25 = 500" />
+                    <Field label="Return grille (sq in, W×H)" path="ducts.returnGrilleSqIn" model={model} kind="num" onChange={onTyped} placeholder="20×25 = 500" area />
                     <Field label="Static pressure (in. w.c.)" path="ducts.measuredTespInWc" model={model} kind="num" onChange={onTyped} step="0.05" />
                     {/* The duct calculator's inputs (lib/hvac/ductCalc, 2026-10-08): the sizes a tech reads at the plenum. */}
                     <Field label="Supply trunk (Ø or W×H, in)" path="ducts.supplyTrunk" model={model} kind="text" onChange={onTyped} placeholder="16 or 20×8" />

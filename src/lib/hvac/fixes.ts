@@ -150,7 +150,6 @@ export function planFor(c: CheckResult, ctx: PlanContext): CheckPlan {
   }
 
   // Code flags and the fuel checks, by id.
-  if (c.id === "wa-manual-s" || c.id === "ny-manual-js") return { group: "fix", lead: "The permit office wants the approved calculation attached; the design card already carries the load and the Manual S fit:", actions: [{ kind: "permit", label: "Attach the ACCA-approved Manual J report" }] };
   if (c.id === "wa-hp-lockout") {
     const bp = chosen?.balancePointF;
     return { group: "fix", lead: "A thermostat that locks the strips out above the balance point:", actions: [note(`Choose a heat-pump thermostat with aux-heat lockout for the thermostat line${bp ? `, and set the lockout at ${bp} °F` : ""}`)] };

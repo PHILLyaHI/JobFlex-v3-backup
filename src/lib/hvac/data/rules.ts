@@ -350,8 +350,11 @@ export const CODE_FLAGS: CodeFlag[] = [
     id: "wa-manual-s",
     title: "Manual J load and Manual S selection",
     applies: (j) => j.state.toUpperCase() === "WA" && j.kind !== "water-heater",
-    status: "fix",
-    text: "Washington's energy code requires the equipment to be selected by Manual S against a Manual J load, at the smallest available size that exceeds it — a like-for-like swap on the old unit's tonnage is not compliant without the calculation.",
+    // Covered by the design card (2026-10-08, owner: "let's just use the
+    // Manual J calculation"): the load above and the Manual S selection
+    // beside it are the sizing the permit asks for — a pass, not a chore.
+    status: "pass",
+    text: "Washington's energy code wants the equipment selected by Manual S against a Manual J load, at the smallest available size that exceeds it. The design card carries both — the load calculation at the county's design conditions and the Manual S fit of the unit — so print it with the permit application; a like-for-like swap on the old tonnage alone would not have passed.",
     source: "2021 WSEC-R R403.7 (WAC 51-11R-40360), statewide from 2024-03-15 (verified 2026-09-17)",
   },
   {
@@ -452,8 +455,8 @@ export const CODE_FLAGS: CodeFlag[] = [
     id: "ny-manual-js",
     title: "Sizing on the permit",
     applies: (j) => j.state.toUpperCase() === "NY" && j.kind !== "water-heater",
-    status: "fix",
-    text: "New York's energy code requires the replacement to be sized by Manual J and selected by Manual S, with the calculation on the permit application.",
+    status: "pass",
+    text: "New York's energy code wants the replacement sized by Manual J and selected by Manual S, with the calculation on the permit application. The design card carries both — print it with the application.",
     source: "NYS Energy Conservation Construction Code, 2025 edition (verified 2026-09-17)",
   },
   {

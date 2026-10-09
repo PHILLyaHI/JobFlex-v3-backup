@@ -70,7 +70,7 @@ const hp = (tons: number, over: Partial<CatalogItem> = {}): CatalogItem => ({ id
   const e = runEngine(m, { catalog: US_CATALOG });
   const ctx = { model: m, engine: e, job: "replace-system" as const };
   const mjs = e.checks.find((c) => c.id === "wa-manual-s");
-  ok("WA 'Manual J load and Manual S selection' → a fix plan whose click is the permit panel", !!mjs && planFor(mjs, ctx).group === "fix" && planFor(mjs, ctx).actions.some((a) => a.kind === "permit"), mjs ? JSON.stringify(planFor(mjs, ctx).actions) : "no flag");
+  ok("WA 'Manual J load and Manual S selection' is a pass covered by the design card — no report to attach", !!mjs && mjs.status === "pass" && /design card carries both/.test(mjs.detail) && planFor(mjs, ctx).lead === "Passed." && !nextSteps(e.checks, ctx).some((a) => a.kind === "permit"), mjs ? `${mjs.status}: ${mjs.detail.slice(0, 80)}` : "no flag");
   const lock = e.checks.find((c) => c.id === "wa-hp-lockout");
   const bp = e.selection.chosen?.balancePointF;
   ok("WA 'Supplementary heat lockout' names the balance point to set", !!lock && (!bp || planFor(lock, ctx).actions.some((a) => a.kind === "note" && a.label.includes(`${bp} °F`))), lock ? planFor(lock, ctx).actions[0]?.label : "no flag");
