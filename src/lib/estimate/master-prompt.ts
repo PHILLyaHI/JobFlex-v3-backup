@@ -710,7 +710,7 @@ The PRICE BOOK in the procedure block governs every step it prices — the contr
 - Trim installation: $3.00-4.00/LF
 - Flashing installation: $0.80-1.25/LF
 - Hourly trades: handyman $55-95/hr, carpenter $65-110/hr, electrician $100-160/hr (Seattle area $140-200), plumber $110-180/hr (Seattle area $150-220), HVAC technician $95-160/hr, tile setter $65-110/hr, painter $55-90/hr
-- Every remodel carries: permit $300-1,500 (King County, Bay Area and NYC $800-2,500); floor and dust protection $250-600; final clean $250-500; a drywall patch $250-450 for the first opening; in Washington the asbestos survey $300-700
+- A job that needs a permit (the PERMIT DECISION, when one follows, says which) carries: permit $300-1,500 (King County, Bay Area and NYC $800-2,500). Painting, tile, flooring, cabinets, counters, trim and a door or window replaced in its opening take none. Every remodel carries: floor and dust protection $250-600; final clean $250-500; a drywall patch $250-450 for the first opening; in Washington the asbestos survey $300-700
 
 ## ${PRICING_RULES}
 

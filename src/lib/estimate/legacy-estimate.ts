@@ -35,6 +35,7 @@ import { rangeLine, remodelJob, remodelRange, type JobRange } from "./remodel-sa
 import { fitsUtilityJob, utilityJob, utilityPriceBlock, utilityRange, utilityRangeLine, type UtilityJobId } from "./utility-work";
 import { locationIndex, locationLine } from "./location-index";
 import { pricesFor, specialtyRange, specialtyRangeLine, type SpecialtyPrices } from "./step-prices";
+import { permitCall, permitPromptBlock, withoutPermitSteps, type PermitCall } from "./permits";
 
 /** The old route's fallback when no specialty matched. Verbatim. */
 export const GENERAL_CONTRACTING: AiSpecialty = {
@@ -135,9 +136,12 @@ export function procedureBlockFor(
   overrides?: PromptOverrideSet | null,
   scope: BriefScope = "full",
   prices: SpecialtyPrices | null = pricesFor(specialty.id),
+  /** A job that writes no permit line is not shown the permit step (lib/estimate/permits). */
+  dropPermitSteps = false,
 ): string | null {
-  const procedure = effectiveProcedure(specialty.id, overrides);
-  if (!procedure) return null;
+  const effective = effectiveProcedure(specialty.id, overrides);
+  if (!effective) return null;
+  const procedure = dropPermitSteps ? withoutPermitSteps(effective) : effective;
   return formatProcedureBlock(specialty.name, procedure, overrides?.procedureRules ?? PROCEDURE_RULES, {
     partial: scope === "partial",
     prices,
@@ -170,6 +174,8 @@ export function buildLegacyEstimatePrompt(
   utilityJob: UtilityJobId | null;
   /** How many of the procedure's steps the price book prices (null: no procedure or no book). */
   priced: { steps: number; of: number } | null;
+  /** Whether this job takes a permit, decided from the brief (null: the trade's own procedure decides). */
+  permit: PermitCall | null;
 } {
   const chosen = opts.specialtyId ? getAiSpecialtyByIdSync(opts.specialtyId) : undefined;
   const found = chosen ? null : specialtyFor(input);
@@ -221,7 +227,12 @@ export function buildLegacyEstimatePrompt(
   // side-sewer book on a street main): then the job's bid prices govern.
   const book = pricesFor(specialty.id);
   const prices = book && utility && !fitsUtilityJob(book, utility) ? null : book;
-  const procedureBlock = procedureBlockFor(specialty, opts.overrides, scope, prices);
+  // Not every job takes a permit (owner, 2026-10-09): decided here from the
+  // brief, the permit step leaves the procedure of a job that writes none,
+  // and the decision rides last so it outranks every earlier word on permits.
+  const permit = permitCall({ text: briefText, specialtyId: specialty.id, scope });
+  const dropPermit = !!permit && permit.need !== "required";
+  const procedureBlock = procedureBlockFor(specialty, opts.overrides, scope, prices, dropPermit);
   const remodelMethod = formatRemodelMethod(remodelDomains, opts.overrides?.remodel);
   // A whole remodel of a known kind carries its range, so the model sees the
   // number before it answers; the action asks again when the reply falls
@@ -253,7 +264,7 @@ export function buildLegacyEstimatePrompt(
     ? [tradeRules ? null : utilityPriceBlock(utility), utilityRun ? utilityRangeLine(utilityRun) : null].filter((b): b is string => !!b).join("\n\n") || null
     : null;
   const benchmarkLine = benchmark ? specialtyRangeLine(benchmark) : null;
-  const extra = [location, procedureBlock, benchmarkLine, remodelBlock, utilityBlock, tradeRules].filter((b): b is string => !!b).join("\n\n");
+  const extra = [location, procedureBlock, benchmarkLine, remodelBlock, utilityBlock, tradeRules, permitPromptBlock(permit, input.location)].filter((b): b is string => !!b).join("\n\n");
   // The previous JobFlex sent the price book and the material profile with
   // every estimate; the anchored builder puts them back (2026-09-18).
   const prompt = buildQuoteDraftPromptAnchored({
@@ -268,7 +279,8 @@ export function buildLegacyEstimatePrompt(
     adminPromptExtra: extra || null,
     pricingPrompt: null,
   });
-  const effective = effectiveProcedure(specialty.id, opts.overrides);
+  const own = effectiveProcedure(specialty.id, opts.overrides);
+  const effective = own && dropPermit ? withoutPermitSteps(own) : own;
   const priced = effective && prices ? { steps: effective.steps.filter((s) => prices.steps[s.item.trim()]).length, of: effective.steps.length } : null;
   return {
     specialty,
@@ -282,6 +294,7 @@ export function buildLegacyEstimatePrompt(
     range,
     utilityJob: utility,
     priced,
+    permit,
   };
 }
 

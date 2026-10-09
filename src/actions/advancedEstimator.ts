@@ -32,6 +32,7 @@ import { procedureFor } from "@/lib/estimate/procedures";
 import { loadPromptOverrides } from "@/lib/estimate/promptOverrides";
 import { floorNote, floorToRange, fullerAnswer, linesTotal, retryReasons } from "@/lib/estimate/remodel-sanity";
 import { bindEstimateToBrief, bindLinesToBrief, bindTextToBrief, keepCostCritical, readBrief, scrubUnaskedText, scrubUnaskedWork } from "@/lib/estimate/brief";
+import { holdPermitDecision, permitSummary } from "@/lib/estimate/permits";
 import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import {
   discountSchema,
@@ -515,7 +516,11 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
     }
     if (called.warnings.length) console.warn(`[advancedEstimator] parser: ${called.warnings.join(" | ")}`);
     if (called.items.length === 0) throw new Error("The estimator returned no line items — try a more specific description.");
-    let report = validateEstimate({ items: called.items, description: input.description, location: input.location, assumptions: called.assumptions, trade });
+    // Whether this job takes a permit, decided from the brief when the prompt
+    // was built (lib/estimate/permits): the validator asks for a permit line
+    // only when it does.
+    const permit = legacy.permit?.need ?? null;
+    let report = validateEstimate({ items: called.items, description: input.description, location: input.location, assumptions: called.assumptions, trade, permit });
     for (let attempt = 1; attempt <= reaskBudget && report.blocking.length; attempt++) {
       console.info(`[advancedEstimator] Step 1b · ${report.blocking.length} blocking violation(s), re-asking (${attempt}/${reaskBudget} left of ${MAX_ESTIMATE_REPAIRS}): ${report.blocking.map((x) => x.code).join(", ")}`);
       // A re-ask that fails (rate limit, spent account, a bad reply) must
@@ -529,7 +534,7 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       }
       if (!retry.items.length) break;
       retry = withComputed(retry);
-      const retryReport = validateEstimate({ items: retry.items, description: input.description, location: input.location, assumptions: retry.assumptions, trade });
+      const retryReport = validateEstimate({ items: retry.items, description: input.description, location: input.location, assumptions: retry.assumptions, trade, permit });
       // Keep the better answer: fewer blocking violations wins, ties go to the newer.
       if (retryReport.blocking.length <= report.blocking.length) {
         called = retry;
@@ -537,10 +542,19 @@ export async function generateAdvancedEstimate(input: GenerateInput): Promise<
       }
       if (!report.blocking.length) break;
     }
-    const repaired = applyRepairs({ items: called.items, description: input.description, location: input.location, assumptions: called.assumptions, trade }, report);
+    const repaired = applyRepairs({ items: called.items, description: input.description, location: input.location, assumptions: called.assumptions, trade, permit }, report);
     const estimateNotes = repaired.notes;
     if (estimateNotes.length) console.info(`[advancedEstimator] Step 1b · ${estimateNotes.join(" ")}`);
     called = { ...called, items: repaired.items, assumptions: repaired.assumptions };
+    // A job that needs no permit (or whose city decides) carries no permit
+    // line even when the model wrote one anyway, and says why (owner,
+    // 2026-10-09: a door swap came back with "Permit and inspection").
+    const held = holdPermitDecision({ items: called.items, assumptions: called.assumptions, scope: called.scope }, legacy.permit, input.location);
+    console.info(`[advancedEstimator] permit · ${legacy.permit ? `${legacy.permit.need} (${legacy.permit.reason})` : "the trade's procedure decides"}${held.dropped.length ? ` · dropped ${held.dropped.join(" | ")}` : ""}`);
+    called = { ...called, items: held.items, assumptions: held.assumptions, scope: held.scope };
+    // Said under the ledger, where the contractor reads the checks.
+    const permitLine = permitSummary(legacy.permit, input.location);
+    if (permitLine) estimateNotes.push(permitLine);
     // The last word on the prices, after every re-ask and repair: a total
     // still far under the job's range is not an estimate. Every line but the
     // pass-through fees rises by one share to the range's point for the tier

@@ -30,6 +30,7 @@
 import { corridorFor, matchAnchor, parseTradeAnchors, type ParsedAnchor } from "./estimate-anchors";
 import { normalizeUnit } from "./console-model";
 import { stateCostIndex, type TradeProfile } from "./trade-knowledge";
+import type { PermitNeed } from "./permits";
 
 /** One fused estimate line, as legacyEstimateFromText produces them. */
 export interface CheckedItem {
@@ -71,6 +72,13 @@ export interface ValidationInput {
   location?: string | null;
   assumptions: string[];
   trade: TradeProfile;
+  /**
+   * Whether the job takes a permit, decided from the brief (lib/estimate/
+   * permits). "required" asks for a permit line whatever the trade's phases
+   * say; "not-needed" and "depends" never ask for one; absent = the trade's
+   * phases decide, as before 2026-10-09.
+   */
+  permit?: PermitNeed | null;
 }
 
 export interface ValidationReport {
@@ -129,6 +137,9 @@ const REQUIRED: RequiredLine[] = [
     insertName: "Protect the work area and mobilise to site",
   },
 ];
+
+/** A permit priced when the trade carries no anchor for one: the low end of the master prompt's $300-1,500. */
+const PERMIT_FALLBACK = { lo: 300, hi: 900, unit: "fixed" } as const;
 
 /** Other things an estimate can promise in its assumptions and never price. */
 const PROMISES: Array<{ id: string; promise: RegExp; line: RegExp; label: string }> = [
@@ -222,8 +233,12 @@ export function validateEstimate(input: ValidationInput): ValidationReport {
   // (a) + (d) the four required lines, and anything the estimate promises
   for (const req of REQUIRED) {
     if (anyLine(req.line)) continue;
+    // A job that needs no permit is never asked for one — the door swap that
+    // came back with "Permit and inspection" (owner, 2026-10-09). Its promise
+    // of one is struck by the permit pass, not priced.
+    if (req.id === "permit" && (input.permit === "not-needed" || input.permit === "depends")) continue;
     const promised = input.assumptions.some((a) => req.promise.test(a) && INCLUDED.test(a));
-    const inPhases = trade.phases.some((p) => req.phase.test(p));
+    const inPhases = (req.id === "permit" && input.permit === "required") || trade.phases.some((p) => req.phase.test(p));
     if (promised) {
       v.push({
         code: "promise-unpriced",
@@ -427,7 +442,9 @@ export function applyRepairs(input: ValidationInput, report: ValidationReport): 
     if (!req) continue;
     if (items.some((it) => req.line.test(it.name))) continue;
     const anchor = anchors.find((a) => req.anchor.test(a.raw));
-    const fixed = anchor?.ranges.find((r) => r.unit === "fixed");
+    // A trade with no permit anchor (a window job that also moves a circuit)
+    // still gets its permit, at the master prompt's minor-permit band.
+    const fixed = anchor?.ranges.find((r) => r.unit === "fixed") ?? (req.id === "permit" ? PERMIT_FALLBACK : undefined);
     if (!fixed) continue;
     const price = Math.round(((fixed.lo + fixed.hi) / 2) * idx);
     if (!(price > 0)) continue;
