@@ -1,13 +1,17 @@
 "use client";
 
 // THE CARD-LESS TRIAL'S TWO SURFACES (owner, 2026-10-01; lib/cardlessTrial):
-//   · TrialRibbon — over every dashboard page: "N days left · Add a card to
-//     keep access" with the button, or "Trial ended · read-only" with the way
-//     back. A card already on file turns it quiet.
-//   · TrialSheet — /dashboard/trial: the plan and its price, and the one
-//     action. "Add a card to continue" once the trial has ended.
-// The button asks /api/billing/trial-card for Stripe Checkout and leaves for
-// it. Only the owner adds the card; everyone else is told who can.
+//   · TrialRibbon — over every dashboard page. Early in the trial a calm
+//     "N days free · No card needed" with a quiet "Add a card early" link; in
+//     the last days "N days left · Add a card to keep access" with the button;
+//     "Trial ended · read-only" with the way back. A card already on file
+//     turns it quiet. Every way to a card leads to /dashboard/trial first.
+//   · TrialSheet — /dashboard/trial: when the trial ends, the plan and its
+//     price, that nothing is charged before then, and the one action. Only
+//     this page asks /api/billing/trial-card for Stripe Checkout (ticket
+//     HQFESV, 2026-10-09: an "Add card" that left for Stripe from the ribbon
+//     read as "the app wants a card" a minute after signing up).
+// Only the owner adds the card; everyone else is told who can.
 // While the trial runs the ribbon can be dismissed, one step at a time
 // (lib/trialNotice); once it has ended it stays.
 import * as React from "react";
@@ -117,6 +121,11 @@ function daysText(n: number): string {
   return n === 1 ? "1 day left" : `${n} days left`;
 }
 
+/** The early step's stamp: the days still free, said as a fact. */
+function freeText(n: number): string {
+  return n === 1 ? "1 day free" : `${n} days free`;
+}
+
 /* TWO PLACEMENTS, ONE COMPONENT. Above 768px the ribbon sits at the top of
    the page's column. At 768px and under the handheld pages are full-screen
    compositions of their own (some fixed to the viewport), so the same ribbon
@@ -129,34 +138,40 @@ function daysText(n: number): string {
    that button stands — the button is hidden under it (trial-card.module.css)
    and back as soon as the dock goes. Ended, the dock keeps clear of it. */
 export function TrialRibbon({ view, isOwner, orgId, only }: { view: TrialView; isOwner: boolean; orgId: string; only?: "dock" }) {
-  const { go, busy, error } = useAddCard();
   const { dismissed, dismiss } = useDismiss(view, orgId);
   // Not over the trial's own page, which says the same at full size. Read in
   // the browser too: a layout is not re-rendered on a client-side navigation
   // (a refused write redirects there), so the server's check alone left it up.
   const pathname = usePathname();
   const ended = view.kind === "ended";
-  const tone = ended ? s.isEnded : view.hasCard ? s.isCard : view.daysLeft <= TRIAL_NOTICE_DAYS ? s.isSoon : "";
-  const stamp = ended ? "Trial ended" : view.hasCard ? "Card on file" : daysText(view.daysLeft);
+  // The early step (lib/trialNotice): nothing is due, so nothing is asked.
+  const early = !ended && !view.hasCard && view.daysLeft > TRIAL_NOTICE_DAYS;
+  const tone = ended ? s.isEnded : view.hasCard ? s.isCard : early ? s.isEarly : s.isSoon;
+  const stamp = ended ? "Trial ended" : view.hasCard ? "Card on file" : early ? freeText(view.daysLeft) : daysText(view.daysLeft);
   const action =
-    view.hasCard && !ended ? null : isOwner ? (
-      ended ? (
-        <Link className={s.button} href={"/dashboard/trial" as Route}>
-          Add a card
-        </Link>
-      ) : (
-        <button type="button" className={s.button} onClick={() => void go()} disabled={busy} aria-busy={busy || undefined}>
-          {busy ? "Opening…" : "Add card"}
-        </button>
-      )
-    ) : null;
+    view.hasCard && !ended ? null : !isOwner ? null : early ? (
+      <Link className={s.early} href={"/dashboard/trial" as Route}>
+        Add a card early
+      </Link>
+    ) : (
+      <Link className={s.button} href={"/dashboard/trial" as Route}>
+        {ended ? "Add a card" : "Add card"}
+      </Link>
+    );
   const dock = (
     <div className={`${s.dock} ${tone} ${ended ? "" : s.dockWide}`} role={ended ? "alert" : "status"}>
       <div className={s.dockLead}>
         <span className={s.stamp}>{stamp}</span>
         <p className={s.dockText}>
-          {ended ? "Read-only until a card is added" : view.hasCard ? `${view.planName} starts ${DATE.format(new Date(view.endsAt))}` : isOwner ? "Add a card to keep access" : "Ask the owner to add a card"}
-          {error ? <span role="alert"> · {error}</span> : null}
+          {ended
+            ? "Read-only until a card is added"
+            : view.hasCard
+              ? `${view.planName} starts ${DATE.format(new Date(view.endsAt))}`
+              : early
+                ? "No card needed"
+                : isOwner
+                  ? "Add a card to keep access"
+                  : "Ask the owner to add a card"}
         </p>
       </div>
       {action}
@@ -169,7 +184,7 @@ export function TrialRibbon({ view, isOwner, orgId, only }: { view: TrialView; i
     <>
     {dock}
     <div className={`${s.ribbon} ${tone}`} role={ended ? "alert" : "status"}>
-      <span className={s.stamp}>{ended ? "Trial ended" : view.hasCard ? "Card on file" : daysText(view.daysLeft)}</span>
+      <span className={s.stamp}>{stamp}</span>
       <p className={s.ribbonText}>
         {ended ? (
           <>
@@ -179,24 +194,19 @@ export function TrialRibbon({ view, isOwner, orgId, only }: { view: TrialView; i
           <>
             <b>You&rsquo;re set.</b> <span>{view.planName} starts on {DATE.format(new Date(view.endsAt))} at {view.price}.</span>
           </>
+        ) : early ? (
+          <>
+            <b>No card needed.</b> <span>Free until {DATE.format(new Date(view.endsAt))}.</span>
+          </>
         ) : (
           <>
             <b>Add a card to keep access.</b> <span>Free until {DATE.format(new Date(view.endsAt))}, then {view.planName} at {view.price}.</span>
           </>
         )}
-        {error ? <span role="alert"> {error}</span> : null}
       </p>
       {view.hasCard && !ended ? null : isOwner ? (
-        ended ? (
-          <Link className={s.button} href={"/dashboard/trial" as Route}>
-            Add a card
-          </Link>
-        ) : (
-          <button type="button" className={s.button} onClick={() => void go()} disabled={busy} aria-busy={busy || undefined}>
-            {busy ? "Opening…" : "Add card"}
-          </button>
-        )
-      ) : (
+        action
+      ) : early ? null : (
         <span className={s.ribbonText}>
           <span>Ask the owner to add a card.</span>
         </span>
@@ -240,7 +250,7 @@ export function TrialSheet({
       ? `Nothing to do. The trial runs until ${when}, then ${view.planName} begins and the card is charged.`
       : hit
         ? `The free trial without a card includes ${trialCapAllowance(hit)}. Add a card and ${view.planName}'s full limits apply at once — nothing is charged until ${when}.`
-        : `The trial is free until ${when}. Add a card before then and ${view.planName} carries on without a gap. Without one, the workspace turns read-only on ${when}.`;
+        : `The trial is free until ${when}. Add a card and nothing is charged before then — on ${when} ${view.planName} carries on at ${view.price} without a gap. Without one, the workspace turns read-only on ${when}.`;
   return (
     <div className={s.page}>
       {notice ? (

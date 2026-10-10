@@ -138,7 +138,7 @@ export function buildWelcomeFirstEstimate(i: WelcomeFirstEstimateInput): EmailDo
     cta: { label: i.ctaLabel, href: i.href },
     after: [
       i.cardless
-        ? `No card is on file and nothing is charged. To keep your workspace after ${i.firstChargeDate}, add a card from the banner in the app — it takes a minute.`
+        ? `No card needed. If you decide to stay after ${i.firstChargeDate}, you can add one any time from Subscription.`
         : `Your card won't be charged until ${i.firstChargeDate}. Cancel before then from Subscription and you pay nothing.`,
     ],
     footer: PLATFORM_FOOTER,

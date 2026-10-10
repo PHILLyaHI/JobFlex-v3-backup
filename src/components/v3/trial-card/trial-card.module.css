@@ -28,6 +28,9 @@
 .ribbon.ribbon.isSoon.isSoon { border-left-color: var(--amber); }
 .ribbon.ribbon.isEnded.isEnded { border-left-color: var(--rose); }
 .ribbon.ribbon.isCard.isCard { border-left-color: var(--emerald); }
+/* The early step (2026-10-09): a fact, not a warning — the plain 1.5px frame
+   all round, a quiet stamp, no button. */
+.ribbon.ribbon.isEarly.isEarly { border-left-width: 1.5px; }
 .stamp.stamp {
   flex: 0 0 auto;
   padding: 4px 7px;
@@ -43,6 +46,7 @@
 .isSoon.isSoon .stamp.stamp { color: var(--amber); background: color-mix(in srgb, var(--amber) 9%, var(--sheet, var(--paper-deep))); }
 .isEnded.isEnded .stamp.stamp { color: var(--rose); background: color-mix(in srgb, var(--rose) 7%, var(--sheet, var(--paper-deep))); }
 .isCard.isCard .stamp.stamp { color: var(--emerald); background: color-mix(in srgb, var(--emerald) 7%, var(--sheet, var(--paper-deep))); }
+.isEarly.isEarly .stamp.stamp { color: var(--ink-soft); background: transparent; border-color: var(--ink-line); }
 .ribbonText.ribbonText { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .ribbonText.ribbonText b { font-weight: 800; }
 .ribbonText.ribbonText span { color: var(--ink-muted); }
@@ -84,6 +88,22 @@
   text-underline-offset: 4px;
 }
 .quiet.quiet:hover { color: var(--ink); }
+/* "Add a card early": the early step's one link — quiet, to /dashboard/trial. */
+.early.early {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 4px;
+  color: var(--ink-muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  white-space: nowrap;
+}
+.early.early:hover { color: var(--ink); }
+.early.early:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 .ribbon.ribbon .button.button { flex: 0 0 auto; min-height: 40px; }
 
 /* ── Dismiss (2026-10-07, lib/trialNotice) ────────────────────
@@ -235,6 +255,8 @@
   .dock.dock.isSoon.isSoon { border-left-color: var(--amber); }
   .dock.dock.isEnded.isEnded { border-left-color: var(--rose); }
   .dock.dock.isCard.isCard { border-left-color: var(--emerald); }
+  .dock.dock.isEarly.isEarly { border-left-width: 1.5px; }
+  .dock.dock .early.early { min-height: 44px; font-size: 12px; }
   .dock.dock .stamp.stamp { padding: 3px 6px; font-size: 9.5px; }
   .dockText.dockText { flex: 1 1 auto; min-width: 0; margin: 0; font-weight: 700; overflow-wrap: anywhere; }
   .dock.dock .button.button { flex: 0 0 auto; min-height: 44px; padding: 8px 12px; }
