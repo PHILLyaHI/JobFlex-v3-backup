@@ -1,4 +1,5 @@
 import type { ExperimentResult, StaleNote, StageVisitor, StageVisitorsReport, TrafficBreakdown, TrafficDaily, TrafficFilters, TrafficReport, TrafficTotals } from "./traffic-contract";
+import { experimentResultFromRow } from "./traffic-contract";
 import { buildExperimentsQuery, buildStageVisitorsQuery, buildTrafficQueries, funnelStages, shiftDate } from "./traffic-query";
 import { CONVERTED_HOURS, MAP_HISTORY_LIMIT, buildConvertedQuery, buildLiveQuery, buildInvestorVisitorsQuery, buildLiveTotalsQuery, buildMapHistoryQuery, liveEventFromRow, liveHeadline, liveTotalsFromRow, mapHistoryEventsFromRow, minutesIntoDay, shapeLive, shortId, type FreshSignup, type LiveEvent, type LiveReport, type LiveTotalsPair, type MapHistory, type MapSpan } from "./traffic-live";
 import { analystSessionFromRow, buildAnalystQuery, type LandingSession } from "./traffic-analyst";
@@ -386,7 +387,7 @@ async function loadReport(filters: TrafficFilters, cacheKey: string): Promise<Tr
     report.funnelOutcomes = { trials: numeric(row[0]), purchases: numeric(row[1]), other: numeric(row[2]), trialAttempts: numeric(row[3]), purchaseAttempts: numeric(row[4]) };
   }
   report.variants = (results.variants || []).map(r => ({ variant: String(r[0]) === "e" ? "e" as const : "d" as const, started: numeric(r[1]), completed: numeric(r[2]) }));
-  report.experiments = (results.experiments || []).map(r => ({ experiment: String(r[0]), variant: String(r[1]), visitors: numeric(r[2]), attempts: numeric(r[3]), completed: numeric(r[4]), mixedVisitors: numeric(r[5]) }));
+  report.experiments = (results.experiments || []).map(experimentResultFromRow);
   if (!report.totals) { report.status = "error"; report.message = report.errors[0] || "Traffic is unavailable."; }
   // The oldest answer on the page dates the note; a scope only when some of it is fresh.
   else if (old.length) {
@@ -429,9 +430,9 @@ export async function getTrafficReport(filters: TrafficFilters): Promise<Traffic
 
 /** The A/B bench, asked for when its tab opens — not on every page load. */
 export async function getTrafficExperiments(filters: TrafficFilters): Promise<ExperimentResult[]> {
-  if (!posthogApiConfig()) return [];
+  if (!posthogApiConfig()) throw new Error("Experiment results are unavailable because PostHog is not connected.");
   const rows = await runTrafficQuery(buildExperimentsQuery(filters), "experiments");
-  return rows.map(r => ({ experiment: String(r[0]), variant: String(r[1]), visitors: numeric(r[2]), attempts: numeric(r[3]), completed: numeric(r[4]), mixedVisitors: numeric(r[5]) }));
+  return rows.map(experimentResultFromRow);
 }
 
 const text = (v: unknown) => v == null ? "" : String(v);

@@ -41,6 +41,24 @@ export interface ExperimentResult {
   completed: number;
   mixedVisitors: number;
 }
+
+/** A missing or malformed analytics count is unavailable, never a fabricated zero. */
+export function experimentResultFromRow(row: unknown): ExperimentResult {
+  if (!Array.isArray(row) || row.length < 6 || typeof row[0] !== "string" || !row[0] || typeof row[1] !== "string" || !row[1]) {
+    throw new Error("PostHog returned an invalid experiment result.");
+  }
+  const count = (value: unknown): number => {
+    if (typeof value !== "number" && !(typeof value === "string" && /^\d+$/.test(value))) {
+      throw new Error("PostHog returned an unavailable experiment count.");
+    }
+    const n = Number(value);
+    if (!Number.isSafeInteger(n) || n < 0) throw new Error("PostHog returned an invalid experiment count.");
+    return n;
+  };
+  const [visitors, attempts, completed, mixedVisitors] = row.slice(2, 6).map(count);
+  if (attempts > visitors || completed > visitors) throw new Error("PostHog returned inconsistent experiment counts.");
+  return { experiment: row[0], variant: row[1], visitors, attempts, completed, mixedVisitors };
+}
 export interface StageVisitor {
   id: string;
   reachedAt: string;
