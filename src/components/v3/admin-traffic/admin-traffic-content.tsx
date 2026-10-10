@@ -23,6 +23,8 @@ import { SignupLedgerPanel } from "./signup-ledger";
 import { AdLinks } from "./ad-links";
 import type { LiveReport, SignupLedger } from "@/lib/traffic-live";
 import s from "./traffic.module.css";
+import d from "./traffic-redesign.module.css";
+import { TrafficOverview } from "./traffic-overview";
 
 const n = (v: number | null | undefined) => v == null ? "--" : v.toLocaleString("en-US");
 const rate = (v: number | null) => v == null ? "--" : `${v.toFixed(1)}%`;
@@ -37,7 +39,7 @@ function delta(current: number | undefined, previous: number | undefined) {
 }
 function Select({ label, value, onChange, children }: { label: string; value: string; onChange: (v: string) => void; children: React.ReactNode }) {
   // `bp-sel-in` is load-bearing: the wrapper draws the chevron, and only that class removes the native one.
-  return <label className={s.filterLabel}><span>{label}</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" value={value} onChange={e => onChange(e.target.value)}>{children}</select></div></label>;
+  return <label className={s.filterLabel}><span>{label}</span><div className={`bp-sel ${s.selectWrap}`}><select className="bp-sel-in" aria-label={label} value={value} onChange={e => onChange(e.target.value)}>{children}</select></div></label>;
 }
 /** Top values of one visitor attribute, for the drill-down summary. */
 function tally(rows: StageVisitor[], pick: (v: StageVisitor) => string, limit = 4) {
@@ -65,6 +67,7 @@ type SignupDimension = keyof typeof signupDimensions;
 
 export function AdminTrafficContent({ data, deferred = false, signups: initialSignups = null, live = null, ledger = null }: { data: TrafficReport; deferred?: boolean; signups?: SignupAttribution | null; live?: LiveReport | null; ledger?: SignupLedger | null }) {
   const [report, setReport] = useState(data);
+  const [view, setView] = useState<"overview" | "live" | "signups" | "analysis" | "tools">("overview");
   const [signups, setSignups] = useState(initialSignups);
   const [signupDimension, setSignupDimension] = useState<SignupDimension>("landingIndustry");
   const [draft, setDraft] = useState(data.filters);
@@ -168,30 +171,23 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   const visitors = drillReport?.visitors ?? [];
   const place = (v: StageVisitor) => [v.city, v.region, v.country].filter(Boolean).join(", ");
 
-  return <div className={s.root} aria-busy={pending}>
-    <header className={s.header}>
-      <div><div className={s.eyebrow}>Platform intelligence / 01</div><h1>Traffic<span>.</span></h1></div>
-      <div className={s.headerActions}><span className={s.status} data-state={report.status === "ok" && !report.errors.length && !stale ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : stale ? "PostHog unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
-        <button className={s.button} onClick={() => void exportEverything()} disabled={exporting} aria-busy={exporting}><FileText size={15} aria-hidden="true"/>{exporting ? "Preparing…" : "Export everything"}</button>
-        <button className={s.button} onClick={() => void exportReport(report, ledger)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button>
+  return <div className={`${s.root} ${d.root}`} aria-busy={pending}>
+    <header className={`${s.header} ${d.header}`}>
+      <div><div className={s.eyebrow}>Growth analytics</div><h1>Traffic</h1><p className={d.subtitle}>Understand visits. Follow signups.</p></div>
+      <div className={`${s.headerActions} ${d.actions}`}><Link className={s.button} href="/admin/traffic-v2">Compare v2 <ArrowUpRight size={15}/></Link><span className={s.status} data-state={report.status === "ok" && !report.errors.length && !stale ? "ok" : "warning"}><i/>{deferred && !report.totals && !error ? "Loading PostHog…" : report.status === "disabled" ? "Not connected" : report.status !== "ok" ? "Unavailable" : stale ? "PostHog unavailable" : report.errors.length ? "Partial data" : "PostHog connected"}</span>
+        <details className={d.exports}><summary><ArrowDownToLine size={15}/>Export</summary><div><button className={s.button} onClick={() => void exportEverything()} disabled={exporting} aria-busy={exporting}><FileText size={15} aria-hidden="true"/>{exporting ? "Preparing…" : "Export everything"}</button>
+        <button className={s.button} onClick={() => void exportReport(report, ledger)} disabled={!t || pending}><ArrowDownToLine size={15}/>Export CSV</button></div></details>
         <button className={s.iconButton} aria-label="Refresh traffic" onClick={() => load(filters)} disabled={pending}><RefreshCw size={17} className={pending ? s.spin : ""}/></button>
       </div>
     </header>
 
-    <div className={s.lifetime}><span>Visitors since {TRAFFIC_SINCE_SHORT} <strong>{n(report.lifetime ?? live?.totals?.allTime)}</strong></span><span>Today <strong>{n(report.today ?? live?.totals?.today)}</strong></span><span className={s.scope}>{filters.environment === "all" ? "www.jobflex.app + localhost" : filters.environment === "development" ? "Localhost only" : "www.jobflex.app"} / no bots, no previews / counted from {TRAFFIC_SINCE_LABEL}, {TRAFFIC_SINCE_WHY}</span><span className={s.updated}>{pending ? "Querying PostHog..." : `Updated ${new Date(report.fetchedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: filters.timezone })}`}</span></div>
-
-    {/* Who is on the site this minute, where from, how far they got (2026-09-28). */}
-    {live && <LivePanel initial={live} timezone={filters.timezone} fullHistory={filters.fullHistory} ledger={ledger}/>}
-    {/* The analyst (2026-10-02): the week's landing visits read as findings, under the live map. */}
-    <AnalystPanel timezone={filters.timezone}/>
-    {/* One saved reading a day, and what changed (2026-10-04, lib/traffic-digest). */}
-    <AnalystTrend/>
-    {/* Every signup, kept — the live view above only holds half an hour. */}
-    {ledger && <SignupLedgerPanel initial={ledger} timezone={filters.timezone} fullHistory={filters.fullHistory}/>}
-    {/* The tagged link for every ad and post, so the cards above tell them apart (2026-09-29). */}
-    <AdLinks/>
-
-    <section className={s.filterPanel} aria-label="Traffic filters">
+    <nav className={d.navigation} aria-label="Traffic views">{([['overview', 'Overview'], ['live', 'Live activity'], ['signups', 'Signups'], ['analysis', 'Insights'], ['tools', 'Ad links']] as const).map(([key, label]) => <button key={key} aria-pressed={view === key} onClick={() => setView(key)}>{label}{key === 'live' && <i aria-hidden="true"/>}</button>)}</nav>
+    {view === "live" && (live ? <LivePanel initial={live} timezone={filters.timezone} fullHistory={filters.fullHistory} ledger={ledger}/> : <div className={s.empty}>Live activity is unavailable. Refresh to retry.</div>)}
+    {view === "signups" && (ledger ? <SignupLedgerPanel initial={ledger} timezone={filters.timezone} fullHistory={filters.fullHistory}/> : <div className={s.empty}>Signup records are unavailable. Refresh to retry.</div>)}
+    {view === "analysis" && <><AnalystPanel timezone={filters.timezone}/><AnalystTrend/></>}
+    {view === "tools" && <AdLinks/>}
+    {view === "overview" && <>
+    <section className={`${s.filterPanel} ${d.filters}`} aria-label="Traffic filters">
       <div className={s.rangeRow}><div className={s.filterCaption}><SlidersHorizontal size={16}/><span>Report scope</span></div><TrafficDatePicker from={draft.from} to={draft.to} timezone={draft.timezone} min={draft.fullHistory ? undefined : TRAFFIC_SINCE} onChange={(from, to) => update({ from, to })}/>
         <div className={s.segment}>{[1, 7, 14, 30, 90].map(days => <button key={days} aria-pressed={draft.from === shiftDate(today, 1 - days) && draft.to === today} onClick={() => update({ from: shiftDate(today, 1 - days), to: today })}>{days === 1 ? "Today" : `${days}D`}</button>)}</div>
       </div>
@@ -203,33 +199,33 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
         <Select label="Environment" value={draft.environment} onChange={environment => update({ environment: environment as TrafficFilters["environment"] })}><option value="production">www.jobflex.app</option><option value="all">www.jobflex.app + localhost</option><option value="development">Localhost only</option></Select>
         <Select label="Hostname" value={draft.host} onChange={host => update({ host })}><option value="">All hostnames</option>{options("hosts").filter(Boolean).map(name => <option key={name} value={name === "Unknown" ? "__unknown__" : name}>{name}</option>)}</Select>
       </div><label className={s.timezone}>Timezone<select aria-label="Report timezone" value={draft.timezone} onChange={e => update({ timezone: e.target.value })}>{Array.from(new Set([draft.timezone, "America/Los_Angeles", "America/New_York", "Europe/London", "UTC"])).map(z => <option key={z}>{z}</option>)}</select></label></details>
-      <div className={s.filterFooter}><span className={s.activeTimezone}>{filters.timezone}</span><span className={s.unsaved}>{changed ? "Filters changed. Apply to update." : `${filters.from} to ${filters.to} / inclusive`}</span><button className={s.textButton} onClick={() => { const next = { ...data.filters, from: shiftDate(today, -29), to: today }; setDraft(next); load(next); }} disabled={pending}>Reset</button><button className={s.primary} onClick={() => load(draft)} disabled={pending}>{pending ? "Updating..." : "Apply filters"}<ArrowUpRight size={16}/></button></div>
+      <div className={s.filterFooter}><span className={s.activeTimezone}>{filters.timezone}</span><span className={s.unsaved} data-changed={changed}>{changed ? "Filters changed. Apply to update." : `${filters.from} to ${filters.to} / inclusive`}</span><button className={s.textButton} onClick={() => { const next = { ...data.filters, from: shiftDate(today, -29), to: today }; setDraft(next); load(next); }} disabled={pending}>Reset</button><button className={s.primary} onClick={() => load(draft)} disabled={pending}>{pending ? "Updating..." : "Apply filters"}<ArrowUpRight size={16}/></button></div>
     </section>
 
     {stale && <div className={s.notice} role="status" data-stale><Info size={18}/><div><strong>{staleLabel(stale, filters.timezone)}</strong><p>{stale.reason} Asking again every {STALE_RETRY_MS / 1000} s.</p></div></div>}
     {(error || (report.message && !stale) || report.errors.length > 0) && <div className={s.notice} role="alert"><Info size={18}/><div><strong>{error || report.message || "Some reports are unavailable."}</strong>{report.errors.length > 0 && <details><summary>Query details</summary>{report.errors.map(e => <p key={e}>{e}</p>)}</details>}</div></div>}
 
-    <div className={s.sectionLabel}><span>01 / Audience</span><span>{filters.page ? pageLabel(filters.page) : "All pages"}{filters.audience !== "all" ? ` / ${filters.audience}` : ""}</span></div>
-    <section className={s.metrics} aria-label="Audience summary">
-      <div className={s.metricLead}><span>Visitors in range</span><strong>{n(t?.visitors)}</strong><small>{delta(t?.visitors, report.previous?.visitors)}</small></div>
-      <div><span>People (est.)</span><strong>{n(report.people?.people)}</strong><small>{report.people && t?.visitors ? `${rate(percent(report.people.inAppVisitors, t.visitors))} in FB / IG in-app · ${n(report.people.inAppVisitors)} clicks → ${n(report.people.inAppPeople)} people` : "address + browser"}</small></div>
-      <div><span>New visitors</span><strong>{n(t?.newVisitors)}</strong><small>{rate(t ? percent(t.newVisitors, t.visitors) : null)} of visitors</small></div>
-      <div><span>Returning visitors</span><strong>{n(t?.returningVisitors)}</strong><small>{rate(t ? percent(t.returningVisitors, t.visitors) : null)} of visitors</small></div>
-      <div><span>Repeat visitors</span><strong>{n(t?.repeatVisitors)}</strong><small>2+ sessions in this range</small></div>
-      <div><span>Sessions</span><strong>{n(t?.sessions)}</strong><small>{t?.visitors ? (t.sessions / t.visitors).toFixed(2) : "--"} per visitor</small></div>
-      <div><span>{filters.page.startsWith("registration:") ? "Screen views" : "Pageviews"}</span><strong>{n(t?.pageviews)}</strong><small>{delta(t?.pageviews, report.previous?.pageviews)}</small></div>
-    </section>
-
-    <section className={s.card}>
+    <div className={d.scope}><span>{filters.from} – {filters.to} · {filters.page ? pageLabel(filters.page) : "All pages"} · {filters.source || "All sources"} · {filters.environment === "production" ? "Production" : filters.environment === "development" ? "Localhost" : "Production + localhost"}</span><span>{pending ? "Updating report…" : "Updated " + when(report.fetchedAt)}</span></div>
+    <TrafficOverview metrics={<>
+      <div className={d.metric}><span>Visitors</span><strong>{n(t?.visitors)}</strong><small>{delta(t?.visitors, report.previous?.visitors)}</small></div>
+      <div className={d.metric}><span>Sessions</span><strong>{n(t?.sessions)}</strong><small>{t?.visitors ? (t.sessions / t.visitors).toFixed(2) : "--"} per visitor</small></div>
+      <div className={d.metric}><span>New organizations</span><strong>{n(signups?.total)}</strong><small>Database · all sources &amp; signup flows</small></div>
+      <div className={d.metric}><span>Tracked signup rate</span><strong>{!coverageIncomplete && funnelEnd ? rate(percent(funnelEnd.visitors, report.funnel[0]?.visitors || 0)) : "--"}</strong><small>{coverageIncomplete ? "Incomplete tracking coverage" : n(funnelEnd?.visitors) + " completed the tracked funnel"}</small></div>
+    </>} secondary={<dl className={d.secondary}>
+      <div><dt>New visitors</dt><dd>{n(t?.newVisitors)}</dd></div><div><dt>Returning</dt><dd>{n(t?.returningVisitors)}</dd></div><div><dt>Repeat visitors</dt><dd>{n(t?.repeatVisitors)}</dd></div><div><dt>{filters.page.startsWith("registration:") ? "Screen views" : "Pageviews"}</dt><dd>{n(t?.pageviews)}</dd></div><div><dt>People (est.)</dt><dd>{n(report.people?.people)}</dd></div>
+    </dl>} trend={<section className={s.card}>
       <div className={s.cardHead}><div><h2>Traffic over time</h2><span className={s.micro}>{filters.from} / {filters.to}</span></div><span className={s.stamp}>Daily resolution</span></div>
       <TrafficChart points={report.points}/>
       <div className={s.composition}><div className={s.compositionBar} data-empty={!t?.visitors} aria-label={`${rate(t ? percent(t.newVisitors, t.visitors) : null)} new visitors`}><span style={{ width: `${t ? percent(t.newVisitors, t.visitors) ?? 0 : 0}%` }}/></div><span><b>{rate(t ? percent(t.newVisitors, t.visitors) : null)}</b> new</span><span><b>{rate(t ? percent(t.returningVisitors, t.visitors) : null)}</b> returning</span></div>
-    </section>
+    </section>} sources={<section className={d.sources} aria-label="Top traffic sources">
+      <div className={d.sourceHeading}><h2>Top sources</h2><span>Visitors</span></div>
+      <div className={d.sourceRows}>{[...report.sources].sort((a,b) => b.visitors-a.visitors).slice(0,5).map(row => <button key={row.name} onClick={() => apply({source:row.name})} disabled={pending} aria-label={"Filter by " + row.name + ", " + n(row.visitors) + " visitors"}><span>{row.name}</span><strong>{n(row.visitors)}</strong><i aria-hidden="true" style={{width:(percent(row.visitors, Math.max(...report.sources.map(source => source.visitors), 1)) ?? 0) + "%"}}/></button>)}</div>
+      {!report.sources.length && <p className={d.sourceEmpty}>{failed("breakdowns") || report.status !== "ok" ? "Source data unavailable." : pending ? "Loading sources…" : "No sources recorded in this range."}</p>}
+      <p className={d.sourceNote}>Visitors can appear under more than one source.</p>
+      <button className={d.sourceLink} onClick={() => {setTab("acquisition");setDimension("sources");document.getElementById("traffic-explorer")?.scrollIntoView({block:"start"});}}>Explore acquisition <ArrowUpRight size={16}/></button>
+    </section>}/>
 
-    {report.points.length > 0 && <DailyPeople points={report.points}/>}
-    {report.points.length > 0 && <AdsReconciliation points={report.points}/>}
-
-    <div className={s.sectionLabel}><span>02 / Conversion</span><span>Ordered, unique visitors</span></div>
+    <div className={s.sectionLabel}><span>Signup conversion</span><span>Ordered, unique visitors</span></div>
     <section className={s.card}>
       <div className={s.cardHead}><div><h2>From visit to signup</h2><span className={s.micro}>Landing entrants in the selected dates</span></div><div className={s.funnelControls}><Select label="Registration flow" value={filters.flow} onChange={flow => apply({ flow: flow as TrafficFilters["flow"] })}><option value="all">All flows</option><option value="standard">Email signup</option><option value="google">Google signup</option></Select><Select label="Conversion window" value={String(filters.windowDays)} onChange={v => apply({ windowDays: Number(v) })}>{[1, 7, 14].map(d => <option key={d} value={d}>{d} day{d > 1 ? "s" : ""}</option>)}</Select><Select label="Billing data" value={filters.billingMode} onChange={v => apply({ billingMode: v as TrafficFilters["billingMode"] })}><option value="live">Live only</option><option value="test">Test only</option><option value="all">Live + test</option></Select></div></div>
       <div className={s.inlineNote}><Info size={16}/><span><b>New organizations: {n(signups?.total)}</b> / {filters.from} to {filters.to}. Database count across all signup flows, billing modes and traffic sources; deleted organizations excluded. This is separate from the tracked visitor funnel below.</span></div>
@@ -253,8 +249,8 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
       {!!report.variants.length && <div className={s.tableScroll} style={{ marginTop: 18 }}><table className={s.table}><thead><tr><th>Landing variant</th><th>Signup starts</th><th>Verified signups</th><th>Start → complete</th></tr></thead><tbody>{report.variants.map(v => <tr key={v.variant}><td><b>{v.variant === "e" ? "e / landing-e" : "d / landing"}</b></td><td><b>{n(v.started)}</b></td><td>{n(v.completed)}</td><td>{coverageIncomplete ? "--" : rate(percent(v.completed, v.started))}</td></tr>)}</tbody></table></div>}
     </section>
 
-    <div className={s.sectionLabel}><span>03 / Explore</span><span>Same date &amp; audience filters</span></div>
-    <section className={s.card}>
+    <div className={s.sectionLabel}><span>Explore traffic</span><span>Same date &amp; audience filters</span></div>
+    <section className={s.card} id="traffic-explorer">
       <div className={s.exploreTabs} aria-label="Detailed reports">{(["pages", "acquisition"] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{key === "pages" ? "Pages & screens" : "Acquisition"}<span>{key === "pages" ? n(report.pages.length) : n(report.sources.length)}</span></button>)}<Link className={s.button} href="/admin/ab-testing">A/B testing <ArrowUpRight size={14}/></Link></div>
       {tab === "pages" && <div className={s.exploreBody}>
         <div className={s.exploreHead}><div><h2>Page explorer</h2><p className={s.micro}>Select a row to inspect its audience and daily traffic.</p></div><div className={s.pageTools}><input type="search" aria-label="Find a page" placeholder="Find a page or screen..." value={search} onChange={e => { setSearch(e.target.value); setPageIndex(0); }}/><Select label="Sort by" value={sort} onChange={v => { setSort(v as typeof sort); setPageIndex(0); }}><option value="visitors">Visitors</option><option value="pageviews">Views</option><option value="returningVisitors">Returning</option></Select></div></div>
@@ -280,6 +276,8 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
       </div>}
 
     </section>
+    {report.points.length > 0 && <details className={d.daily}><summary>Daily data &amp; ad reconciliation <span>{report.points.length} days</span></summary><div><DailyPeople points={report.points}/><AdsReconciliation points={report.points}/></div></details>}
+    </>}
     <Sheet mdlRef={sheet.ref} title={drill ? `${drill.label} / who reached it` : "Stage visitors"} titleId="trafficStageVisitors" size="drawer" onClose={sheet.close} error={drillError || null}>
       <div className={s.drill}>
         <div className={s.drillLead}><Users size={18}/><div><strong>{drillPending ? "Loading" : n(drillReport?.total)}</strong><span>{drillPending ? "Querying PostHog..." : `visitor${drillReport?.total === 1 ? "" : "s"} reached ${drill?.label ?? "this stage"} / ${filters.from} to ${filters.to}`}</span></div></div>
