@@ -237,23 +237,21 @@ interface MapBounds {
 }
 type OverlayCtor = new (opts: Record<string, unknown>) => MapOverlay;
 type OutlineSdk = {
-  Polygon?: OverlayCtor;
   Marker?: OverlayCtor;
   LatLngBounds?: new () => MapBounds;
-  SymbolPath?: { CIRCLE: unknown };
   Point?: PointCtor;
 };
 /**
- * One colour per other building, the same on its row's swatch and on the map —
- * bright enough to read on a satellite roof (sky, amber, violet, mint).
+ * One colour per other building, the same on its row's dot and its pin on
+ * the map — bright enough to read on a satellite roof (sky, amber, violet, mint).
  */
 const BUILDING_COLORS = ["#4a9eff", "#f0b03c", "#b394ff", "#5fd3a2"] as const;
 const buildingColor = (k: number) => BUILDING_COLORS[k % BUILDING_COLORS.length];
 
-/** Where an outline's number sits: on its north edge, the badge drawn just above it (see the icon's anchor) so a small shed's badge never hides the shed. */
-function badgeSpot(ring: ReadonlyArray<{ lat: number; lng: number }>): { lat: number; lng: number } {
-  const lng = ring.reduce((a, p) => a + p.lng, 0) / ring.length;
-  return { lat: Math.max(...ring.map((p) => p.lat)), lng };
+/** Where a building's pin stands: the middle of its outline. */
+function ringCenter(ring: ReadonlyArray<{ lat: number; lng: number }>): { lat: number; lng: number } {
+  const n = ring.length;
+  return { lat: ring.reduce((a, p) => a + p.lat, 0) / n, lng: ring.reduce((a, p) => a + p.lng, 0) / n };
 }
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const stripId = ({ id: _id, ...rest }: EstimateLine) => rest;
@@ -321,8 +319,8 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
   // Which measurement the live map is centred on — the outlines below draw
   // only once the map exists for it.
   const [mapReadyFor, setMapReadyFor] = React.useState<string | null>(null);
-  // The other-building row under the pointer or focus: outlined lightly on
-  // the map so the contractor sees which one it is before ticking it.
+  // The other-building row under the pointer or focus: its pin shows faintly
+  // on the map so the contractor sees which one it is before ticking it.
   const [hoverBuilding, setHoverBuilding] = React.useState<number | null>(null);
 
   // The data path never draws, so the CONFIDENCE verdict comes straight from
@@ -1327,10 +1325,11 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
   const otherStructures = inst ? inst.structures.map((s, i) => ({ s, i })).filter(({ i }) => i !== mainPick.index) : [];
 
   // The other buildings on the map (owner, 2026-10-10: "when I tick a box,
-  // show on the map which one that is"). A ticked building is outlined in its
-  // row's colour with its number; the row under the pointer is outlined
-  // lightly. The main house stays clean, as the owner chose for this map.
-  // A building the map cannot see yet is brought into view once, when ticked.
+  // show on the map which one that is" — then "don't outline buildings, just
+  // show a different colour pin"). A ticked building gets the house's pin in
+  // its row's colour, standing on the middle of its outline, its number in the
+  // head; the row under the pointer shows its pin faintly. A building the map
+  // cannot see yet is brought into view once, when ticked.
   const overlaysRef = React.useRef<MapOverlay[]>([]);
   const framedRef = React.useRef<{ on: string | null; ticked: ReadonlySet<number> }>({ on: null, ticked: new Set() });
   const outlineKey = otherStructures.map(({ s, i }) => `${i}:${s.outline?.length ?? 0}`).join(",");
@@ -1342,51 +1341,35 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
       overlaysRef.current = [];
     };
     clear();
-    if (!live || !sdk?.Polygon || !mapReadyFor || view !== "satellite" || panel !== "report") return clear;
+    if (!live || !sdk?.Marker || !mapReadyFor || view !== "satellite" || panel !== "report") return clear;
     const map = live.map as LiveGoogleMap & { getBounds?: () => MapBounds | null | undefined; fitBounds?: (b: MapBounds, pad?: number) => void };
     const shown = otherStructures
-      .map(({ s, i }, k) => ({ i, k, ring: s.outline, ticked: extra.has(i) }))
-      .filter((b) => (b.ticked || b.i === hoverBuilding) && (b.ring?.length ?? 0) >= 3);
+      .map(({ s, i }, k) => ({ i, k, at: (s.outline?.length ?? 0) >= 3 ? ringCenter(s.outline!) : null, ticked: extra.has(i) }))
+      .filter((b): b is { i: number; k: number; at: { lat: number; lng: number }; ticked: boolean } => (b.ticked || b.i === hoverBuilding) && b.at != null);
     for (const b of shown) {
-      const color = buildingColor(b.k);
       overlaysRef.current.push(
-        new sdk.Polygon({
+        new sdk.Marker({
           map,
-          paths: b.ring,
-          strokeColor: color,
-          strokeOpacity: b.ticked ? 1 : 0.85,
-          strokeWeight: b.ticked ? 3 : 2,
-          fillColor: color,
-          fillOpacity: b.ticked ? 0.22 : 0.1,
+          position: b.at,
           clickable: false,
-          zIndex: b.ticked ? 3 : 2,
+          zIndex: b.ticked ? 4 : 3,
+          opacity: b.ticked ? 1 : 0.6,
+          title: `Building ${b.k + 1}`,
+          label: { text: String(b.k + 1), color: "#0a0a0a", fontSize: "11px", fontWeight: "800" },
+          icon: { ...blueprintPinIcon(sdk.Point, buildingColor(b.k)), ...(sdk.Point ? { labelOrigin: new sdk.Point(12, 9) } : {}) },
         }),
       );
-      if (sdk.Marker && sdk.SymbolPath) {
-        overlaysRef.current.push(
-          new sdk.Marker({
-            map,
-            position: badgeSpot(b.ring!),
-            clickable: false,
-            zIndex: 4,
-            title: `Building ${b.k + 1}`,
-            label: { text: String(b.k + 1), color: "#0a0a0a", fontSize: "12px", fontWeight: "800" },
-            // The circle (radius 1 in path units) sits above the edge point at any zoom.
-            icon: { path: sdk.SymbolPath.CIRCLE, scale: 10, fillColor: color, fillOpacity: 1, strokeColor: "#0a0a0a", strokeWeight: 1.5, ...(sdk.Point ? { anchor: new sdk.Point(0, 1.35) } : {}) },
-          }),
-        );
-      }
     }
     // Frame a building ticked just now when the map cannot see it.
     const before = framedRef.current.on === mapReadyFor ? framedRef.current.ticked : new Set<number>();
     const fresh = shown.filter((b) => b.ticked && !before.has(b.i));
     framedRef.current = { on: mapReadyFor, ticked: new Set(shown.filter((b) => b.ticked).map((b) => b.i)) };
     const view0 = map.getBounds?.();
-    if (fresh.length && sdk.LatLngBounds && map.fitBounds && view0 && fresh.some((b) => b.ring!.some((p) => !view0.contains(p)))) {
+    if (fresh.length && sdk.LatLngBounds && map.fitBounds && view0 && fresh.some((b) => !view0.contains(b.at))) {
       const bounds = new sdk.LatLngBounds();
       if (mapLat != null && mapLng != null) bounds.extend({ lat: mapLat, lng: mapLng });
-      for (const b of shown.filter((x) => x.ticked)) for (const p of b.ring!) bounds.extend(p);
-      map.fitBounds(bounds, 56);
+      for (const b of shown.filter((x) => x.ticked)) bounds.extend(b.at);
+      map.fitBounds(bounds, 72);
     }
     return clear;
     // outlineKey stands for otherStructures' outlines; the array itself is rebuilt every render.
@@ -2095,7 +2078,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                         {num(otherStructures.reduce((a, { s }) => a + (s.areaSqft ?? 0), 0))} sq ft
                       </div>
                       <div className="rf-note">
-                        Tick a building to add it to the total and the estimate{liveMap && view === "satellite" ? " — it is outlined on the map" : ""}.
+                        Tick a building to add it to the total and the estimate{liveMap && view === "satellite" ? " — its pin shows on the map" : ""}.
                       </div>
                       {otherStructures.map(({ s, i }, k) => (
                         <div
@@ -2121,7 +2104,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                               Building {k + 1}
                             </label>
                             {extra.has(i) && liveMap && view === "satellite" && (s.outline?.length ?? 0) < 3 && (
-                              <span className="rf-attach-note">no outline in the report — not on the map</span>
+                              <span className="rf-attach-note">no location in the report — no pin on the map</span>
                             )}
                           </dt>
                           <dd>

@@ -1,5 +1,6 @@
 // The one map pin of the roof estimator, in the house colours: blueprint
-// fill, ink frame, a white eye. Used three ways — as inline SVG over the
+// fill, ink frame, a white eye. The report's other buildings wear the same
+// pin in their own colour (2026-10-10). Used three ways — as inline SVG over the
 // static satellite photo (rf-pin-center), and as the Marker icon on the two
 // live Google maps (the report viewer, the intake's pin preview). One path,
 // so the three read as the same drawn object.
@@ -13,12 +14,12 @@ export type PointCtor = new (x: number, y: number) => unknown;
 /** A google.maps Symbol for the classic Marker. The anchor needs a real
  *  Point; without the constructor the tip would sit off the coordinate, so
  *  the caller falls back to Google's own marker (icon undefined). */
-export function blueprintPinIcon(Point: PointCtor | null | undefined): Record<string, unknown> | undefined {
+export function blueprintPinIcon(Point: PointCtor | null | undefined, fill = "#1854a0"): Record<string, unknown> | undefined {
   if (!Point) return undefined;
   const scale = 1.55;
   return {
     path: PIN_PATH,
-    fillColor: "#1854a0",
+    fillColor: fill,
     fillOpacity: 1,
     strokeColor: "#0a0a0a",
     strokeWeight: 1.5,

@@ -1915,7 +1915,7 @@
 .bp :global(.content .rf-attach) { display: inline-flex; align-items: center; gap: 9px; min-height: 36px; padding: 0 12px 0 10px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; font-size: 12.5px; font-weight: 600; color: var(--ink); cursor: pointer; user-select: none; transition: border-color 0.12s, opacity 0.12s; }
 .bp :global(.content .rf-attach:hover) { border-color: var(--ink); }
 .bp :global(.content .rf-attach.is-off) { opacity: 0.6; }
-/* The building's colour on the map, beside its name (2026-10-10). */
+/* The building's pin colour on the map, beside its name (2026-10-10). */
 .bp :global(.content .rf-others .rf-attach) { white-space: nowrap; }
 .bp :global(.content .rf-attach .rf-swatch) { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--ink); flex: 0 0 auto; }
 .bp :global(.content .rf-attach-note) { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
