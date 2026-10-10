@@ -967,6 +967,13 @@
 :global(.jf-blueprint .content) .chk-plan { margin-top: 8px; padding: 8px 10px; border-left: 2px solid var(--blueprint); background: color-mix(in oklab, var(--blueprint) 4%, #fff); color: var(--ink); }
 :global(.jf-blueprint .content) .chk-lead { font-size: 12px; font-weight: 700; color: var(--ink); }
 :global(.jf-blueprint .content) .chk-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+/* the fix typed in the row (2026-10-10): the intake field under the lead, prefilled, with the way to the intake step beside it */
+:global(.jf-blueprint .content) .chk-field { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 12px; width: 100%; }
+:global(.jf-blueprint .content) .chk-field .field { flex: 0 1 300px; min-width: 200px; color: var(--ink); }
+:global(.jf-blueprint .content) .chk-field .in, :global(.jf-blueprint .content) .chk-field .sel { height: 36px; }
+:global(.jf-blueprint .content) .fix-link { align-self: center; padding: 8px 0; border: 0; background: none; font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+:global(.jf-blueprint .content) .fix-link:hover { color: var(--blueprint); }
+@media (max-width: 560px) { :global(.jf-blueprint .content) .chk-field .field { flex: 1 1 100%; } :global(.jf-blueprint .content) .chk-field .in, :global(.jf-blueprint .content) .chk-field .sel { height: 44px; } }
 :global(.jf-blueprint .content) .fix-btn { min-height: 30px; padding: 4px 10px; border: 1.5px solid var(--blueprint); border-radius: 2px; background: #fff; color: var(--blueprint); font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-align: left; cursor: pointer; }
 :global(.jf-blueprint .content) .fix-btn:hover { background: var(--blueprint); color: #fff; }
 :global(.jf-blueprint .content) .fix-btn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }

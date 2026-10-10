@@ -39,6 +39,9 @@ import { runEngine } from "@/lib/hvac/engine";
 import { nextSteps, planFor, type FixAction } from "@/lib/hvac/fixes";
 import { countiesFor } from "@/lib/hvac/designConditions";
 import { CATALOG_CSV_COLUMNS, DEFAULT_RATE_CARD, buildLedger, normalizeRateCard, tiersFor, waterHeaterOptions, type HvacRateCard, type LedgerLine } from "@/lib/hvac/ledger";
+import { offForState, stateName } from "@/lib/hvac/catalogView";
+import { fixFieldSpec } from "@/lib/hvac/fieldSpecs";
+import { addMissingUsRows } from "@/actions/hvacCatalog";
 import { DEFAULT_JOB, JOBS, jobDef, type JobInput, type JobKind , type OutdoorKind } from "@/lib/hvac/jobs";
 import { applyNameplate, applyStated, applyStatedNested, applyTypedModelNumber, applyWalkthrough, modelFromSite, type NameplateRead, type SiteFacts } from "@/lib/hvac/intake";
 import { designConditionsFor } from "@/lib/hvac/designConditions";
@@ -272,15 +275,17 @@ function Chip({ p }: { p?: Provenance }) {
 }
 
 type FieldKind = "num" | "text" | "select" | "bool";
-function Field({ label, path, model, kind, options, onChange, placeholder, step, area }: {
+function Field({ label, path, model, kind, options, onChange, placeholder, step, area, idPrefix = "hv-" }: {
   label: string; path: string; model: BuildingModel; kind: FieldKind;
   options?: Array<[string, string]>; onChange: (path: string, v: unknown) => void; placeholder?: string; step?: string;
   /** An area in square inches: "20x25" / "20 × 25" typed here is multiplied out (2026-10-08 — it used to be dropped as not a number). */
   area?: boolean;
+  /** The same field drawn inside a check row (2026-10-10) carries its own id — the hidden intake step keeps the "hv-" one. */
+  idPrefix?: string;
 }) {
   const raw = getPath(model, path);
   const p = model.provenance[path];
-  const id = `hv-${path.replace(/\./g, "-")}`;
+  const id = `${idPrefix}${path.replace(/\./g, "-")}`;
   if (kind === "bool") {
     return (
       <label className={cx("field")} htmlFor={id}>
@@ -527,7 +532,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
   const [unitDraft, setUnitDraft] = React.useState<Record<string, string>>({});
 
   // shop data
-  const [catalog, setCatalog] = React.useState<{ items: CatalogItem[]; own: boolean; source?: "shop" | "us" | "starter" } | null>(null);
+  const [catalog, setCatalog] = React.useState<{ items: CatalogItem[]; own: boolean; source?: "shop" | "us" | "starter"; state?: string } | null>(null);
   const [card, setCard] = React.useState<{ card: HvacRateCard; own: boolean }>({ card: DEFAULT_RATE_CARD, own: false });
   const [cardDraft, setCardDraft] = React.useState<HvacRateCard | null>(null);
   const [cardMsg, setCardMsg] = React.useState("");
@@ -1052,6 +1057,13 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
       setCatMsg(`${res.imported} rows imported${res.errors.length ? ` · ${res.errors.length} not: ${res.errors[0]}` : ""}.${res.note ? ` ${res.note}.` : ""}`);
       setCatalog(await listHvacCatalog());
     } catch (err) { setCatMsg(errMsg(err)); }
+  };
+  // The rows are the shop's: a newer US list adds only what is missing (Load would rewrite the US rows and drop costs and switches).
+  const onAddUsRows = async () => {
+    setCatMsg("Adding…");
+    const res = await addMissingUsRows();
+    setCatMsg(res.ok ? `${res.added} row${res.added === 1 ? "" : "s"} added from the current US list — your rows, costs and switches untouched.` : res.error);
+    setCatalog(await listHvacCatalog());
   };
   const onLoadUs = async () => {
     setCatMsg("Loading the US catalog…");
@@ -1987,16 +1999,44 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                 const measure = planned.filter((x) => x.c.status !== "pass" && x.plan.group === "measure");
                 const notes = planned.filter((x) => x.c.status !== "pass" && x.plan.group === "code");
                 const steps = nextSteps(engine.checks, ctx);
-                const actionButton = (a: FixAction, i: number) => (
-                  a.kind === "ledger" || a.kind === "note"
-                    ? <span key={i} className={cx("fix-note", a.kind === "ledger" && "fix-priced")} data-fix-kind={a.kind}>{a.kind === "ledger" && <svg className={cx("ic")}><use href="#i-check" /></svg>}{a.label}</span>
-                    : <button key={i} type="button" className={cx("fix-btn")} data-fix-kind={a.kind} onClick={() => runFix(a)}>{a.label}</button>
-                );
+                const rowIdOf = (c: { id: string; title: string }) => `hv-chk-${`${c.id}-${c.title}`.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+                /** The strip's field action opens the row that carries the field — the fix is typed right there (2026-10-10,
+                 *  owner: "offer to fix it right here"); anything else runs as before. */
+                const openRowFor = (a: FixAction) => {
+                  if (a.kind === "field") {
+                    const hit = planned.find((x) => x.c.status !== "pass" && x.plan.actions.some((b) => b.kind === "field" && b.path === a.path));
+                    if (hit) {
+                      setOpenCheck(hit.c.id + hit.c.title);
+                      window.setTimeout(() => { const el = document.getElementById(rowIdOf(hit.c)); el?.scrollIntoView({ behavior: "smooth", block: "center" }); (el?.querySelector("input, select") as HTMLElement | null)?.focus(); }, 60);
+                      return;
+                    }
+                  }
+                  runFix(a);
+                };
+                const actionButton = (a: FixAction, i: number, inRow = false) => {
+                  if (a.kind === "ledger" || a.kind === "note") return <span key={i} className={cx("fix-note", a.kind === "ledger" && "fix-priced")} data-fix-kind={a.kind}>{a.kind === "ledger" && <svg className={cx("ic")}><use href="#i-check" /></svg>}{a.label}</span>;
+                  if (a.kind === "field" && inRow) {
+                    // A value the plan already knows is set right here; a figure to type is typed right here, prefilled from the model.
+                    if (a.value !== undefined) return <button key={i} type="button" className={cx("fix-btn")} data-fix-kind="set" onClick={() => onTyped(a.path, a.value)}>{a.label}</button>;
+                    const spec = fixFieldSpec(a.path);
+                    if (spec) {
+                      const onField = spec.numeric ? (pth: string, v: unknown) => onTyped(pth, v === undefined ? undefined : Number(v)) : onTyped;
+                      return (
+                        <div key={i} className={cx("chk-field")} data-fix-field={a.path}>
+                          <Field label={spec.label} path={a.path} model={ctx.model} kind={spec.kind} options={spec.options} placeholder={spec.placeholder} step={spec.step} area={spec.area} onChange={onField} idPrefix="hvfix-" />
+                        </div>
+                      );
+                    }
+                  }
+                  return <button key={i} type="button" className={cx("fix-btn")} data-fix-kind={a.kind} onClick={() => (inRow ? runFix(a) : openRowFor(a))}>{a.label}</button>;
+                };
+                // The row that was open has just passed: say so where it stood (it has moved into the passed fold).
+                const passedNow = openCheck ? pass.find((x) => x.c.id + x.c.title === openCheck) : undefined;
                 const row = ({ c, plan }: (typeof planned)[number]) => {
                   const id = c.id + c.title;
                   const open = openCheck === id;
                   return (
-                    <li key={id} className={cx("chk-r", open && "open")}>
+                    <li key={id} id={rowIdOf(c)} className={cx("chk-r", open && "open")}>
                       <button type="button" className={cx("chk-b")} aria-expanded={open} onClick={() => setOpenCheck(open ? null : id)}>
                         <span className={cx("chip", `chip-${c.status}`)}>{c.status}</span>
                         <span className={cx("chk-t")}>{c.title}</span>
@@ -2008,7 +2048,8 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                           {c.status !== "pass" && plan.actions.length > 0 && (
                             <div className={cx("chk-plan")} data-check-plan={plan.group}>
                               <div className={cx("chk-lead")}>{plan.lead}</div>
-                              <div className={cx("chk-acts")}>{plan.actions.map(actionButton)}</div>
+                              <div className={cx("chk-acts")}>{plan.actions.map((a, i) => actionButton(a, i, true))}</div>
+                              {(() => { const f = plan.actions.find((a) => a.kind === "field" && a.value === undefined && fixFieldSpec(a.path)); return f ? <button type="button" className={cx("fix-link")} onClick={() => runFix(f)}>open in What is there</button> : null; })()}
                             </div>
                           )}
                           {c.status !== "pass" && plan.actions.length === 0 && <div className={cx("chk-lead")}>{plan.lead}</div>}
@@ -2026,9 +2067,10 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
                     {steps.length > 0 && (
                       <div className={cx("chk-next")} data-next-steps>
                         <span className={cx("kpi-lbl")}>To pass</span>
-                        <div className={cx("chk-acts")}>{steps.map(actionButton)}</div>
+                        <div className={cx("chk-acts")}>{steps.map((a, i) => actionButton(a, i, false))}</div>
                       </div>
                     )}
+                    {passedNow && <div className={cx("chk-clear")} data-just-passed>✓ {passedNow.c.title} — passed.</div>}
                     {fix.length + measure.length === 0 && notes.length + pass.length > 0 && <div className={cx("chk-clear")} data-all-clear>Nothing left to fix or measure on the design.</div>}
                     <ul className={cx("chk-l")}>{[...fix, ...measure].map(row)}</ul>
                     {notes.length > 0 && (
@@ -2259,7 +2301,7 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
           </details>
 
           <details className={cx("panel")}>
-            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.length} rows from the shop${usStale ? " · update available" : ""}` : catalog?.source === "us" ? `built-in US list · ${catalog.items.length} models · import your CSV for your costs` : "starter ladder · import your CSV"}</span><span className={cx("panel-go")}><span className={cx("st-edit", "go-open")}>Manage</span><span className={cx("st-edit", "go-close")}>Close</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></span></summary>
+            <summary><svg className={cx("ic")}><use href="#i-file" /></svg>Catalog<span className={cx("mono")}>{catalog?.own ? `${catalog.items.filter((c) => !c.offList).length} of ${catalog.items.length} rows on the pick list${catalog.state ? ` · checked for ${catalog.state}` : ""}${usStale ? " · update available" : ""}` : catalog?.source === "us" ? `built-in US list · ${catalog.items.length} models · import your CSV for your costs` : "starter ladder · import your CSV"}</span><span className={cx("panel-go")}><span className={cx("st-edit", "go-open")}>Manage</span><span className={cx("st-edit", "go-close")}>Close</span><svg className={cx("ic", "fold2-c")}><use href="#i-chev" /></svg></span></summary>
             <div className={cx("panel-body")}>
               {usStale && <div className={cx("call", "warn")} style={{ marginBottom: 10 }}><span className={cx("stamp")}>update</span><span>Your catalog came from an older build of the US list: it is missing {usStale.missing} row{usStale.missing === 1 ? "" : "s"}{usStale.uln ? `, ${usStale.uln} of them ultra-low-NOx gas heat for California` : ""}{usStale.noNox ? ", and its gas rows carry no NOx class, so California districts rule them all out" : ""}. Press <b>Load the US catalog</b> to bring it up to date — your own rows and costs on other ids stay.</span></div>}
               <div className={cx("note")}>Load the US list or import your own CSV — the engine picks from what is here, and your costs price the estimate.</div>
@@ -2269,13 +2311,27 @@ export function HvacEstimatorForm({ aiEnabled, initialAddress, leads = [] }: { a
               </details>
               <div className={cx("acts")}>
                 <a className={cx("btn", "btn-primary")} href="/dashboard/hvac-estimator/catalog"><svg className={cx("ic")}><use href="#i-box" /></svg>Manage catalog</a>
-                <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void onLoadUs()}>Load the US catalog</button>
+                {catalog?.own
+                  ? (usStale ? <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void onAddUsRows()}>Add {usStale.missing} new US rows</button> : null)
+                  : <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void onLoadUs()}>Load the US catalog</button>}
                 <label className={cx("btn", "btn-ghost")} htmlFor="hv-csv"><svg className={cx("ic")}><use href="#i-download" /></svg>Import CSV<input id="hv-csv" type="file" accept=".csv,text/csv" style={{ display: "none" }} onChange={(e) => void onCsv(e.target.files?.[0])} /></label>
                 <label className={cx("chk")} htmlFor="hv-replace" style={{ height: 38 }}><input id="hv-replace" type="checkbox" checked={replaceCat} onChange={(e) => setReplaceCat(e.target.checked)} /><span>Replace the current catalog</span></label>
                 <button type="button" className={cx("btn", "btn-ghost")} onClick={onDownloadCatalog} disabled={!catalog}>Download CSV</button>
                 {catalog?.own && <button type="button" className={cx("btn", "btn-ghost")} onClick={() => void onClearCatalog()}>Clear</button>}
                 <span className={cx("acts-note")}>{catMsg}</span>
               </div>
+              {catalog && catalog.items.length > 0 && (() => {
+                const on = catalog.items.filter((c) => !c.offList).length;
+                const ruledOut = catalog.state ? offForState(catalog.items, catalog.state).length : 0;
+                return (
+                  <div className={cx("note")} data-catalog-state>
+                    <b>{on} of {catalog.items.length}</b> on the pick list{on < catalog.items.length ? ` · ${catalog.items.length - on} turned off` : ""}.{" "}
+                    {catalog.state
+                      ? <>Code check for <b>{stateName(catalog.state)}</b>: {ruledOut ? <>{ruledOut} row{ruledOut === 1 ? "" : "s"} the state rules out {ruledOut === 1 ? "is" : "are"} still on — <a className={cx("link")} href="/dashboard/hvac-estimator/catalog">set the list up</a>.</> : "nothing on the list is ruled out there."}</>
+                      : <>No state picked yet — <a className={cx("link")} href="/dashboard/hvac-estimator/catalog">open the catalog</a> to pick it and check every row against its code.</>}
+                  </div>
+                );
+              })()}
               {catalog?.own && catalog.items.length > 0 && (
                 <div className={cx("note", "mono")}>
                   {(["air-conditioner", "heat-pump", "furnace", "air-handler", "coil", "ductless", "package", "water-heater"] as const)

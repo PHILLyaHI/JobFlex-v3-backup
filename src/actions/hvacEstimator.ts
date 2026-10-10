@@ -313,16 +313,23 @@ export async function readHvacNameplate(raw: unknown): Promise<{ ok: true; read:
  *  and brands"; before this a shop with no rows saw a synthetic "Starter"
  *  ladder). The starter ladder remains only for a build whose US list is
  *  empty. `own` says whether the rows are the shop's; `source` which list. */
-export async function listHvacCatalog(): Promise<{ items: CatalogItem[]; own: boolean; source: "shop" | "us" | "starter" }> {
+export async function listHvacCatalog(): Promise<{ items: CatalogItem[]; own: boolean; source: "shop" | "us" | "starter"; state: string }> {
   const { organizationId } = await requireEstimatorOrManager();
   await requirePage(organizationId, "hvac-estimator");
+  // The shop's state for the code check: the catalog page's pick (SyncState), else the one in the address.
+  const state = await (async () => {
+    const row = await db.syncState.findUnique({ where: { key: `hvacCatalogState:${organizationId}` } }).catch(() => null);
+    if (row?.cursor && /^[A-Z]{2}$/.test(row.cursor)) return row.cursor;
+    const org = await db.organization.findUnique({ where: { id: organizationId }, select: { address: true } }).catch(() => null);
+    return stateFromAddress(org?.address) ?? "";
+  })();
   try {
     const rows = await db.hvacCatalogItem.findMany({ where: { organizationId }, orderBy: [{ kind: "asc" }, { brand: "asc" }, { model: "asc" }] });
-    if (rows.length) return { items: rows.map((r) => JSON.parse(r.itemJson) as CatalogItem), own: true, source: "shop" };
+    if (rows.length) return { items: rows.map((r) => JSON.parse(r.itemJson) as CatalogItem), own: true, source: "shop", state };
   } catch {
     /* table not pushed yet */
   }
-  return US_CATALOG.length ? { items: US_CATALOG, own: false, source: "us" } : { items: STARTER_CATALOG, own: false, source: "starter" };
+  return US_CATALOG.length ? { items: US_CATALOG, own: false, source: "us", state } : { items: STARTER_CATALOG, own: false, source: "starter", state };
 }
 
 export async function importHvacCatalogCsv(raw: unknown): Promise<{ ok: true; imported: number; errors: string[]; note?: string } | { ok: false; error: string }> {
