@@ -20,7 +20,6 @@ export const ADMIN_NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Overview", icon: "i-grid", href: "/admin" },
       { label: "Traffic", icon: "i-chart", href: "/admin/traffic" },
-      { label: "Traffic v2", icon: "i-chart", href: "/admin/traffic-v2" },
       { label: "A/B testing", icon: "i-chart", href: "/admin/ab-testing" },
       // Added 2026-09-18: what each member did — proposals created and sent,
       // estimates made — counted per user, with the trail beneath.
