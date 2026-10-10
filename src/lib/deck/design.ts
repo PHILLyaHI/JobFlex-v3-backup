@@ -17,7 +17,8 @@
 import { LOADS, POST_SIZES, SOILS, SOLID_BEAMS, SPACINGS, JOIST_SIZES, type BuiltUpBeam, type JoistSize, type LedgerFastener, type LoadPsf, type PostSize, type SoilPsf, type SolidBeam, type SpacingIn } from "./codeTables";
 import { DECKING, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, wallType, type FramingSpeciesId, type RailTypeId, type WallTypeId } from "./catalog";
 
-export const DECK_DESIGN_VERSION = 1;
+/** v2 (2026-10-10): `structure`, `floor`, `roof` and `photo` joined the design. A v1 design reads as a bare deck. */
+export const DECK_DESIGN_VERSION = 2;
 
 /** Which corner of the rectangle an L-shape is missing. "Back" is the house side. */
 export type NotchCorner = "front-left" | "front-right" | "back-left" | "back-right";
@@ -56,6 +57,126 @@ export const BUILT_UP_CHOICES: readonly BuiltUpBeam[] = ["2-2x6", "2-2x8", "2-2x
 export const isSolidBeam = (b: string): b is SolidBeam => (SOLID_BEAMS as readonly string[]).includes(b);
 
 export type FootingType = "poured" | "pier-block";
+
+/* ------------------------------------------------------------------ */
+/*  What stands on the deck (M2, 2026-10-10)                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What is being built: a bare deck; a deck with a roof over it (on the
+ * house wall or a free-standing pavilion); a gazebo with its own roof shape,
+ * standing on a deck, a slab or footings in the ground; a pergola of open
+ * slats on any of the three.
+ */
+export type Structure = "deck" | "covered-deck" | "gazebo" | "pergola";
+export const STRUCTURES: readonly Structure[] = ["deck", "covered-deck", "gazebo", "pergola"];
+export const STRUCTURE_LABEL: Record<Structure, string> = { deck: "Deck", "covered-deck": "Covered deck", gazebo: "Gazebo", pergola: "Pergola" };
+
+/** What a gazebo or a pergola stands on. A deck and a covered deck always stand on the deck. */
+export type Floor = "deck" | "slab" | "ground";
+export const FLOORS: readonly Floor[] = ["deck", "slab", "ground"];
+export const FLOOR_LABEL: Record<Floor, string> = { deck: "On a deck", slab: "On a concrete slab", ground: "On footings in the ground" };
+
+export type RoofKind = "shed" | "gable" | "hip" | "pyramid" | "double-tier" | "pergola";
+export const ROOF_KINDS: readonly RoofKind[] = ["shed", "gable", "hip", "pyramid", "double-tier", "pergola"];
+export const ROOF_KIND_LABEL: Record<RoofKind, string> = {
+  shed: "Shed — one slope",
+  gable: "Gable",
+  hip: "Hip",
+  pyramid: "Pyramid",
+  "double-tier": "Double tier (pagoda)",
+  pergola: "Open slats",
+};
+/** The roof's outline in plan: the deck's own rectangle, or its own figure. */
+export type RoofPlanShape = "follows-deck" | "square" | "rect" | "hexagon" | "octagon";
+export const ROOF_PLAN_SHAPES: readonly RoofPlanShape[] = ["follows-deck", "square", "rect", "hexagon", "octagon"];
+export const ROOF_PLAN_LABEL: Record<RoofPlanShape, string> = { "follows-deck": "Follows the deck", square: "Square", rect: "Rectangle", hexagon: "Hexagon", octagon: "Octagon" };
+/** On the house wall (a ledger carries the back of the roof) or free on its own posts. */
+export type RoofAttach = "wall" | "free";
+export type Roofing = "arch-shingle" | "3tab-shingle" | "designer-shingle" | "cedar-shake" | "metal-panel" | "standing-seam" | "none";
+export const ROOFINGS: readonly Roofing[] = ["arch-shingle", "3tab-shingle", "designer-shingle", "cedar-shake", "metal-panel", "standing-seam", "none"];
+export const ROOFING_LABEL: Record<Roofing, string> = {
+  "arch-shingle": "Architectural shingles",
+  "3tab-shingle": "3-tab shingles",
+  "designer-shingle": "Designer shingles",
+  "cedar-shake": "Cedar shakes",
+  "metal-panel": "Metal panels, exposed fasteners",
+  "standing-seam": "Standing-seam metal",
+  none: "No roofing — open slats",
+};
+/** What the roofing sits on: sheathing, or purlins across the rafters (metal only). */
+export type RoofDeck = "sheathing" | "purlins";
+/**
+ * What the rafters meet at the top: a ridge BEAM (the rafters bear on it and
+ * the ceiling can stay open), a ridge BOARD with rafter ties (the ties take
+ * the thrust), or none (hips meet at a king post or a steel ring). "auto"
+ * lets the roof's shape decide.
+ */
+export type RidgeKind = "auto" | "beam" | "board" | "none";
+export type CeilingKind = "none" | "tongue-groove" | "beadboard";
+export const CEILING_LABEL: Record<CeilingKind, string> = { none: "Open — rafters showing", "tongue-groove": "Tongue-and-groove boards", beadboard: "Beadboard panels" };
+export type FasciaFinish = "wood" | "pvc" | "aluminum-wrap";
+export const FASCIA_FINISH_LABEL: Record<FasciaFinish, string> = { wood: "Painted wood 1x", pvc: "PVC trim board", "aluminum-wrap": "Aluminum wrap over wood" };
+export type GutterKind = "none" | "k5" | "k6" | "half-round-alum" | "half-round-copper";
+export const GUTTER_KINDS: readonly GutterKind[] = ["none", "k5", "k6", "half-round-alum", "half-round-copper"];
+export const GUTTER_LABEL: Record<GutterKind, string> = {
+  none: "No gutters",
+  k5: "5-in. K-style aluminum",
+  k6: "6-in. K-style aluminum",
+  "half-round-alum": "Half-round aluminum",
+  "half-round-copper": "Half-round copper",
+};
+export type RoofPostSize = "4x4" | "6x6" | "8x8";
+export type RoofLoadChoice = "auto" | 20 | 30 | 50 | 70;
+export type SlatSize = "2x2" | "2x4" | "2x6";
+
+export interface RoofDesign {
+  kind: RoofKind;
+  attach: RoofAttach;
+  plan: {
+    shape: RoofPlanShape;
+    /** A square or rectangle: along the house and out from it, ft. */
+    widthFt: number;
+    depthFt: number;
+    /** A hexagon or octagon: across the flats, ft. */
+    acrossFt: number;
+    /** The roof's centre off the deck's centre, along the house, ft (a roof over part of a long deck). */
+    offsetFt: number;
+  };
+  /** Rise per 12 in. of run. */
+  pitch: number;
+  /** Underside of the headers above the floor the posts stand on, inches. */
+  eaveHeightIn: number;
+  /** Eaves and rakes past the posts, inches. */
+  overhangIn: number;
+  load: RoofLoadChoice;
+  post: RoofPostSize;
+  rafter: JoistSize | "auto";
+  rafterSpacingIn: SpacingIn;
+  header: BeamSize | "auto";
+  ridge: RidgeKind;
+  roofing: Roofing;
+  roofDeck: RoofDeck;
+  ceiling: CeilingKind;
+  cupola: boolean;
+  fascia: { eave: boolean; rake: boolean; finish: FasciaFinish };
+  soffit: boolean;
+  gutters: { kind: GutterKind; guards: boolean };
+  braces: boolean;
+  /** A pergola's slats on top of its rafters. */
+  slats: { size: SlatSize; spacingIn: number };
+}
+
+/** A photo of the back of the house, kept with the design so the client sees where the deck goes. */
+export interface DeckPhoto {
+  /** The stored file (private store, local or inline — lib/media/privateStore). */
+  url: string;
+  /** The picture's pixels. */
+  w: number;
+  h: number;
+  /** Where the deck's elevation was placed on it: the ground line's left end and its width, as fractions of the picture. */
+  placed: { x: number; y: number; w: number } | null;
+}
 
 export interface DeckDesign {
   v: typeof DECK_DESIGN_VERSION;
@@ -122,6 +243,11 @@ export interface DeckDesign {
     /** Stainless connectors and fasteners (within 300 ft of salt water the code requires them). */
     stainless: boolean;
   };
+  /** What stands on it (M2). A bare deck has `structure: "deck"`; its `roof` is kept so switching back and forth loses nothing. */
+  structure: Structure;
+  floor: Floor;
+  roof: RoofDesign;
+  photo: DeckPhoto | null;
 }
 
 /** The rails every number is held inside. */
@@ -142,6 +268,45 @@ export const DECK_LIMITS = {
   demoSqFt: { min: 0, max: 4000 },
   railCustomPerFt: { min: 0, max: 1000 },
 } as const;
+
+export const ROOF_LIMITS = {
+  planFt: { min: 6, max: 40 },
+  acrossFt: { min: 8, max: 30 },
+  offsetFt: { min: -30, max: 30 },
+  pitch: { min: 2, max: 12 },
+  eaveHeightIn: { min: 84, max: 144 },
+  overhangIn: { min: 0, max: 36 },
+  slatSpacingIn: { min: 3, max: 24 },
+} as const;
+
+/** The roof a structure starts with — a gable over a covered deck, a square pyramid gazebo, a pergola of 2x2 slats. */
+export function defaultRoofDesign(structure: Structure = "covered-deck"): RoofDesign {
+  const gazebo = structure === "gazebo";
+  const pergola = structure === "pergola";
+  return {
+    kind: pergola ? "pergola" : gazebo ? "pyramid" : "gable",
+    attach: gazebo || pergola ? "free" : "wall",
+    plan: { shape: gazebo ? "square" : "follows-deck", widthFt: 12, depthFt: 12, acrossFt: 12, offsetFt: 0 },
+    pitch: gazebo ? 6 : pergola ? 0 : 4,
+    eaveHeightIn: 96,
+    overhangIn: 12,
+    load: "auto",
+    post: "6x6",
+    rafter: "auto",
+    rafterSpacingIn: 16,
+    header: "auto",
+    ridge: "auto",
+    roofing: pergola ? "none" : "arch-shingle",
+    roofDeck: "sheathing",
+    ceiling: "none",
+    cupola: false,
+    fascia: { eave: true, rake: true, finish: "wood" },
+    soffit: false,
+    gutters: { kind: structure === "covered-deck" ? "k5" : "none", guards: false },
+    braces: true,
+    slats: { size: "2x2", spacingIn: 12 },
+  };
+}
 
 /** A new deck for a shop in `state`: the owner's standards, the region's lumber. */
 export function defaultDeckDesign(opts: { state?: string | null; frostIn?: number } = {}): DeckDesign {
@@ -172,6 +337,10 @@ export function defaultDeckDesign(opts: { state?: string | null; frostIn?: numbe
     footing: { type: "poured", aboveGradeIn: 3, frostAlways: false },
     decking: { product: defaultDecking(opts.state), diagonal: false, fastening: "auto", fascia: "auto", wastePct: 10 },
     extras: { rail: "none", railFt: "auto", railCustomPerFt: 0, stairFlights: 0, stairWidthFt: 4, demoSqFt: 0, stainless: false },
+    structure: "deck",
+    floor: "deck",
+    roof: defaultRoofDesign("covered-deck"),
+    photo: null,
   };
 }
 
@@ -227,6 +396,12 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   if (placement === "attached" && !w.ledger) placement = "beside";
   const fastener = oneOf(l.fastener, w.fasteners.length ? w.fasteners : (["lag"] as LedgerFastener[]), w.fasteners[0] ?? "lag");
 
+  const structure = oneOf(r.structure, STRUCTURES, d.structure);
+  // A deck and a covered deck stand on the deck; a gazebo or a pergola on whatever was chosen.
+  const floor: Floor = structure === "deck" || structure === "covered-deck" ? "deck" : oneOf(r.floor, FLOORS, d.floor);
+  const roof = normalizeRoof(r.roof, structure, floor, placement);
+  const photo = normalizePhoto(r.photo);
+
   const beamKind = oneOf(f.beamKind, ["solid", "built-up"] as const, d.framing.beamKind);
   const beamRaw = typeof f.beam === "string" ? f.beam : "auto";
   const beam: BeamSize | "auto" = beamKind === "solid" ? (isSolidBeam(beamRaw) ? beamRaw : "auto") : (BUILT_UP_CHOICES as readonly string[]).includes(beamRaw) ? (beamRaw as BuiltUpBeam) : "auto";
@@ -278,7 +453,103 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
       demoSqFt: Math.round(clamp(num(ex.demoSqFt, 0), DECK_LIMITS.demoSqFt.min, DECK_LIMITS.demoSqFt.max)),
       stainless: ex.stainless === true,
     },
+    structure,
+    floor,
+    roof,
+    photo,
   };
+}
+
+/**
+ * The roof, brought inside its rails and made to agree with the structure:
+ * a pergola's roof is slats; a gazebo has a roof shape of its own, never a
+ * shed; a polygon is roofed as a pyramid; a roof can hang on the wall only
+ * where the deck meets the house.
+ */
+export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, placement: Placement): RoofDesign {
+  // A bare deck keeps a covered deck's roof in the drawer, so switching to one later starts from the usual.
+  const d = defaultRoofDesign(structure === "deck" ? "covered-deck" : structure);
+  const r = obj(raw);
+  const pl = obj(r.plan);
+  const fa = obj(r.fascia);
+  const gu = obj(r.gutters);
+  const sl = obj(r.slats);
+  let kind = oneOf(r.kind, ROOF_KINDS, d.kind);
+  if (structure === "pergola") kind = "pergola";
+  else if (kind === "pergola") kind = d.kind;
+  if (structure === "gazebo" && kind === "shed") kind = "hip";
+  let shape = oneOf(pl.shape, ROOF_PLAN_SHAPES, d.plan.shape);
+  if (floor !== "deck" && shape === "follows-deck") shape = "rect";
+  if ((shape === "hexagon" || shape === "octagon") && kind !== "pyramid" && kind !== "double-tier" && kind !== "pergola") kind = "pyramid";
+  if (kind === "pyramid" && shape === "rect") shape = "square";
+  if (kind === "shed" && shape !== "follows-deck") shape = shape === "square" ? "square" : "rect";
+  let attach = oneOf(r.attach, ["wall", "free"] as const, d.attach);
+  // The wall carries a roof only where the deck meets it (or where a gazebo on its own floor is built against it).
+  if (floor === "deck" && placement === "detached") attach = "free";
+  if (shape === "hexagon" || shape === "octagon") attach = "free";
+  if (kind === "pyramid" || kind === "double-tier") attach = "free";
+  const widthFt = toInch(clamp(num(pl.widthFt, d.plan.widthFt), ROOF_LIMITS.planFt.min, ROOF_LIMITS.planFt.max));
+  const depthFt = shape === "square" ? widthFt : toInch(clamp(num(pl.depthFt, d.plan.depthFt), ROOF_LIMITS.planFt.min, ROOF_LIMITS.planFt.max));
+  const roofing = structure === "pergola" ? "none" : (oneOf(r.roofing, ROOFINGS, d.roofing) === "none" ? d.roofing : oneOf(r.roofing, ROOFINGS, d.roofing));
+  const metal = roofing === "metal-panel" || roofing === "standing-seam";
+  const rafterRaw = r.rafter === "auto" ? "auto" : oneOf(r.rafter, JOIST_SIZES, "auto" as JoistSize | "auto");
+  const headerRaw = typeof r.header === "string" ? r.header : "auto";
+  const header: BeamSize | "auto" = isSolidBeam(headerRaw) ? headerRaw : (BUILT_UP_CHOICES as readonly string[]).includes(headerRaw) ? (headerRaw as BuiltUpBeam) : "auto";
+  const loadRaw = r.load === "auto" || r.load === undefined ? "auto" : num(r.load, 0);
+  const load: RoofLoadChoice = loadRaw === "auto" ? "auto" : ([20, 30, 50, 70] as const).find((l) => l === loadRaw) ?? "auto";
+  return {
+    kind,
+    attach,
+    plan: {
+      shape,
+      widthFt,
+      depthFt,
+      acrossFt: toInch(clamp(num(pl.acrossFt, d.plan.acrossFt), ROOF_LIMITS.acrossFt.min, ROOF_LIMITS.acrossFt.max)),
+      offsetFt: toInch(clamp(num(pl.offsetFt, 0), ROOF_LIMITS.offsetFt.min, ROOF_LIMITS.offsetFt.max)),
+    },
+    pitch: kind === "pergola" ? 0 : Math.round(clamp(num(r.pitch, d.pitch), ROOF_LIMITS.pitch.min, ROOF_LIMITS.pitch.max)),
+    eaveHeightIn: Math.round(clamp(num(r.eaveHeightIn, d.eaveHeightIn), ROOF_LIMITS.eaveHeightIn.min, ROOF_LIMITS.eaveHeightIn.max)),
+    overhangIn: Math.round(clamp(num(r.overhangIn, d.overhangIn), ROOF_LIMITS.overhangIn.min, ROOF_LIMITS.overhangIn.max)),
+    load,
+    post: oneOf(r.post, ["4x4", "6x6", "8x8"] as const, d.post),
+    rafter: rafterRaw,
+    rafterSpacingIn: oneOf(num(r.rafterSpacingIn, 0), SPACINGS, d.rafterSpacingIn) as SpacingIn,
+    header,
+    ridge: oneOf(r.ridge, ["auto", "beam", "board", "none"] as const, d.ridge),
+    roofing,
+    roofDeck: metal ? oneOf(r.roofDeck, ["sheathing", "purlins"] as const, d.roofDeck) : "sheathing",
+    ceiling: kind === "pergola" ? "none" : oneOf(r.ceiling, ["none", "tongue-groove", "beadboard"] as const, d.ceiling),
+    cupola: kind !== "pergola" && kind !== "shed" && r.cupola === true,
+    fascia: {
+      eave: kind === "pergola" ? false : typeof fa.eave === "boolean" ? fa.eave : d.fascia.eave,
+      rake: kind === "pergola" ? false : typeof fa.rake === "boolean" ? fa.rake : d.fascia.rake,
+      finish: oneOf(fa.finish, ["wood", "pvc", "aluminum-wrap"] as const, d.fascia.finish),
+    },
+    soffit: kind !== "pergola" && r.soffit === true,
+    gutters: { kind: kind === "pergola" ? "none" : oneOf(gu.kind, GUTTER_KINDS, d.gutters.kind), guards: gu.guards === true },
+    braces: typeof r.braces === "boolean" ? r.braces : d.braces,
+    slats: { size: oneOf(sl.size, ["2x2", "2x4", "2x6"] as const, d.slats.size), spacingIn: Math.round(clamp(num(sl.spacingIn, d.slats.spacingIn), ROOF_LIMITS.slatSpacingIn.min, ROOF_LIMITS.slatSpacingIn.max)) },
+  };
+}
+
+function normalizePhoto(raw: unknown): DeckPhoto | null {
+  const r = obj(raw);
+  if (typeof r.url !== "string" || !r.url || r.url.length > 2000) return null;
+  const w = Math.round(clamp(num(r.w, 0), 0, 20000));
+  const h = Math.round(clamp(num(r.h, 0), 0, 20000));
+  if (w < 16 || h < 16) return null;
+  const p = obj(r.placed);
+  const placed = typeof p.x === "number" && typeof p.y === "number" && typeof p.w === "number" ? { x: clamp(num(p.x, 0.1), -0.5, 1.5), y: clamp(num(p.y, 0.9), 0, 1.5), w: clamp(num(p.w, 0.8), 0.05, 3) } : null;
+  return { url: r.url, w, h, placed };
+}
+
+/** True when the design has a deck frame under it (a bare or covered deck, or a gazebo/pergola standing on a deck). */
+export function hasDeck(design: DeckDesign): boolean {
+  return design.structure === "deck" || design.structure === "covered-deck" || design.floor === "deck";
+}
+/** True when something stands on the posts: a roof or a pergola. */
+export function hasRoof(design: DeckDesign): boolean {
+  return design.structure !== "deck";
 }
 
 /* ------------------------------------------------------------------ */
@@ -391,5 +662,16 @@ export function sizeWords(design: DeckDesign): string {
     return inches % 12 === 0 ? `${inches / 12} ft` : `${Math.floor(inches / 12)}'-${inches % 12}"`;
   };
   const s = design.shape;
+  if (!hasDeck(design)) {
+    const p = design.roof.plan;
+    if (p.shape === "hexagon" || p.shape === "octagon") return `${ft(p.acrossFt)} ${p.shape}`;
+    return p.shape === "square" ? `${ft(p.widthFt)} square` : `${ft(p.widthFt)} × ${ft(p.depthFt)}`;
+  }
   return s.kind === "rect" ? `${ft(s.widthFt)} × ${ft(s.depthFt)}` : `${ft(s.widthFt)} × ${ft(s.depthFt)} L-shaped`;
+}
+
+/** What is being built, as a title: "16 ft × 12 ft covered deck", "12 ft octagon gazebo". */
+export function structureWords(design: DeckDesign): string {
+  const what = design.structure === "deck" ? "deck" : design.structure === "covered-deck" ? "covered deck" : design.structure;
+  return `${sizeWords(design)} ${what}`;
 }

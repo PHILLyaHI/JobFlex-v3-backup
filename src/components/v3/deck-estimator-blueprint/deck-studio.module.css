@@ -304,3 +304,41 @@
   :global(.jf-blueprint .content) .soonActs .btn { width: 100%; min-height: 48px; }
 }
 :global(.jf-blueprint .content) .soonList li { list-style: square; }
+
+/* ── M2 (2026-10-10): the structure picker, the roof step, the photo view ── */
+:global(.jf-blueprint .content) .planRoof line, :global(.jf-blueprint .content) .planRoof polygon { vector-effect: non-scaling-stroke; }
+:global(.jf-blueprint .content) .structure { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+:global(.jf-blueprint .content) .structBtn {
+  display: grid; gap: 4px; justify-items: start; min-height: 64px; padding: 10px 12px; cursor: pointer; text-align: left;
+  border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: #fff; color: var(--ink);
+  font-family: var(--font); font-size: 12.5px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+}
+:global(.jf-blueprint .content) .structBtn small { font-family: var(--font-mono); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: none; color: var(--muted); line-height: 1.35; }
+:global(.jf-blueprint .content) .structBtn:hover { border-color: var(--ink); }
+:global(.jf-blueprint .content) .structBtn:focus-visible { outline: 2px solid var(--blueprint); outline-offset: 2px; }
+:global(.jf-blueprint .content) .structOn, :global(.jf-blueprint .content) .structOn:hover { border-color: var(--ink); background: var(--ink); color: #fff; }
+:global(.jf-blueprint .content) .structOn small { color: rgba(255,255,255,0.72); }
+:global(.jf-blueprint .content) .sub { display: grid; gap: 10px; padding: 10px 12px; border: 1.5px solid var(--hair-soft); border-radius: var(--radius); background: var(--paper); }
+:global(.jf-blueprint .content) .subTitle { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+
+/* The photo view: the picture fills the box; the elevation is an SVG over it the contractor drags and scales. */
+:global(.jf-blueprint .content) .photoWrap { position: absolute; inset: 0; display: grid; place-items: center; background: #1b1d21; overflow: hidden; touch-action: none; user-select: none; }
+:global(.jf-blueprint .content) .photoWrap img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; }
+:global(.jf-blueprint .content) .photoStage { position: relative; max-width: 100%; max-height: 100%; }
+:global(.jf-blueprint .content) .photoSvg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+:global(.jf-blueprint .content) .photoSvg:active { cursor: grabbing; }
+:global(.jf-blueprint .content) .photoSvg polygon { fill: rgba(255,255,255,0.14); stroke: #fff; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+:global(.jf-blueprint .content) .photoSvg .elevRoof polygon { fill: rgba(24,84,160,0.28); stroke: #dbe7ff; }
+:global(.jf-blueprint .content) .photoSvg .elevDeck polygon { fill: rgba(255,214,120,0.26); stroke: #ffe9b8; }
+:global(.jf-blueprint .content) .photoSvg .elevGround { stroke: #fff; stroke-width: 2; stroke-dasharray: 8 6; vector-effect: non-scaling-stroke; }
+:global(.jf-blueprint .content) .photoHandle { fill: #fff; stroke: var(--ink); stroke-width: 1.5; cursor: ew-resize; vector-effect: non-scaling-stroke; }
+:global(.jf-blueprint .content) .photoEmpty { position: absolute; inset: 0; display: grid; place-items: center; gap: 12px; padding: 24px; text-align: center; background: var(--paper); }
+:global(.jf-blueprint .content) .photoEmpty p { margin: 0; max-width: 46ch; font-size: 13px; line-height: 1.5; color: var(--muted); }
+:global(.jf-blueprint .content) .photoRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1.5px solid var(--hair-soft); }
+:global(.jf-blueprint .content) .photoRow .mono { flex: 1 1 200px; min-width: 0; }
+:global(.jf-blueprint .content) .fileHidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+@media (max-width: 768px) {
+  :global(.jf-blueprint .content) .structure { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :global(.jf-blueprint .content) .structBtn { min-height: 56px; }
+  :global(.jf-blueprint .content) .photoRow { padding: 10px 12px; }
+}

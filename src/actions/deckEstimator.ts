@@ -9,7 +9,9 @@
 //   · the proposal — the deck's priced lines written the way the fence
 //     estimator writes its own (actions/fenceEstimator), and the deck itself
 //     (design + frozen 3D) kept beside it as an ActivityEvent DECK_PLAN for
-//     the client's page.
+//     the client's page;
+//   · the photo of the house (M2, 2026-10-10) — put in the private file
+//     store; only its URL rides in the design.
 //
 // Both are for admins while the estimator is marked Coming soon (lib/deck/access),
 // the same rule the page applies.
@@ -30,6 +32,8 @@ import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { sanitizeDeckRateBook, type DeckRateBook } from "@/lib/deck/rates";
 import { deckBookKey as bookKey } from "@/lib/deck/rateBookStore";
 import { DECK_PLAN_EVENT, DECK_PLAN_VERSION, deckConvertSchema, firstIssue, type DeckConvertInput } from "@/lib/deck/convertSchema";
+import { putPrivate } from "@/lib/media/privateStore";
+import { mediaHref } from "@/lib/media/signedLink";
 
 type Gate = { ok: true; organizationId: string; userId: string; role: string } | { ok: false; error: string };
 
@@ -58,6 +62,50 @@ export async function saveDeckRateBook(raw: unknown): Promise<{ ok: true; book: 
     logServerError("deck-rates", err, { kind: "action", organizationId: g.organizationId });
     return { ok: false, error: "Your prices could not be saved. Try again in a moment." };
   }
+}
+
+/* ── The photo of the house (M2, 2026-10-10) ───────────────────────── */
+
+const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+/** The studio shrinks a photo to about 1,600 px before sending it; this is the ceiling, not the aim. */
+const PHOTO_MAX_BYTES = 6 * 1024 * 1024;
+
+export type DeckPhotoResult = { ok: true; url: string; href: string; w: number; h: number } | { ok: false; error: string };
+
+/**
+ * A photo of the back of the house, kept in the PRIVATE file store under
+ * the shop's own folder (`deck-photos/<orgId>/…`, lib/media/privateStore).
+ * Back come the stored URL — kept in the design, and so with the proposal's
+ * DECK_PLAN — and a 15-minute read link for the studio to show it with.
+ */
+export async function uploadDeckPhoto(form: FormData): Promise<DeckPhotoResult> {
+  const g = await gate();
+  if (!g.ok) return { ok: false, error: g.error };
+  const file = form.get("file");
+  if (!(file instanceof File)) return { ok: false, error: "No picture was sent." };
+  if (!PHOTO_TYPES.has(file.type)) return { ok: false, error: "Use a JPEG, PNG or WebP picture." };
+  if (file.size > PHOTO_MAX_BYTES) return { ok: false, error: "That picture is too big — the studio should have shrunk it. Try again." };
+  const w = Math.round(Number(form.get("w")));
+  const h = Math.round(Number(form.get("h")));
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 16 || h < 16 || w > 20000 || h > 20000) return { ok: false, error: "The picture's size could not be read." };
+  try {
+    const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+    const body = Buffer.from(await file.arrayBuffer());
+    const stored = await putPrivate(`deck-photos/${g.organizationId}/${randomUUID()}.${ext}`, body, file.type);
+    const href = mediaHref(stored.url) ?? stored.url;
+    return { ok: true, url: stored.url, href, w, h };
+  } catch (err) {
+    logServerError("deck-photo", err, { kind: "action", organizationId: g.organizationId });
+    return { ok: false, error: "The picture could not be saved. Try again in a moment." };
+  }
+}
+
+/** A fresh read link for a photo the design already holds (the stored URL never goes to the browser as is). */
+export async function deckPhotoHref(url: string): Promise<string | null> {
+  const g = await gate();
+  if (!g.ok) return null;
+  if (typeof url !== "string" || !url.includes(`deck-photos/${g.organizationId}/`)) return null;
+  return mediaHref(url);
 }
 
 /** The result of a convert: a failure is RETURNED, never thrown (a thrown message is redacted in production). */
@@ -139,7 +187,9 @@ async function writeProposal(organizationId: string, userId: string, role: strin
   // The deck rides with the proposal: the design (to open it again) and the frozen 3D (for the client's page).
   if (data.plan) {
     try {
-      const plan = { v: DECK_PLAN_VERSION, design: data.plan.design, scene: data.plan.scene, address };
+      const plan: { v: number; design: typeof data.plan.design; scene: typeof data.plan.scene; address: string | null } = { v: DECK_PLAN_VERSION, design: data.plan.design, scene: data.plan.scene, address };
+      // A photo from another shop's folder never rides along.
+      if (plan.design.photo && !plan.design.photo.url.includes(`deck-photos/${organizationId}/`) && !plan.design.photo.url.startsWith("data:")) plan.design = { ...plan.design, photo: null };
       await db.activityEvent.create({ data: { organizationId, actorId: userId, proposalId: proposal.id, kind: DECK_PLAN_EVENT, summary: `Deck designed for the proposal — ${data.plan.scene.facts}`, meta: JSON.stringify(plan) } });
     } catch {
       /* the picture never blocks the proposal */

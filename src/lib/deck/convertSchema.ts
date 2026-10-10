@@ -13,7 +13,8 @@ import { normalizeDeckDesign, type DeckDesign } from "./design";
 import { parseDeckScene, type DeckScene } from "./scene";
 
 export const DECK_PLAN_EVENT = "DECK_PLAN";
-export const DECK_PLAN_VERSION = 1;
+/** v2 (2026-10-10): the design carries the structure, the roof and the photo of the house; the scene is version 2. A v1 plan reads back as a bare deck. */
+export const DECK_PLAN_VERSION = 2;
 
 /** The deck as it is kept with a proposal. */
 export interface DeckPlan {
@@ -41,7 +42,7 @@ export const deckConvertSchema = z.object({
       }),
     )
     .min(1)
-    .max(40),
+    .max(60),
   // The job address: rides with the proposal and sets the state's sales tax.
   address: z.string().max(300).optional().nullable(),
   // The deck: any design is brought inside its rails; a scene that does not

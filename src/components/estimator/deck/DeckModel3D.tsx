@@ -1,21 +1,23 @@
 "use client";
-// THE DECK STUDIO'S 3D (2026-10-04). Vanilla Three.js, like FenceModel3D and
-// RoofModel3D: the renderer, the sky, the lights and the ground are built
-// ONCE; the deck itself is a group rebuilt whenever the scene's data changes,
-// and the two things that change many times a second — how much of the deck
-// is standing, and whether the boards are faded — only touch instance counts
-// and material opacity.
+// THE DECK STUDIO'S 3D (2026-10-04; roofs 2026-10-10). Vanilla Three.js, like
+// FenceModel3D and RoofModel3D: the renderer, the sky, the lights and the
+// ground are built ONCE; the deck itself is a group rebuilt whenever the
+// scene's data changes, and the two things that change many times a second —
+// how much of the deck is standing, and whether the boards are faded — only
+// touch instance counts and material opacity.
 //
 // The data is lib/deck/scene.ts's box list, in feet: x along the house, y out
 // from it, z up. Here x stays X, z becomes Y (up) and y becomes Z, with the
 // deck's middle at the origin, so the house is behind the deck and the
 // camera stands in the yard.
 //
-// One InstancedMesh per layer (footings, posts, beams, ledger, joists, rim,
-// blocking, decking, fascia): a unit box scaled per piece. `built` stands the
-// layers up in build order, piece by piece — the studio's build-up slider and
-// its Play button drive it. `xray` fades the boards, the fascia and the
-// ground so the frame and the footings under them can be read.
+// One InstancedMesh per layer: a unit box placed per piece — square to the
+// axes for the deck, turned by its yaw and tilt for a rafter, a hip or a
+// header around a polygon (version 2 boxes carry those two angles). The
+// roof's faces, the ceiling, the soffit and a slab are flat polygons, one
+// geometry per layer. `built` stands the layers up in build order, piece by
+// piece — the studio's build-up slider and its Play button drive it. `xray`
+// fades the boards, the roofing and the ground so the frame can be read.
 //
 // Drawn only when something moved: the loop asks the orbit whether the
 // camera changed and otherwise leaves the last frame up, so an open studio
@@ -24,13 +26,13 @@ import * as React from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { Sky } from "three/examples/jsm/objects/Sky.js";
-import { SCENE_LAYERS, type DeckScene, type SceneLayer } from "@/lib/deck/scene";
+import { SCENE_LAYERS, sceneBuildLayers, type DeckScene, type SceneLayer } from "@/lib/deck/scene";
 
 export interface DeckModel3DProps {
   scene: DeckScene;
-  /** Layers standing: 0 … SCENE_LAYERS.length. A fraction stands part of a layer, piece by piece. */
+  /** Layers standing, counted in build order over the layers this scene has (lib/deck/scene sceneBuildLayers): 0 … n. A fraction stands part of a layer, piece by piece. Left out: everything stands. */
   built?: number;
-  /** Fade the boards, the fascia and the ground. */
+  /** Fade the boards, the roofing, the ceiling and the ground. */
   xray?: boolean;
   className?: string;
   /** Read out for the canvas. */
@@ -45,6 +47,14 @@ const DECKING = layerIndex("decking");
 const FASCIA = layerIndex("fascia");
 const FOOTING = layerIndex("footing");
 const BRACE = layerIndex("brace");
+const SHEATHING = layerIndex("sheathing");
+const ROOFING = layerIndex("roofing");
+const CEILING = layerIndex("ceiling");
+const TRIM = layerIndex("trim");
+const GUTTER = layerIndex("gutter");
+const SLAB = layerIndex("slab");
+/** Layers the x-ray fades. */
+const FADES = new Set([DECKING, FASCIA, SHEATHING, ROOFING, CEILING, TRIM]);
 
 const CONCRETE = 0xb9b6ad;
 const GRASS = 0x9fa886;
@@ -52,7 +62,10 @@ const SIDING = 0xe9e5db;
 const FOUNDATION = 0xa9a69d;
 const ROOF = 0x55524c;
 const GLASS = 0x2f3a44;
-const TRIM = 0xf7f5ef;
+const TRIM_WHITE = 0xf7f5ef;
+const OSB = 0xd6bf90;
+const CEILING_WOOD = 0xe6d5b2;
+const ALUMINUM = 0xd9d6cf;
 const INK = 0x0f1419;
 
 function webglSupported(): boolean {
@@ -137,15 +150,19 @@ interface Built {
   group: THREE.Group;
   /** Per layer: the instanced meshes and how many pieces each holds. */
   layers: Array<Array<{ mesh: THREE.InstancedMesh; total: number }>>;
+  /** Per layer: the flat polygons as one geometry, with the index end of each. */
+  polys: Array<{ mesh: THREE.Mesh; ends: number[] } | null>;
   /** Braces, drawn one mesh each. */
   braces: THREE.Mesh[];
   /** Boards on the diagonal: one geometry, a range of it per board. */
   diagonal: { mesh: THREE.Mesh; ends: number[] } | null;
+  /** Each layer's step in this scene's build-up (−1 = not in the scene). */
+  rank: number[];
   fade: THREE.Material[];
   dispose: () => void;
 }
 
-export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, className, label, resetToken = 0 }: DeckModel3DProps) {
+export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = false, className, label, resetToken = 0 }: DeckModel3DProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   const [supported] = React.useState(webglSupported);
   const sceneRef = React.useRef(scene);
@@ -263,12 +280,13 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
     /** The camera's first view for this deck, or the same angle refitted to a new size. */
     const frame = (reset: boolean) => {
       const s = sceneRef.current;
-      const next = Math.max(s.widthFt, s.depthFt, s.heightFt * 1.6, 10);
-      const target = new THREE.Vector3(0, Math.max(1, s.heightFt * 0.55), 0);
+      const peak = Math.max(s.heightFt, s.peakFt ?? s.heightFt);
+      const next = Math.max(s.widthFt, s.depthFt, peak * 1.4, 10);
+      const target = new THREE.Vector3(0, Math.max(1, peak * 0.45), 0);
       // A narrow frame (a phone) sees less across, so the camera stands farther back.
       const narrow = Math.max(1, 1.4 / Math.max(0.3, camera.aspect));
       if (reset || !fitted) {
-        camera.position.set(target.x + next * 0.9 * narrow, target.y + (next * 0.55 + s.heightFt * 0.3) * narrow, target.z + next * 1.2 * narrow);
+        camera.position.set(target.x + next * 0.9 * narrow, target.y + (next * 0.5 + peak * 0.3) * narrow, target.z + next * 1.2 * narrow);
       } else {
         // Keep the angle the contractor chose; step back or in with the deck's size.
         const offset = camera.position.clone().sub(orbit.target).multiplyScalar(next / span);
@@ -281,7 +299,7 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
       camera.far = span * 60 + 4000;
       camera.updateProjectionMatrix();
       ground.scale.set(span * 14, span * 14, 1);
-      key.position.set(span * 0.9, span * 1.6 + s.heightFt, span * 0.75);
+      key.position.set(span * 0.9, span * 1.6 + peak, span * 0.75);
       key.target.position.set(0, 0, 0);
       const sc = key.shadow.camera as THREE.OrthographicCamera;
       sc.left = -span * 1.5;
@@ -289,10 +307,10 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
       sc.top = span * 1.5;
       sc.bottom = -span * 1.5;
       sc.near = 0.1;
-      sc.far = span * 6 + s.heightFt * 4;
+      sc.far = span * 6 + peak * 4;
       sc.updateProjectionMatrix();
       key.shadow.normalBias = span * 0.0012;
-      fitted = { w: s.widthFt, d: s.depthFt, h: s.heightFt };
+      fitted = { w: s.widthFt, d: s.depthFt, h: peak };
       orbit.update();
       dirty = true;
     };
@@ -306,21 +324,60 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
       const fade: THREE.Material[] = [];
       const frameColor = new THREE.Color(s.colors.frame);
       const deckColor = new THREE.Color(s.colors.decking);
+      const roofColor = new THREE.Color(s.colors.roofing ?? "#565250");
       const tone = (c: THREE.Color, by: number) => jitter(c, 1, 0).offsetHSL(0, 0, by);
+      const baseOf = (name: SceneLayer): THREE.Color => {
+        switch (name) {
+          case "decking":
+            return deckColor;
+          case "fascia":
+            return tone(deckColor, -0.05);
+          case "footing":
+          case "slab":
+            return new THREE.Color(CONCRETE);
+          case "beam":
+          case "header":
+            return tone(frameColor, -0.05);
+          case "post":
+          case "roof-post":
+            return tone(frameColor, -0.08);
+          case "ridge":
+            return tone(frameColor, -0.03);
+          case "sheathing":
+            return new THREE.Color(OSB);
+          case "roofing":
+            return roofColor;
+          case "trim":
+            return new THREE.Color(TRIM_WHITE);
+          case "gutter":
+            return new THREE.Color(ALUMINUM);
+          case "ceiling":
+            return new THREE.Color(CEILING_WOOD);
+          default:
+            return frameColor;
+        }
+      };
       const mats: THREE.MeshStandardMaterial[] = SCENE_LAYERS.map((name, i) => {
-        const base = i === DECKING ? deckColor : i === FASCIA ? tone(deckColor, -0.05) : i === FOOTING ? new THREE.Color(CONCRETE) : name === "beam" ? tone(frameColor, -0.05) : name === "post" ? tone(frameColor, -0.03) : frameColor;
+        const base = baseOf(name);
         // Decking and framing take a per-piece tint, so the material itself stays white for those.
-        const tinted = i !== FOOTING;
-        const m = new THREE.MeshStandardMaterial({ color: tinted ? 0xffffff : base, roughness: i === DECKING ? 0.72 : 0.9, metalness: 0 });
+        const tinted = i !== FOOTING && i !== SLAB;
+        const m = new THREE.MeshStandardMaterial({ color: tinted ? 0xffffff : base, roughness: i === DECKING ? 0.72 : i === GUTTER ? 0.5 : i === ROOFING ? 0.85 : 0.9, metalness: i === GUTTER ? 0.4 : 0 });
         m.userData.base = base;
         owned.push(m);
-        if (i === DECKING || i === FASCIA) fade.push(m);
+        if (FADES.has(i)) fade.push(m);
         return m;
       });
+
+      const order = sceneBuildLayers(s);
+      const rank = SCENE_LAYERS.map((name) => order.indexOf(name));
 
       const layers: Built["layers"] = SCENE_LAYERS.map(() => []);
       const braces: THREE.Mesh[] = [];
       const dummy = new THREE.Object3D();
+      const basis = new THREE.Matrix4();
+      const ax = new THREE.Vector3();
+      const ay = new THREE.Vector3();
+      const az = new THREE.Vector3();
       for (let L = 0; L < LAYER_COUNT; L++) {
         if (L === FOOTING) continue;
         const boxes = s.boxes.filter((b) => b[0] === L && b[7] === 0);
@@ -331,11 +388,20 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
           const base = mats[L].userData.base as THREE.Color;
           boxes.forEach((b, i) => {
             dummy.position.set(b[1] - ox, b[3], b[2] - oz);
-            dummy.rotation.set(0, 0, 0);
+            if (b.length >= 10 && (b[8] !== 0 || b[9] !== 0)) {
+              // A turned member: its axis points `yaw` from +x in plan and rises `tilt`.
+              const yaw = b[8];
+              const tilt = b[9];
+              ax.set(Math.cos(yaw) * Math.cos(tilt), Math.sin(tilt), Math.sin(yaw) * Math.cos(tilt));
+              ay.set(-Math.cos(yaw) * Math.sin(tilt), Math.cos(tilt), -Math.sin(yaw) * Math.sin(tilt));
+              az.set(-Math.sin(yaw), 0, Math.cos(yaw));
+              basis.makeBasis(ax, ay, az);
+              dummy.quaternion.setFromRotationMatrix(basis);
+            } else dummy.quaternion.identity();
             dummy.scale.set(b[4], b[6], b[5]);
             dummy.updateMatrix();
             mesh.setMatrixAt(i, dummy.matrix);
-            mesh.setColorAt(i, jitter(base, i + L * 97, L === DECKING ? 0.045 : 0.03));
+            mesh.setColorAt(i, jitter(base, i + L * 97, L === DECKING ? 0.045 : L === TRIM || L === GUTTER ? 0.01 : 0.03));
           });
           mesh.instanceMatrix.needsUpdate = true;
           if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
@@ -373,8 +439,8 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
         const piers = new THREE.InstancedMesh(unitCyl, mat, s.footings.length);
         s.footings.forEach((f, i) => {
           const [x, y, pad, thick, pier, depth, top] = f;
-          dummy.rotation.set(0, 0, 0);
-          dummy.position.set(x / 1 - ox, -depth + thick / 2, y - oz);
+          dummy.quaternion.identity();
+          dummy.position.set(x - ox, -depth + thick / 2, y - oz);
           dummy.scale.set(pad, thick, pad);
           dummy.updateMatrix();
           pads.setMatrixAt(i, dummy.matrix);
@@ -391,6 +457,29 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
         group.add(pads, piers);
         layers[FOOTING].push({ mesh: pads, total: s.footings.length }, { mesh: piers, total: s.footings.length });
       }
+
+      /** Flat rings into one geometry: a fan per ring, both faces, a range of the index per ring. */
+      const fanGeometry = (rings: Array<{ pts: Array<[number, number, number]>; color: THREE.Color }>): { geo: THREE.BufferGeometry; ends: number[] } => {
+        const positions: number[] = [];
+        const colors: number[] = [];
+        const index: number[] = [];
+        const ends: number[] = [];
+        for (const ring of rings) {
+          const start = positions.length / 3;
+          for (const p of ring.pts) {
+            positions.push(p[0], p[1], p[2]);
+            colors.push(ring.color.r, ring.color.g, ring.color.b);
+          }
+          for (let k = 1; k + 1 < ring.pts.length; k++) index.push(start, start + k, start + k + 1);
+          ends.push(index.length);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+        geo.setIndex(index);
+        geo.computeVertexNormals();
+        return { geo, ends };
+      };
 
       // Boards on the diagonal: each ring a thin prism, all in one geometry.
       let diagonal: Built["diagonal"] = null;
@@ -438,13 +527,35 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
         diagonal = { mesh, ends };
       }
 
+      // The roof's faces, the ceiling, the soffit, a slab: flat polygons, one geometry per layer.
+      const polys: Built["polys"] = SCENE_LAYERS.map(() => null);
+      for (let L = 0; L < LAYER_COUNT; L++) {
+        const mine = s.polys.filter((p) => p[0] === L);
+        if (!mine.length) continue;
+        const base = mats[L].userData.base as THREE.Color;
+        const rings = mine.map((p, i) => {
+          const pts: Array<[number, number, number]> = [];
+          for (let k = 1; k + 2 < p.length; k += 3) pts.push([p[k] - ox, p[k + 2], p[k + 1] - oz]);
+          return { pts, color: jitter(base, i + L * 31, L === ROOFING ? 0.03 : 0.015) };
+        });
+        const { geo, ends } = fanGeometry(rings);
+        const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: L === ROOFING ? 0.85 : 0.9, metalness: 0, flatShading: true, side: THREE.DoubleSide });
+        owned.push(geo, mat);
+        if (FADES.has(L)) fade.push(mat);
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+        polys[L] = { mesh, ends };
+      }
+
       // The house: wall, foundation band, a roof slab, a door onto the deck and a window each side.
       if (s.house) {
         const wallMat = new THREE.MeshStandardMaterial({ color: SIDING, roughness: 0.95, map: siding });
         const baseMat = new THREE.MeshStandardMaterial({ color: FOUNDATION, roughness: 1 });
         const roofMat = new THREE.MeshStandardMaterial({ color: ROOF, roughness: 0.9 });
         const glassMat = new THREE.MeshStandardMaterial({ color: GLASS, roughness: 0.15, metalness: 0.4 });
-        const trimMat = new THREE.MeshStandardMaterial({ color: TRIM, roughness: 0.8 });
+        const trimMat = new THREE.MeshStandardMaterial({ color: TRIM_WHITE, roughness: 0.8 });
         owned.push(wallMat, baseMat, roofMat, glassMat, trimMat);
         const height = s.house.heightFt;
         const band = Math.min(1.5, Math.max(0.5, s.heightFt - 0.6));
@@ -507,16 +618,20 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
         dims.add(tag.sprite);
       };
       const out = 2.2;
+      const tall = Math.max(s.heightFt, s.peakFt ?? 0);
       dim(new THREE.Vector3(-ox, 0.05, oz + out), new THREE.Vector3(ox, 0.05, oz + out), feetInches(s.widthFt), new THREE.Vector3(0, 0, 0.4));
       dim(new THREE.Vector3(ox + out, 0.05, -oz), new THREE.Vector3(ox + out, 0.05, oz), feetInches(s.depthFt), new THREE.Vector3(0.4, 0, 0));
-      dim(new THREE.Vector3(ox + out, 0, oz + out), new THREE.Vector3(ox + out, s.heightFt, oz + out), feetInches(s.heightFt), new THREE.Vector3(0.3, 0, 0.3));
+      if (s.heightFt > 0.5) dim(new THREE.Vector3(ox + out, 0, oz + out), new THREE.Vector3(ox + out, s.heightFt, oz + out), feetInches(s.heightFt), new THREE.Vector3(0.3, 0, 0.3));
+      if (tall > s.heightFt + 1) dim(new THREE.Vector3(-ox - out, 0, oz + out), new THREE.Vector3(-ox - out, tall, oz + out), feetInches(tall), new THREE.Vector3(0.3, 0, 0.3));
       group.add(dims);
 
       return {
         group,
         layers,
+        polys,
         braces,
         diagonal,
+        rank,
         fade,
         dispose: () => {
           for (const o of owned) o.dispose();
@@ -529,21 +644,29 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
       if (!content) return;
       const b = builtRef.current;
       const x = xrayRef.current;
+      const share = (L: number) => (content!.rank[L] < 0 ? 1 : Math.min(1, Math.max(0, b - content!.rank[L])));
       content.layers.forEach((meshes, L) => {
-        const f = Math.min(1, Math.max(0, b - L));
+        const f = share(L);
         for (const { mesh, total } of meshes) {
           mesh.count = Math.round(f * total);
           mesh.visible = mesh.count > 0;
         }
       });
-      const braceShare = Math.min(1, Math.max(0, b - BRACE));
+      const braceShare = share(BRACE);
       content.braces.forEach((m, i) => (m.visible = i < Math.round(braceShare * content!.braces.length)));
       if (content.diagonal) {
-        const f = Math.min(1, Math.max(0, b - DECKING));
+        const f = share(DECKING);
         const boards = Math.round(f * content.diagonal.ends.length);
         content.diagonal.mesh.visible = boards > 0;
         content.diagonal.mesh.geometry.setDrawRange(0, boards > 0 ? content.diagonal.ends[boards - 1] : 0);
       }
+      content.polys.forEach((p, L) => {
+        if (!p) return;
+        const f = share(L);
+        const n = Math.round(f * p.ends.length);
+        p.mesh.visible = n > 0;
+        p.mesh.geometry.setDrawRange(0, n > 0 ? p.ends[n - 1] : 0);
+      });
       for (const m of content.fade) {
         m.transparent = x;
         m.opacity = x ? 0.2 : 1;
@@ -564,7 +687,8 @@ export function DeckModel3D({ scene, built = LAYER_COUNT, xray = false, classNam
       content = build();
       world.add(content.group);
       const s = sceneRef.current;
-      const resized = !fitted || fitted.w !== s.widthFt || fitted.d !== s.depthFt || fitted.h !== s.heightFt;
+      const peak = Math.max(s.heightFt, s.peakFt ?? s.heightFt);
+      const resized = !fitted || fitted.w !== s.widthFt || fitted.d !== s.depthFt || fitted.h !== peak;
       if (resized) frame(false);
       apply();
     };

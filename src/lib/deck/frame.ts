@@ -216,6 +216,8 @@ export interface Post {
   /** An end post of its beam — where the braces go. */
   corner: boolean;
   footing: Footing;
+  /** A roof's post (M2): it runs from its own footing up through the deck; the roof draws the post, the deck only its footing and base. */
+  roof?: boolean;
 }
 
 export interface LedgerRun {
@@ -305,6 +307,12 @@ export interface BuildOptions {
   /** The shop's price book and the job's market — they tip the beam-against-post choice. */
   rates?: DeckRateBook;
   market?: MarketSnapshot;
+  /**
+   * A roof's posts standing on this deck (lib/deck/roof): each gets its own
+   * footing here, sized for the load it brings down, read on the footing
+   * table as the deck area that weighs the same (`loadLb ÷ (load + 10 psf)`).
+   */
+  extraPosts?: Array<{ id: string; x: number; y: number; size: PostSize; loadLb: number }>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -579,7 +587,7 @@ export function footingDepthIn(design: DeckDesign): number {
   return Math.max(FOOTING_MIN_DEPTH_IN, toFrost ? design.frostIn : 0);
 }
 
-function footingFor(design: DeckDesign, x: number, y: number, tributarySqFt: number, post: PostSize, topIn: number): Footing {
+export function footingFor(design: DeckDesign, x: number, y: number, tributarySqFt: number, post: PostSize, topIn: number): Footing {
   const required = footingMinSize(design.loadPsf, tributarySqFt, design.soilPsf);
   if (design.footing.type === "pier-block") {
     return { type: "pier-block", x, y, required, padIn: PIER_BLOCK.baseIn, padThickIn: 8, pierIn: PIER_BLOCK.baseIn, depthIn: 8 - topIn, topIn, cuFt: 0, bags: 0, tubeFt: 0 };
@@ -802,6 +810,24 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
       });
     }
 
+    // A roof's posts (M2): a footing and a base each, the post itself drawn by the roof.
+    for (const rp of opts.extraPosts ?? []) {
+      const tributarySqFt = Math.round((rp.loadLb / (load + 10)) * 10) / 10;
+      posts.push({
+        id: rp.id,
+        beamId: "roof",
+        x: rp.x,
+        y: rp.y,
+        size: rp.size,
+        heightIn: 0,
+        tributarySqFt,
+        maxHeightIn: postMaxHeightIn(load, group, rp.size, tributarySqFt),
+        corner: false,
+        footing: footingFor(design, rp.x, rp.y, tributarySqFt, rp.size, footingTopIn),
+        roof: true,
+      });
+    }
+
     const beamAt = (zoneId: Zone["id"], y: number) => beams.find((b) => Math.abs(b.lineY - y) < 0.6 && b.zoneIds.includes(zoneId));
 
     // ── Sticks ────────────────────────────────────────────────────────
@@ -937,6 +963,7 @@ export function buildDeckFrame(raw: DeckDesign, opts: BuildOptions = {}): DeckFr
     for (const p of posts) {
       const [w, d] = POST_ACTUAL_IN[p.size];
       hardware.postBases += 1;
+      if (p.roof) continue;
       // A beam that sits right on its footing needs the base, no post and no cap.
       if (p.heightIn >= 1) {
         hardware.postCaps += 1;

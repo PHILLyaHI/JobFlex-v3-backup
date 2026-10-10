@@ -22,14 +22,18 @@
 import { DECKING, RAIL_TYPES } from "./catalog";
 import { laborFactor, type MarketBasis, type MarketSnapshot } from "../fence/market";
 
-export type DeckRateGroup = "lumber" | "decking" | "hardware" | "concrete" | "labor" | "allowance";
+export type DeckRateGroup = "lumber" | "decking" | "hardware" | "concrete" | "roof" | "trim" | "gutters" | "labor" | "roofLabor" | "allowance";
 export const DECK_RATE_GROUP_LABEL: Record<DeckRateGroup, string> = {
   lumber: "Framing lumber",
   decking: "Deck boards and fascia",
   hardware: "Connectors and fasteners",
-  concrete: "Footings",
-  labor: "Labor, by measure",
-  allowance: "Railing and stairs",
+  concrete: "Footings and slab",
+  roof: "Roofing and roof deck",
+  trim: "Fascia, soffit and ceiling",
+  gutters: "Gutters",
+  labor: "Labor, by measure — deck",
+  roofLabor: "Labor, by measure — roof",
+  allowance: "Railing, stairs and cupola",
 };
 
 export interface DeckRateDef {
@@ -49,6 +53,10 @@ export interface DeckRateDef {
 const lumber = (nominal: string, price: number): DeckRateDef => ({ key: `lf.${nominal}`, label: `${nominal} framing lumber`, unit: "ft", price, group: "lumber", basis: "vinyl", min: 0.1, max: 80 });
 const hw = (key: string, label: string, price: number, unit = "ea", max = 400): DeckRateDef => ({ key: `hw.${key}`, label, unit, price, group: "hardware", basis: "metal", min: 0.01, max });
 const labor = (key: string, label: string, unit: string, price: number, max = 400): DeckRateDef => ({ key: `labor.${key}`, label, unit, price, group: "labor", basis: "labor", min: 0.1, max });
+const roofLabor = (key: string, label: string, unit: string, price: number, max = 2000): DeckRateDef => ({ key: `labor.${key}`, label, unit, price, group: "roofLabor", basis: "labor", min: 0.1, max });
+const roof = (key: string, label: string, unit: string, price: number, basis: MarketBasis = "vinyl", max = 2000): DeckRateDef => ({ key: `roof.${key}`, label, unit, price, group: "roof", basis, min: 0.05, max });
+const trim = (key: string, label: string, unit: string, price: number, basis: MarketBasis = "vinyl", max = 400): DeckRateDef => ({ key: `trim.${key}`, label, unit, price, group: "trim", basis, min: 0.05, max });
+const gut = (key: string, label: string, unit: string, price: number, max = 400): DeckRateDef => ({ key: `gut.${key}`, label, unit, price, group: "gutters", basis: "metal", min: 0.05, max });
 
 /**
  * Framing lumber is priced on the freight-only basis ("vinyl" in the market
@@ -68,6 +76,9 @@ export const DECK_RATES: readonly DeckRateDef[] = [
   lumber("4x12", 9.5),
   lumber("6x6", 5.5),
   lumber("8x8", 11),
+  lumber("2x2", 0.55),
+  lumber("1x8", 1.6),
+  lumber("1x10", 2.2),
   ...DECKING.map((d): DeckRateDef => ({ key: `deck.${d.id}`, label: d.label, unit: "ft", price: d.pricePerLf, group: "decking", basis: d.basis, min: 0.2, max: 60 })),
   { key: "fascia.wood", label: "Fascia board, wood", unit: "ft", price: 2.2, group: "decking", basis: "cedar", min: 0.2, max: 60 },
   { key: "fascia.composite", label: "Fascia board, composite or PVC", unit: "ft", price: 5, group: "decking", basis: "vinyl", min: 0.2, max: 60 },
@@ -114,6 +125,66 @@ export const DECK_RATES: readonly DeckRateDef[] = [
   ]),
   { key: "stairs.material", label: "Stairs — material, per step per foot of width", unit: "step·ft", price: 14, group: "allowance", basis: "vinyl", min: 0.5, max: 500 },
   { key: "stairs.labor", label: "Stairs — labor, per step per foot of width", unit: "step·ft", price: 20, group: "allowance", basis: "labor", min: 0.5, max: 500 },
+  // ── The roof (M2, 2026-10-10). EXAMPLE prices, like everything above.
+  hw("hurricaneTie", "Hurricane tie, rafter to header", 1.3),
+  hw("rafterHanger", "Rafter hanger, at a ridge beam, ledger or hip", 3.6),
+  hw("wedgeAnchor", "Wedge anchor into a slab", 3.2),
+  hw("ringPlate", "Steel compression ring for a polygon roof", 140, "ea", 2000),
+  hw("kingBracket", "Post-to-beam bracket at a king post or wall", 22),
+  hw("beamHanger", "Beam hanger to the house", 38),
+  hw("roofScrew", "Structural screw, roof ledger to the house", 1.1),
+  roof("sheathing", "Roof sheathing, 1/2-in. 4x8 sheet", "ea", 24),
+  roof("underlayment", "Synthetic underlayment", "sq", 42),
+  roof("nails", "Roofing nails and cap nails", "sq", 9, "metal"),
+  roof("shingle.arch", "Architectural shingles", "sq", 125),
+  roof("shingle.3tab", "3-tab shingles", "sq", 98),
+  roof("shingle.designer", "Designer shingles", "sq", 240),
+  roof("shake", "Cedar shakes, medium", "sq", 320, "cedar"),
+  roof("starter", "Starter strip", "ft", 1.1),
+  roof("hipRidge", "Hip and ridge cap shingles", "ft", 3.6),
+  roof("metal.panel", "Metal roof panels, exposed fastener, 36-in. cover", "ft", 3.4, "metal"),
+  roof("metal.seam", "Standing-seam metal panels, 16-in. cover", "ft", 7.2, "metal"),
+  roof("metal.trim", "Metal eave, rake and ridge trim", "ft", 4.2, "metal"),
+  roof("metal.screws", "Metal roofing screws and closures", "sq", 22, "metal"),
+  roof("dripEdge", "Drip edge, 10-ft piece", "ea", 9.5, "metal"),
+  roof("wallFlashing", "Step and counter flashing at the house", "ft", 4.5, "metal"),
+  trim("fascia.wood", "Fascia board, primed 1x8 wood", "ft", 2.4, "cedar"),
+  trim("fascia.pvc", "Fascia board, PVC 1x8", "ft", 5.2),
+  trim("fascia.wrap", "Aluminum fascia wrap", "ft", 3.4, "metal"),
+  trim("soffit", "Vented soffit panel", "sq ft", 2.8),
+  trim("ceiling.tg", "Tongue-and-groove ceiling boards", "sq ft", 3.9, "cedar"),
+  trim("ceiling.bead", "Beadboard ceiling panels", "sq ft", 2.6),
+  gut("k5", "5-in. K-style aluminum gutter", "ft", 4.6),
+  gut("k6", "6-in. K-style aluminum gutter", "ft", 6.1),
+  gut("halfRoundAlum", "Half-round aluminum gutter", "ft", 9.5),
+  gut("halfRoundCopper", "Half-round copper gutter", "ft", 32, 400),
+  gut("downspout23", "2x3 downspout", "ft", 3.1),
+  gut("downspout34", "3x4 downspout", "ft", 4.2),
+  gut("downspoutCopper", "Round copper downspout", "ft", 26),
+  gut("hanger", "Hidden hanger with screw", "ea", 2.6),
+  gut("endCap", "End cap", "ea", 4.5),
+  gut("corner", "Mitred corner", "ea", 11),
+  gut("outlet", "Downspout outlet", "ea", 6.5),
+  gut("elbow", "Downspout elbow", "ea", 4.2),
+  gut("splash", "Splash block or extension", "ea", 13),
+  gut("guard", "Gutter guard", "ft", 4.4),
+  { key: "conc.slab", label: "Concrete slab, 4 in. — mix, base and mesh", unit: "sq ft", price: 6.8, group: "concrete", basis: "vinyl", min: 0.5, max: 60 },
+  { key: "cupola.kit", label: "Cupola, 30 in., with louvers and roof", unit: "ea", price: 680, group: "allowance", basis: "vinyl", min: 10, max: 10000 },
+  roofLabor("roofPost", "Set and brace one roof post", "ea", 65),
+  roofLabor("roofFrame", "Roof framing — headers, rafters, ridge, hips", "sq ft", 6.5, 400),
+  roofLabor("hipExtra", "Extra for hips, pyramids and polygons", "sq ft", 1.6, 400),
+  roofLabor("sheathing", "Sheathing and underlayment", "sq ft", 1.7, 400),
+  roofLabor("shingles", "Laying shingles or shakes", "sq", 135),
+  roofLabor("metal", "Laying metal panels and trim", "sq ft", 3.4, 400),
+  roofLabor("roofLedger", "Roof ledger — siding off, flash, fasten", "ft", 7.5),
+  roofLabor("trim", "Fascia and rake boards", "ft", 5.2),
+  roofLabor("soffit", "Soffit", "sq ft", 3.2, 400),
+  roofLabor("ceiling", "Ceiling boards or panels", "sq ft", 4.2, 400),
+  roofLabor("gutters", "Hang gutters", "ft", 4.5),
+  roofLabor("downspout", "Run one downspout", "ea", 38),
+  roofLabor("slab", "Form, pour and finish a slab", "sq ft", 5.5, 400),
+  roofLabor("slats", "Pergola slats", "sq ft", 2.4, 400),
+  roofLabor("cupola", "Set a cupola", "ea", 320),
 ];
 
 const BY_KEY = new Map(DECK_RATES.map((r) => [r.key, r]));

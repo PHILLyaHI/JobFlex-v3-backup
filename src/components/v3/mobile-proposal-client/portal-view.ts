@@ -71,8 +71,10 @@ export type PortalRating = {
 export type PortalPicture = {
   /** fence-scene (2026-09-27): the fence stood up in 3D on the page; `src` is
    *  the scene's JSON route and `poster` the studio's snapshot, when stored.
-   *  deck-scene (2026-10-04): the Deck Studio's deck, the same way. */
-  kind: "fence-3d" | "fence-scene" | "fence-plan" | "roof-photo" | "roof-plan" | "deck-scene";
+   *  deck-scene (2026-10-04): the Deck Studio's deck, the same way.
+   *  deck-photo (2026-10-10): the contractor's photo of the house with the
+   *  deck's elevation drawn over it where they placed it (`overlay`). */
+  kind: "fence-3d" | "fence-scene" | "fence-plan" | "roof-photo" | "roof-plan" | "deck-scene" | "deck-photo";
   src: string;
   alt: string;
   caption: string;

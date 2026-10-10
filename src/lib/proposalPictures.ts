@@ -18,12 +18,16 @@
 //   deck-scene  the Deck Studio's deck in 3D (2026-10-04): the scene frozen
 //               with the proposal (an ActivityEvent DECK_PLAN), served by
 //               /api/public-quote/[publicId]/deck-scene, mounted by
-//               components/v3/deck-scene.
+//               components/v3/deck-scene;
+//   deck-photo  the contractor's photo of the back of the house (2026-10-10)
+//               with the deck's elevation drawn where they placed it, served
+//               by /api/public-quote/[publicId]/deck-photo (private store).
 
 import { db } from "@/lib/db";
 import { isEagleViewEnabled, type InstantRoofData } from "@/lib/eagleview";
 import { FENCE_PLAN_EVENT, parseFencePlan } from "@/lib/fence/planSvg";
 import { DECK_PLAN_EVENT, parseDeckPlan } from "@/lib/deck/convertSchema";
+import { deckElevation, defaultPlacement, elevationOverlay } from "@/lib/deck/elevation";
 import { roofFactsLine, roofFrameFor, roofOverlayPoints, roofRings, type RoofFacts } from "@/lib/roofPictures";
 import type { PortalPicture } from "@/components/v3/mobile-proposal-client/portal-view";
 
@@ -68,7 +72,17 @@ export async function proposalPictures(p: { id: string; publicId: string; trade?
   try {
     const ev = await db.activityEvent.findFirst({ where: { proposalId: p.id, kind: DECK_PLAN_EVENT }, orderBy: { createdAt: "desc" }, select: { meta: true } });
     const deck = ev?.meta ? parseDeckPlan(JSON.parse(ev.meta)) : null;
-    if (deck) out.push({ kind: "deck-scene", src: `${base}/deck-scene`, alt: "Your deck, in 3D", caption: "Your deck, as it will stand", facts: deck.scene.facts || null, overlay: null });
+    if (deck) {
+      const what = deck.design.structure === "deck" ? "deck" : deck.design.structure === "covered-deck" ? "covered deck" : deck.design.structure;
+      out.push({ kind: "deck-scene", src: `${base}/deck-scene`, alt: `Your ${what}, in 3D`, caption: `Your ${what}, as it will stand`, facts: deck.scene.facts || null, overlay: null });
+      // The photo of the house with the elevation drawn where the contractor placed it (M2, 2026-10-10).
+      const photo = deck.design.photo;
+      if (photo) {
+        const elev = deckElevation(deck.scene);
+        const overlay = elevationOverlay(elev, photo.placed ?? defaultPlacement(), photo.w, photo.h).map((o) => o.points);
+        out.push({ kind: "deck-photo", src: `${base}/deck-photo`, alt: `Your house, with the ${what} drawn where it will go`, caption: `Where the ${what} goes`, facts: null, overlay });
+      }
+    }
   } catch {
     /* no deck, or the row does not read */
   }

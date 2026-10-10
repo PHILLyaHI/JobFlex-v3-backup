@@ -5,15 +5,14 @@
 // /api/public-quote/[publicId]/deck-scene, stood up by the studio's own
 // DeckModel3D. Both arrive only when the figure scrolls near the viewport,
 // so a page never scrolled that far never loads Three.js. A "Build it"
-// button stands the deck up layer by layer — footings to boards — the way
-// the crew will.
+// button stands the deck up layer by layer — footings to boards, then the
+// roof's posts to its gutters (M2) — the way the crew will.
 import * as React from "react";
-import { parseDeckScene, SCENE_LAYERS, type DeckScene } from "@/lib/deck/scene";
+import { parseDeckScene, sceneBuildLayers, type DeckScene } from "@/lib/deck/scene";
 import "../fence-scene/fence-scene.css";
 import "./deck-scene.css";
 
 type ModelComponent = typeof import("@/components/estimator/deck/DeckModel3D").DeckModel3D;
-const LAYERS = SCENE_LAYERS.length;
 
 function webglSupported(): boolean {
   try {
@@ -30,8 +29,10 @@ export function DeckSceneFigure({ src, caption, facts = null, className }: { src
   const [state, setState] = React.useState<"idle" | "loading" | "ready" | "failed">("idle");
   const [scene, setScene] = React.useState<DeckScene | null>(null);
   const [Model, setModel] = React.useState<ModelComponent | null>(null);
-  const [built, setBuilt] = React.useState<number>(LAYERS);
+  const [built, setBuilt] = React.useState<number>(Number.POSITIVE_INFINITY);
   const [playing, setPlaying] = React.useState(false);
+  /** The layers this scene stands up, in build order (a roof adds its own). */
+  const layerCount = scene ? sceneBuildLayers(scene).length : 10;
 
   React.useEffect(() => {
     const el = frameRef.current;
@@ -82,14 +83,14 @@ export function DeckSceneFigure({ src, caption, facts = null, className }: { src
     let raf = 0;
     const t0 = performance.now();
     const step = (now: number) => {
-      const t = Math.min(1, (now - t0) / 6000);
-      setBuilt(t * LAYERS);
+      const t = Math.min(1, (now - t0) / (layerCount > 12 ? 9000 : 6000));
+      setBuilt(t * layerCount);
       if (t < 1) raf = requestAnimationFrame(step);
       else setPlaying(false);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
-  }, [playing]);
+  }, [playing, layerCount]);
 
   const ready = state === "ready" && Model && scene;
   return (
@@ -97,7 +98,7 @@ export function DeckSceneFigure({ src, caption, facts = null, className }: { src
       <div className="jf-fs-frame" ref={frameRef}>
         {ready ? (
           <>
-            <Model scene={scene} built={built} className="jf-fs-canvas" label={`The deck in 3D: ${scene.facts}`} />
+            <Model scene={scene} built={built} className="jf-fs-canvas" label={`In 3D: ${scene.facts}`} />
             <button
               type="button"
               className="jf-ds-build"

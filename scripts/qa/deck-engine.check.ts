@@ -32,6 +32,12 @@ import { DECK_RATES, deckRate, sanitizeDeckRateBook } from "../../src/lib/deck/r
 import { deckNotes, deckScope, priceDeck, railFeet, stairSteps } from "../../src/lib/deck/pricing";
 import { applyDeckPatch, checkSummary, deckChecks } from "../../src/lib/deck/checks";
 import { deckScene, parseDeckScene, SCENE_LAYERS } from "../../src/lib/deck/scene";
+
+/** A bare deck always has a frame and boards; the harness says so once. */
+const framed = <T,>(v: T | null): T => {
+  if (v === null) throw new Error("expected a deck frame");
+  return v;
+};
 import { deckConvertSchema, parseDeckPlan } from "../../src/lib/deck/convertSchema";
 import { resolveMarket } from "../../src/lib/fence/market";
 
@@ -377,12 +383,12 @@ const seattle = resolveMarket({ state: "WA", zip: "98052" });
   check("…and less of the total stands on examples", own.exampleShare < 1 && own.exampleShare > 0.3, own.exampleShare.toFixed(2));
   const full = priceDeck({ ...WA, heightIn: 96, shape: { kind: "rect", widthFt: 20, depthFt: 14 }, decking: { ...WA.decking, product: "composite-better" }, extras: { ...WA.extras, rail: "aluminum", stairFlights: 1, demoSqFt: 150 } }, { market: seattle });
   check("composite, 8 ft up, with rail, stairs and a tear-out: eight lines", full.lines.map((l) => l.id).join() === "deck-footings,deck-ledger,deck-framing,deck-decking,deck-fascia,deck-rail,deck-stairs,deck-demo");
-  check("railing on every open edge less the stair opening (48 − 4 = 44 ft); 13 risers; tear-out is labor only", full.railFt === 44 && railFeet(full.frame) === 44 && full.stairSteps === 13 && stairSteps(full.frame.design) === 13 && full.lines.find((l) => l.id === "deck-demo")!.materialCost === 0 && !full.lines.find((l) => l.id === "deck-demo")!.taxable);
+  check("railing on every open edge less the stair opening (48 − 4 = 44 ft); 13 risers; tear-out is labor only", full.railFt === 44 && railFeet(framed(full.frame)) === 44 && full.stairSteps === 13 && stairSteps(framed(full.frame).design) === 13 && full.lines.find((l) => l.id === "deck-demo")!.materialCost === 0 && !full.lines.find((l) => l.id === "deck-demo")!.taxable);
   const custom = priceDeck({ ...WA, extras: { ...WA.extras, rail: "custom", railFt: 30, railCustomPerFt: 200 } });
   check("a custom rail is the shop's own price per foot, over the feet it typed — never an example", custom.lines.find((l) => l.id === "deck-rail")!.unitPrice === 200 && custom.lines.find((l) => l.id === "deck-rail")!.quantity === 30);
   const redwood = priceDeck({ ...WA, framing: { ...WA.framing, species: "redwood" } });
   check("redwood heart frames cost more than treated hem-fir, and span less (bigger joists or beams)", redwood.materialSubtotal > national.materialSubtotal * 1.3);
-  const parsed = deckConvertSchema.safeParse({ title: "Deck — 16 ft × 12 ft", scope: deckScope(full).join("\n"), assumptions: deckNotes(full), lines: full.lines.map((l) => ({ name: l.name, description: l.description, quantity: l.quantity, unit: l.unit, materialCost: l.materialCost, laborCost: l.laborCost })), address: "118 Cedar Ln, Redmond, WA 98052", plan: { design: full.frame.design, scene: JSON.parse(JSON.stringify(deckScene(full.frame, full.takeoff.surface))) } });
+  const parsed = deckConvertSchema.safeParse({ title: "Deck — 16 ft × 12 ft", scope: deckScope(full).join("\n"), assumptions: deckNotes(full), lines: full.lines.map((l) => ({ name: l.name, description: l.description, quantity: l.quantity, unit: l.unit, materialCost: l.materialCost, laborCost: l.laborCost })), address: "118 Cedar Ln, Redmond, WA 98052", plan: { design: framed(full.frame).design, scene: JSON.parse(JSON.stringify(deckScene(framed(full.frame), full.takeoff.surface))) } });
   check("every line the engine makes passes the rules the convert action applies", parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues[0]));
   check("a broken 3D is refused, not sent to a client", !deckConvertSchema.safeParse({ title: "x", assumptions: [], lines: [{ name: "a", quantity: 1, materialCost: 1, laborCost: 1 }], plan: { design: {}, scene: { v: 1, boxes: "nope" } } }).success);
   const scope = deckScope(full, "118 Cedar Ln, Redmond");
@@ -444,13 +450,13 @@ console.log("── the code-check strip");
 console.log("── the 3D, as data");
 {
   const p = priceDeck({ ...WA, decking: { ...WA.decking, product: "composite-better" } });
-  const scene = deckScene(p.frame, p.takeoff.surface);
-  check("a box for every stick, every board and every fascia run, filed by layer in build order", scene.boxes.length === p.frame.sticks.length + p.takeoff.surface.pieces.length + 3 && SCENE_LAYERS.join() === "footing,post,beam,ledger,joist,rim,blocking,brace,decking,fascia");
+  const scene = deckScene(p.frame, framed(p.takeoff.surface));
+  check("a box for every stick, every board and every fascia run, filed by layer in build order", scene.boxes.length === framed(p.frame).sticks.length + framed(p.takeoff.surface).pieces.length + 3 && SCENE_LAYERS.slice(0, 10).join() === "footing,post,beam,ledger,joist,rim,blocking,brace,decking,fascia");
   check("in feet: 16 x 12, the boards' tops at 3 ft", scene.widthFt === 16 && scene.depthFt === 12 && scene.heightFt === 3 && scene.boxes.filter((b) => b[0] === SCENE_LAYERS.indexOf("decking")).every((b) => near(b[3] + b[6] / 2, 3, 0.001)));
   check("a footing for every post, and a house with a door where the deck meets one", scene.footings.length === 3 && !!scene.house && scene.house.blocks.length === 1 && !!scene.house.door && scene.house.heightFt === 12);
   check("it reads back exactly after a trip through JSON", JSON.stringify(parseDeckScene(JSON.parse(JSON.stringify(scene)))) === JSON.stringify(scene));
   check("a 16 x 12 deck's scene is a few kilobytes", JSON.stringify(scene).length < 12_000, `${JSON.stringify(scene).length} bytes`);
-  check("bad shapes are no scene: a wrong version, a box with a missing number, a negative size, a layer that does not exist", parseDeckScene({ ...scene, v: 2 }) === null && parseDeckScene({ ...scene, boxes: [[0, 1, 2]] }) === null && parseDeckScene({ ...scene, boxes: [[0, 1, 1, 1, -1, 1, 1, 0]] }) === null && parseDeckScene({ ...scene, boxes: [[99, 1, 1, 1, 1, 1, 1, 0]] }) === null && parseDeckScene("x") === null);
+  check("bad shapes are no scene: a wrong version, a box with a missing number, a negative size, a layer that does not exist", parseDeckScene({ ...scene, v: 3 }) === null && parseDeckScene({ ...scene, boxes: [[0, 1, 2]] }) === null && parseDeckScene({ ...scene, boxes: [[0, 1, 1, 1, -1, 1, 1, 0]] }) === null && parseDeckScene({ ...scene, boxes: [[99, 1, 1, 1, 1, 1, 1, 0]] }) === null && parseDeckScene("x") === null);
   const detached = deckScene(buildDeckFrame({ ...WA, placement: "detached" }), deckSurface(buildDeckFrame({ ...WA, placement: "detached" })));
   check("a detached deck stands alone: no house", detached.house === null);
   const dFrame = buildDeckFrame({ ...WA, decking: { ...WA.decking, diagonal: true } });
@@ -460,7 +466,7 @@ console.log("── the 3D, as data");
   const big = priceDeck({ ...WA, shape: { kind: "rect", widthFt: 60, depthFt: 40 } });
   const bigScene = deckScene(big.frame, big.takeoff.surface);
   check("the largest deck the studio draws still fits the stored scene's limits", bigScene.boxes.length < 6000 && JSON.stringify(bigScene).length < 400_000 && !!parseDeckScene(JSON.parse(JSON.stringify(bigScene))), `${bigScene.boxes.length} boxes, ${JSON.stringify(bigScene).length} bytes`);
-  const plan = parseDeckPlan(JSON.parse(JSON.stringify({ v: 1, design: p.frame.design, scene, address: "118 Cedar Ln" })));
+  const plan = parseDeckPlan(JSON.parse(JSON.stringify({ v: 1, design: framed(p.frame).design, scene, address: "118 Cedar Ln" })));
   check("the deck kept with a proposal reads back: the design, the scene, the address", !!plan && plan.design.decking.product === "composite-better" && plan.scene.boxes.length === scene.boxes.length && plan.address === "118 Cedar Ln" && parseDeckPlan({ design: {}, scene: null }) === null);
 }
 
