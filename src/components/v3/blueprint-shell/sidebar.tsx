@@ -22,6 +22,7 @@ import { usePathname } from "next/navigation";
 import { NAV_SECTIONS, activeHref, canOpen, isLimitedRole, navSectionsFor, type NavItem } from "./nav-map";
 import { quotaPill, useNavBadges, useNavLimits, useNavLimitsExempt, type NavLimit, useNavHidden, useNavLocked, useNavRole } from "./nav-role";
 import { SignOutButton } from "./sign-out";
+import { foldShortcutLabel } from "./sidebar-fold";
 
 export { NAV_SECTIONS };
 
@@ -53,10 +54,13 @@ function quotaTip(q: NavLimit): string {
 export function Sidebar({
   user,
   folded = false,
+  onToggleFold,
 }: {
   user?: SidebarUser;
   /** Drawn as the icon rail (desktop only; the drawer ignores it). */
   folded?: boolean;
+  /** Flips the fold; without it no arrow is drawn on the sidebar's edge. */
+  onToggleFold?: () => void;
 }) {
   const pathname = usePathname() ?? "";
   // HOVER LABELS for the folded rail. One plate, positioned against the
@@ -125,6 +129,13 @@ export function Sidebar({
   // has no chevron slot of its own.
   const renderRow = (item: NavItem, child = false) => {
     const quota = limits[item.href] ? quotaPill(limits[item.href]) : null;
+    // THE PLATE STAYS ON THE ESTIMATOR (owner, 2026-10-10: the inventory row
+    // "looks the same as the main estimator button"). A parent row is `active`
+    // for its own page and for its sub-pages; a sub-page row never takes the
+    // plate — it marks itself (`sb-sub-on`, blueprint-global.css) as the page
+    // open inside the estimator.
+    const here = !child && (item.href === active || !!item.children?.some((c) => c.href === active));
+    const current = child && item.href === active;
     return item.href === "#" ? (
                 <a key={item.label} className="sb-link" href="#" {...tipProps(item.label)}>
                   <svg className="ic">
@@ -137,7 +148,8 @@ export function Sidebar({
               ) : (
                 <Link
                   key={item.label}
-                  className={`sb-link${item.href === active ? " active" : ""}${item.locked ? " sb-lockd" : ""}`}
+                  className={`sb-link${here ? " active" : ""}${child ? " sb-sub-link" : ""}${current ? " sb-sub-on" : ""}${item.locked ? " sb-lockd" : ""}`}
+                  aria-current={current ? "page" : undefined}
                   href={item.href as Route}
                   {...tipProps(
                     (badges[item.href] ?? 0) > 0 ? `${item.label} · ${badges[item.href]} new` : item.locked ? `${item.label} · not in your plan` : item.soon ? `${item.label} · coming soon` : quota ? `${item.label} · ${quota.text}` : item.label,
@@ -300,6 +312,29 @@ export function Sidebar({
           <SignOutButton className="sb-foot-ic sb-foot-out" iconClassName="ic" />
         )}
       </div>
+
+      {/* THE FOLD ARROW — on the sidebar's edge, halfway down (owner,
+          2026-09-18, asked for again 2026-10-10 after a merge dropped it). It
+          points the way the sidebar will move; its label says what it does
+          and the shortcut that does the same. Desktop only: the drawer below
+          860px hides it. Same arrow as the admin console's. */}
+      {onToggleFold && (
+        <button
+          type="button"
+          className="sb-fold"
+          aria-label={folded ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!folded}
+          onClick={() => {
+            hideTip();
+            onToggleFold();
+          }}
+          {...tipProps(`${folded ? "Expand" : "Collapse"} · ${foldShortcutLabel()}`, true)}
+        >
+          <svg className="ic" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m15 18-6-6 6-6" />
+          </svg>
+        </button>
+      )}
 
       {tip && (
         <div className="sb-tip" role="tooltip" style={{ top: tip.top }}>

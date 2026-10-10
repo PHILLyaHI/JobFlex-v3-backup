@@ -182,9 +182,12 @@ export function initBlueprintShell(root: HTMLElement, opts: {
       const link = (e.target as HTMLElement).closest<HTMLElement>(".sb-link");
       if (!link) return;
       if (link.getAttribute("href") === "#") e.preventDefault();
+      // A sub-page (an estimator's inventory) keeps the plate on its estimator;
+      // the sub-row marks itself once React renders it (2026-10-10).
+      const plateFor = link.closest(".sb-sub") ? link.closest(".sb-tree")?.querySelector<HTMLElement>(".sb-parent .sb-link") ?? link : link;
       $$(".sb-link").forEach((l) => l.classList.remove("active"));
-      link.classList.add("active");
-      moveIndicator(link);
+      plateFor.classList.add("active");
+      moveIndicator(plateFor);
     });
   }
   moveIndicator($(".sb-link.active"));

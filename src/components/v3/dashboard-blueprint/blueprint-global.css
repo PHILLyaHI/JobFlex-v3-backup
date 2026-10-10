@@ -622,6 +622,8 @@ body:has(.jf-blueprint) {
 .jf-blueprint .sb-sub .sb-slot-b { min-width: 0; padding-left: 0; }
 /* The folded rail keeps only icons: no chevron, no children, no slots. */
 .jf-blueprint[data-sb="fold"] .sb-fold-btn, .jf-blueprint[data-sb="fold"] .sb-sub, .jf-blueprint[data-sb="fold"] .sb-slot { display: none; }
+/* …and the chevron's reserved room goes with it, or the estimator's icon sits off-centre in the rail (2026-10-10). */
+.jf-blueprint[data-sb="fold"] .sb-parent .sb-link { padding-right: 0; min-height: 0; }
 @media (prefers-reduced-motion: reduce) { .jf-blueprint .sb-fold-btn svg { transition: none; } }
 
 /* Measure the actual row bounds and animate the plate behind the link text.
@@ -672,3 +674,23 @@ body:has(.jf-blueprint) {
 
 /* The folded rail has no room for the Coming soon plate; the hover label says it. */
 .jf-blueprint[data-sb="fold"] .sb-soon { display: none; }
+
+/* ── A SUB-PAGE IS NOT A SECOND ESTIMATOR BUTTON (owner, 2026-10-10) ──────
+   The inventory row hangs off a guide line under its estimator: smaller type
+   and icon, no frame, no lift on hover — a tint. The sliding plate stays on
+   the estimator (sidebar.tsx marks the parent `active` for its sub-pages;
+   shell-behavior keeps the plate there on a click); the sub-page that is
+   open marks itself with a bar and blueprint ink (`.sb-sub-on`). */
+.jf-blueprint .sb-sub { position: relative; padding: 2px 0 4px; }
+.jf-blueprint .sb-sub::before { content: ""; position: absolute; left: 32px; top: 0; bottom: 8px; border-left: 1.5px solid var(--hair); }
+.jf-blueprint .sb .sb-sub .sb-link {
+  position: relative; margin: 0 10px 0 42px; min-height: 34px; padding: 6px 10px; gap: 8px;
+  border-color: transparent; background: transparent; box-shadow: none;
+  font-size: 12.5px; font-weight: 500; color: var(--ink-soft);
+}
+.jf-blueprint .sb .sb-sub .sb-link .ic { width: 15px; height: 15px; }
+.jf-blueprint .sb .sb-sub .sb-link:hover { color: var(--ink); background: var(--paper-deep); border-color: transparent; transform: none; box-shadow: none; }
+.jf-blueprint .sb .sb-sub .sb-link:hover .ic { color: var(--ink); }
+.jf-blueprint .sb .sb-sub .sb-link.sb-sub-on, .jf-blueprint .sb .sb-sub .sb-link.sb-sub-on:hover { color: var(--blueprint); background: var(--accent-soft); font-weight: 700; }
+.jf-blueprint .sb .sb-sub .sb-link.sb-sub-on .ic { color: var(--blueprint); }
+.jf-blueprint .sb .sb-sub .sb-link.sb-sub-on::before { content: ""; position: absolute; left: -13px; top: 7px; bottom: 7px; width: 3px; border-radius: 2px; background: var(--blueprint); }
