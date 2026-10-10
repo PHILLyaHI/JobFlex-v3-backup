@@ -227,6 +227,34 @@ interface LiveMapMarker {
 }
 type GMapsLib = { Map: new (el: HTMLElement, opts: Record<string, unknown>) => LiveGoogleMap };
 type MarkerCtor = new (opts: Record<string, unknown>) => LiveMapMarker;
+/** What the building outlines need of the SDK: a shape that can be taken off the map, bounds to frame it. */
+interface MapOverlay {
+  setMap(map: unknown): void;
+}
+interface MapBounds {
+  extend(p: { lat: number; lng: number }): MapBounds;
+  contains(p: { lat: number; lng: number }): boolean;
+}
+type OverlayCtor = new (opts: Record<string, unknown>) => MapOverlay;
+type OutlineSdk = {
+  Polygon?: OverlayCtor;
+  Marker?: OverlayCtor;
+  LatLngBounds?: new () => MapBounds;
+  SymbolPath?: { CIRCLE: unknown };
+  Point?: PointCtor;
+};
+/**
+ * One colour per other building, the same on its row's swatch and on the map —
+ * bright enough to read on a satellite roof (sky, amber, violet, mint).
+ */
+const BUILDING_COLORS = ["#4a9eff", "#f0b03c", "#b394ff", "#5fd3a2"] as const;
+const buildingColor = (k: number) => BUILDING_COLORS[k % BUILDING_COLORS.length];
+
+/** Where an outline's number sits: on its north edge, the badge drawn just above it (see the icon's anchor) so a small shed's badge never hides the shed. */
+function badgeSpot(ring: ReadonlyArray<{ lat: number; lng: number }>): { lat: number; lng: number } {
+  const lng = ring.reduce((a, p) => a + p.lng, 0) / ring.length;
+  return { lat: Math.max(...ring.map((p) => p.lat)), lng };
+}
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const stripId = ({ id: _id, ...rest }: EstimateLine) => rest;
 
@@ -290,6 +318,12 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
   const mapHostRef = React.useRef<HTMLDivElement | null>(null);
   const liveMapRef = React.useRef<{ host: HTMLDivElement; map: LiveGoogleMap; marker: LiveMapMarker | null } | null>(null);
   const [mapDown, setMapDown] = React.useState(false);
+  // Which measurement the live map is centred on — the outlines below draw
+  // only once the map exists for it.
+  const [mapReadyFor, setMapReadyFor] = React.useState<string | null>(null);
+  // The other-building row under the pointer or focus: outlined lightly on
+  // the map so the contractor sees which one it is before ticking it.
+  const [hoverBuilding, setHoverBuilding] = React.useState<number | null>(null);
 
   // The data path never draws, so the CONFIDENCE verdict comes straight from
   // the stored provenance (coverage, completeness, EagleView's own occlusion
@@ -720,6 +754,7 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
           liveMapRef.current = { host, map, marker };
         }
         centeredOnRef.current = key;
+        setMapReadyFor(key);
       })
       .catch(() => {
         if (cancelled) return;
@@ -1290,6 +1325,73 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
       });
   const structure: InstantStructure | null = inst && mainPick.index != null ? (inst.structures[mainPick.index] ?? null) : null;
   const otherStructures = inst ? inst.structures.map((s, i) => ({ s, i })).filter(({ i }) => i !== mainPick.index) : [];
+
+  // The other buildings on the map (owner, 2026-10-10: "when I tick a box,
+  // show on the map which one that is"). A ticked building is outlined in its
+  // row's colour with its number; the row under the pointer is outlined
+  // lightly. The main house stays clean, as the owner chose for this map.
+  // A building the map cannot see yet is brought into view once, when ticked.
+  const overlaysRef = React.useRef<MapOverlay[]>([]);
+  const framedRef = React.useRef<{ on: string | null; ticked: ReadonlySet<number> }>({ on: null, ticked: new Set() });
+  const outlineKey = otherStructures.map(({ s, i }) => `${i}:${s.outline?.length ?? 0}`).join(",");
+  React.useEffect(() => {
+    const live = liveMapRef.current;
+    const sdk = (window as unknown as { google?: { maps?: OutlineSdk } }).google?.maps;
+    const clear = () => {
+      for (const o of overlaysRef.current) o.setMap(null);
+      overlaysRef.current = [];
+    };
+    clear();
+    if (!live || !sdk?.Polygon || !mapReadyFor || view !== "satellite" || panel !== "report") return clear;
+    const map = live.map as LiveGoogleMap & { getBounds?: () => MapBounds | null | undefined; fitBounds?: (b: MapBounds, pad?: number) => void };
+    const shown = otherStructures
+      .map(({ s, i }, k) => ({ i, k, ring: s.outline, ticked: extra.has(i) }))
+      .filter((b) => (b.ticked || b.i === hoverBuilding) && (b.ring?.length ?? 0) >= 3);
+    for (const b of shown) {
+      const color = buildingColor(b.k);
+      overlaysRef.current.push(
+        new sdk.Polygon({
+          map,
+          paths: b.ring,
+          strokeColor: color,
+          strokeOpacity: b.ticked ? 1 : 0.85,
+          strokeWeight: b.ticked ? 3 : 2,
+          fillColor: color,
+          fillOpacity: b.ticked ? 0.22 : 0.1,
+          clickable: false,
+          zIndex: b.ticked ? 3 : 2,
+        }),
+      );
+      if (sdk.Marker && sdk.SymbolPath) {
+        overlaysRef.current.push(
+          new sdk.Marker({
+            map,
+            position: badgeSpot(b.ring!),
+            clickable: false,
+            zIndex: 4,
+            title: `Building ${b.k + 1}`,
+            label: { text: String(b.k + 1), color: "#0a0a0a", fontSize: "12px", fontWeight: "800" },
+            // The circle (radius 1 in path units) sits above the edge point at any zoom.
+            icon: { path: sdk.SymbolPath.CIRCLE, scale: 10, fillColor: color, fillOpacity: 1, strokeColor: "#0a0a0a", strokeWeight: 1.5, ...(sdk.Point ? { anchor: new sdk.Point(0, 1.35) } : {}) },
+          }),
+        );
+      }
+    }
+    // Frame a building ticked just now when the map cannot see it.
+    const before = framedRef.current.on === mapReadyFor ? framedRef.current.ticked : new Set<number>();
+    const fresh = shown.filter((b) => b.ticked && !before.has(b.i));
+    framedRef.current = { on: mapReadyFor, ticked: new Set(shown.filter((b) => b.ticked).map((b) => b.i)) };
+    const view0 = map.getBounds?.();
+    if (fresh.length && sdk.LatLngBounds && map.fitBounds && view0 && fresh.some((b) => b.ring!.some((p) => !view0.contains(p)))) {
+      const bounds = new sdk.LatLngBounds();
+      if (mapLat != null && mapLng != null) bounds.extend({ lat: mapLat, lng: mapLng });
+      for (const b of shown.filter((x) => x.ticked)) for (const p of b.ring!) bounds.extend(p);
+      map.fitBounds(bounds, 56);
+    }
+    return clear;
+    // outlineKey stands for otherStructures' outlines; the array itself is rebuilt every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapReadyFor, view, panel, extra, hoverBuilding, outlineKey, mapLat, mapLng]);
   const includedStructures: InstantStructure[] = structure
     ? [structure, ...otherStructures.filter(({ i }) => extra.has(i)).map(({ s }) => s)]
     : [];
@@ -1992,9 +2094,18 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                         Other structures on the parcel · {otherStructures.length} ·{" "}
                         {num(otherStructures.reduce((a, { s }) => a + (s.areaSqft ?? 0), 0))} sq ft
                       </div>
-                      <div className="rf-note">Tick a building to add it to the total and the estimate.</div>
+                      <div className="rf-note">
+                        Tick a building to add it to the total and the estimate{liveMap && view === "satellite" ? " — it is outlined on the map" : ""}.
+                      </div>
                       {otherStructures.map(({ s, i }, k) => (
-                        <div className="rf-details-row" key={i}>
+                        <div
+                          className="rf-details-row"
+                          key={i}
+                          onMouseEnter={() => setHoverBuilding(i)}
+                          onMouseLeave={() => setHoverBuilding((h) => (h === i ? null : h))}
+                          onFocus={() => setHoverBuilding(i)}
+                          onBlur={() => setHoverBuilding((h) => (h === i ? null : h))}
+                        >
                           <dt>
                             <label className={"rf-attach" + (extra.has(i) ? "" : " is-off")}>
                               <input
@@ -2006,8 +2117,12 @@ export function RoofEstimatorDataForm({ aiEnabled = true, evEnabled = true, meas
                                   setExtra(next);
                                 }}
                               />
+                              <span className="rf-swatch" style={{ background: buildingColor(k) }} aria-hidden="true" />
                               Building {k + 1}
                             </label>
+                            {extra.has(i) && liveMap && view === "satellite" && (s.outline?.length ?? 0) < 3 && (
+                              <span className="rf-attach-note">no outline in the report — not on the map</span>
+                            )}
                           </dt>
                           <dd>
                             {s.areaSqft != null ? num(s.areaSqft) : "—"}
