@@ -44,7 +44,14 @@ const STATUS: Record<RequestPortalView["status2"], { label: string; tone: Tone }
   DONE: { label: "Done", tone: "emerald" },
 };
 const STAGE_WORD: Record<ProposalStage, string> = { NEW: "New", OPENED: "Opened", ACCEPTED: "Accepted", DECLINED: "Declined", PAID: "Paid", COMPLETED: "Completed" };
-const NEED_WORD: Record<HomeNeed["kind"], string> = { proposal: "Review", change: "Approve", visit: "Visit", review: "Review", plan: "Submit", files: "Add photos" };
+const NEED_WORD: Record<HomeNeed["kind"], string> = { proposal: "Review", pay: "Pay", change: "Approve", visit: "Details", review: "Review", plan: "Submit", files: "Add photos" };
+const NEED_PHRASE: Record<HomeNeed["kind"], string> = { proposal: "a proposal to review", pay: "a payment due", change: "a change to approve", visit: "a visit coming up", review: "a review to leave", plan: "a plan to submit", files: "photos to add" };
+/** "a proposal to review and a visit coming up" — the welcome band's one line on what waits below. */
+function needsSummary(needs: HomeNeed[]): string {
+  const kinds = [...new Set(needs.map((n) => n.kind))];
+  const first = kinds.slice(0, 2).map((k) => NEED_PHRASE[k]);
+  return kinds.length > 2 ? `${first.join(", ")} and more` : first.join(" and ");
+}
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 function projectTitle(p: RequestPortalView): string {
@@ -61,8 +68,9 @@ export default async function HomePage({ params }: { params: Promise<{ key: stri
   const { key } = await params;
   const h = await loadHomeDashboard(key);
   if (!h) notFound();
-  const active = h.projects.filter((p) => p.status2 !== "DONE" && p.status2 !== "HIRED");
-  const record = h.projects.filter((p) => p.status2 === "DONE" || p.status2 === "HIRED");
+  // In progress until the work is done — a hired job with a visit next week is not the record yet.
+  const active = h.projects.filter((p) => p.status2 !== "DONE");
+  const record = h.projects.filter((p) => p.status2 === "DONE");
   const newProjectHref = `/homeowner?home=${encodeURIComponent(h.key)}`;
   // The street line often carries the city and the ZIP already — say each once.
   const addr = h.details.address;
@@ -85,7 +93,10 @@ export default async function HomePage({ params }: { params: Promise<{ key: stri
             <a href="#contractors">Contractors</a>
             <a href="#details">Details</a>
           </nav>
-          <LiveRefresh className={s.live} />
+          <div className={s.barEnd}>
+            <LiveRefresh className={s.live} />
+            <a className={s.barCta} href={newProjectHref}><b aria-hidden="true">+</b>New project</a>
+          </div>
         </div>
       </header>
 
@@ -96,6 +107,13 @@ export default async function HomePage({ params }: { params: Promise<{ key: stri
             <div className={s.kicker}>{h.returning ? "Welcome back" : "Welcome"} · {daypart(h.timeZone)}</div>
             <h1 id="welcome-title" className={s.title}>{h.name}</h1>
             <p className={s.house}>{house}</p>
+            <div className={s.welcomeActions}>
+              <a className={s.btnHero} href={newProjectHref}><b aria-hidden="true">+</b>Start a new project</a>
+              <span className={s.heroNote}>Describe it in a minute — a local pro takes it from there.</span>
+            </div>
+            {h.needs.length > 0 && (
+              <a className={s.next} href="#needs"><span className={s.count}>{h.needs.length}</span><span>{h.needs.length === 1 ? "One thing needs you" : `${h.needs.length} things need you`}: {needsSummary(h.needs)}</span></a>
+            )}
             <p className={s.lede}>
               Every project on your house lives here — the proposals, your contractors, the record of what was done, and the jobs you&apos;re planning. No account, no password: keep this link.
             </p>
@@ -110,10 +128,6 @@ export default async function HomePage({ params }: { params: Promise<{ key: stri
 
         {/* ── what they can do ────────────────────────────────────────── */}
         <nav className={s.quick} aria-label="What you can do">
-          <a className={`${s.quickItem} ${s.quickPrimary}`} href={newProjectHref}>
-            <b>Start a new project</b>
-            <span>Describe it in a minute — a local pro takes it from there</span>
-          </a>
           <a className={s.quickItem} href="#plans">
             <b>Plan one for later</b>
             <span>Put it on the calendar; we remind you when the month comes</span>
@@ -132,7 +146,7 @@ export default async function HomePage({ params }: { params: Promise<{ key: stri
           {/* ── the work ──────────────────────────────────────────────── */}
           <div className={s.main}>
             {h.needs.length > 0 && (
-              <section className={`${s.card} ${s.cardAttention}`} aria-labelledby="needs-title">
+              <section className={`${s.card} ${s.cardAttention}`} id="needs" aria-labelledby="needs-title">
                 <div className={s.cardHead}><h2 id="needs-title" className={s.label}>Needs you</h2><span className={s.count}>{h.needs.length}</span></div>
                 {h.needs.map((n, i) => (
                   <div key={i} className={s.row}>
@@ -301,7 +315,7 @@ function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }) {
         <span className={`${s.stamp} ${TONE[st.tone]}`}>{st.label}</span>
         <span className={s.mono}>Sent <LocalTime iso={p.submittedAt} kind="date" tz={h.timeZone} /></span>
       </div>
-      <h3 className={s.projectTitle}>{projectTitle(p)}</h3>
+      <h3 className={s.projectTitle}><a href={href}>{projectTitle(p)}</a></h3>
       {p.scope && <p className={s.scope}>{p.scope.split("\n")[0]}</p>}
       <dl className={s.facts}>
         {p.current ? (
@@ -314,15 +328,6 @@ function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }) {
           </div>
         ) : (
           <div><dt>Contractor</dt><dd>Being matched — you&apos;ll get an email</dd></div>
-        )}
-        {shown && (
-          <div>
-            <dt>Proposal</dt>
-            <dd>
-              {usd.format(shown.total + shown.approvedChanges)} · {STAGE_WORD[shown.stage]} ·{" "}
-              <a className={s.link} href={`/portal/q/${encodeURIComponent(shown.publicId)}`}>{open ? "Review & accept" : "Open"}</a>
-            </dd>
-          </div>
         )}
         {won && (won.paid > 0 || won.remaining > 0) && (
           <div>
@@ -346,9 +351,26 @@ function ProjectCard({ p, h }: { p: RequestPortalView; h: HomeDashboard }) {
           </div>
         )}
       </dl>
+      {shown && (
+        <div className={s.proposal} data-open={Boolean(open)} aria-label={`Proposal: ${shown.title}`}>
+          <div className={s.proposalHead}>
+            <span className={`${s.stamp} ${open ? s.stampAccent : won ? s.stampEmerald : s.stampNeutral}`}>{open ? (shown.stage === "NEW" ? "New proposal" : "Proposal · opened") : `Proposal · ${STAGE_WORD[shown.stage].toLowerCase()}`}</span>
+            <span className={s.mono}>{shown.orgName} · sent <LocalTime iso={shown.sentAt ?? p.submittedAt} kind="date" tz={h.timeZone} /></span>
+          </div>
+          <h4 className={s.proposalTitle}>{shown.title}</h4>
+          <div className={s.proposalSum}>
+            <span className={s.proposalTotal}>{usd.format(shown.total + shown.approvedChanges)}</span>
+            {shown.approvedChanges !== 0 && <span className={s.mono}>incl. approved changes</span>}
+            {open && shown.validUntil && <span className={s.mono}>price held until <LocalTime iso={shown.validUntil ?? ""} kind="date" tz={h.timeZone} /></span>}
+          </div>
+          <div className={s.actions}>
+            <a className={open ? s.btnPrimary : s.btnGhost} href={`/portal/q/${encodeURIComponent(shown.publicId)}`}>{open ? "Review & accept" : "Open proposal"}</a>
+            <a className={s.btnGhost} href={`/api/public-quote/${encodeURIComponent(shown.publicId)}/pdf`} target="_blank" rel="noopener noreferrer">PDF</a>
+          </div>
+        </div>
+      )}
       <div className={s.actions}>
-        <a className={open ? s.btnGhost : s.btnPrimary} href={href}>Open project</a>
-        {open && <a className={s.btnPrimary} href={`/portal/q/${encodeURIComponent(open.publicId)}`}>Review &amp; accept</a>}
+        <a className={shown ? s.btnGhost : s.btnPrimary} href={href}>Open project page</a>
       </div>
       {p.current && <MessageBox homeKey={h.key} token={p.token} orgName={p.current.org.name} sent={messages} timeZone={h.timeZone} />}
       <FolderBox homeKey={h.key} token={p.token} orgName={p.current?.org.name ?? null} files={h.folders[p.token]?.files ?? []} requests={h.folders[p.token]?.requests ?? []} storage={h.storage} timeZone={h.timeZone} />

@@ -120,7 +120,7 @@ export function FolderBox({ homeKey, token, orgName, files, requests, storage, t
           {progress.map((p, i) => (
             <li key={i}>
               <span className={s.tileName}>{p.name}</span>
-              {p.error ? <span className={s.err}>{p.error}</span> : <span className={s.bar}><i style={{ width: `${p.pct}%` }} /></span>}
+              {p.error ? <span className={s.err}>{p.error}</span> : <span className={s.meter}><i style={{ width: `${p.pct}%` }} /></span>}
             </li>
           ))}
         </ul>

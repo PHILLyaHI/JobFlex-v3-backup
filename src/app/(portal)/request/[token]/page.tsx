@@ -119,6 +119,8 @@ export default async function RequestPage({ params }: { params: Promise<{ token:
     { label: "Accepted", done: !!won },
   ];
   const nowAt = steps.findIndex((x) => !x.done);
+  // A home that exists sends the next request through the dashboard, so it lands there too.
+  const newProjectHref = v.homeKey ? `/homeowner?home=${encodeURIComponent(v.homeKey)}` : "/homeowner";
 
   return (
     <main className={s.page}>
@@ -136,6 +138,10 @@ export default async function RequestPage({ params }: { params: Promise<{ token:
                 Your home dashboard
               </a>
             )}
+            {/* The next project starts from the top of the page, not a footer link (owner, 2026-10-10). */}
+            <a className={`${s.btnPrimary} ${s.topCta}`} href={newProjectHref}>
+              + New project
+            </a>
             <LiveRefresh className={s.live} />
           </div>
         </header>
@@ -390,7 +396,7 @@ export default async function RequestPage({ params }: { params: Promise<{ token:
             with the link can see your request, so share it carefully. Questions? Reply to any of our emails.
           </p>
           <p>
-            <Link href="/homeowner">Start another project</Link>
+            <a href={newProjectHref}>Start another project</a>
             {" · "}
             <Link href="/privacy">Privacy</Link>
             {" · "}

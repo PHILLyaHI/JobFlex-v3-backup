@@ -187,7 +187,7 @@ export interface HomeMembership {
 }
 
 export interface HomeNeed {
-  kind: "proposal" | "change" | "visit" | "review" | "plan" | "files";
+  kind: "proposal" | "pay" | "change" | "visit" | "review" | "plan" | "files";
   text: string;
   href: string;
   at: string | null;
@@ -344,7 +344,7 @@ export async function loadHomeDashboard(key: string, now = new Date()): Promise<
   }
   for (const p of projects) {
     for (const q of p.proposals) {
-      if (q.current && q.nextDue && q.remaining > 0) needs.push({ kind: "proposal", text: `${q.orgName}: ${q.nextDue.label} due — ${usd0(q.nextDue.amount)}`, href: `/portal/q/${encodeURIComponent(q.publicId)}`, at: null });
+      if (q.current && q.nextDue && q.remaining > 0) needs.push({ kind: "pay", text: `${q.orgName}: ${q.nextDue.label} due — ${usd0(q.nextDue.amount)}`, href: `/portal/q/${encodeURIComponent(q.publicId)}`, at: null });
     }
   }
   for (const pl of planRows) {
