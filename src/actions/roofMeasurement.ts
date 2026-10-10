@@ -1010,7 +1010,15 @@ function solarRoofData(estimate: SolarRoofEstimate, input: EvOrderInput): Instan
 export async function measureRoofSolar(input: EvOrderInput): Promise<MeasureResult> {
   const { organizationId, user } = await requireEstimatorOrManager();
   await requirePage(organizationId, "roof-estimator");
-  const userId = user.id;
+  return solarMeasure(input, organizationId, user.id, "take");
+}
+
+/**
+ * The Google measurement itself. Module-private, so the trial allowance can
+ * only be waived from the server: "covered" when this click already spent its
+ * allowance on an EagleView answer that held no roof.
+ */
+async function solarMeasure(input: EvOrderInput, organizationId: string, userId: string, trialMode: "take" | "covered"): Promise<MeasureResult> {
   if (!isSolarEnabled()) return { ok: false, error: "Google aerial measurement is not configured for this account." };
   if (!input || typeof input.address !== "string" || input.address.length > 500 ||
       [input.city, input.state, input.zip].some(v => typeof v !== "string" || v.length > 200)) {
@@ -1042,8 +1050,10 @@ export async function measureRoofSolar(input: EvOrderInput): Promise<MeasureResu
         Math.abs(requestedPin.lat - input.lat) <= 0.00001 && Math.abs(requestedPin.lng - input.lng) <= 0.00001);
       if (measurement.provenance.solar && samePin) return { ok: true, measurement };
     }
-    const trial = await takeTrialCap(organizationId, "roofMeasurements");
-    if (!trial.ok) return trial.failure;
+    if (trialMode === "take") {
+      const trial = await takeTrialCap(organizationId, "roofMeasurements");
+      if (!trial.ok) return trial.failure;
+    }
     const pin = input.lat != null && input.lng != null
       ? { lat: input.lat, lng: input.lng }
       : await geocode(instantCompleteAddress(input));
@@ -1081,16 +1091,27 @@ export async function measureRoofSolar(input: EvOrderInput): Promise<MeasureResu
 /** One UI action; the active engine is controlled on the server. */
 export async function measureRoof(input: EvOrderInput): Promise<MeasureResult> {
   // Authenticate before deciding on any provider, including fallback paths.
-  await requirePage((await requireEstimatorOrManager()).organizationId, "roof-estimator");
+  const { organizationId, user } = await requireEstimatorOrManager();
+  await requirePage(organizationId, "roof-estimator");
   if (roofMeasurementProvider() === "google" || !isEagleViewEnabled()) {
-    return measureRoofSolar(input);
+    return solarMeasure(input, organizationId, user.id, "take");
   }
   const result = await measureRoofInstant(input);
   if (result.ok || !isSolarEnabled()) return result;
+  // EagleView answered and its answer holds no roof (2026-10-10: a Seattle
+  // house under a solar array). That answer is paid and kept, so a click
+  // never re-bills it — and Google's aerial model measures the house in the
+  // same click instead of leaving the contractor at a dead end. The click
+  // already spent its trial allowance on the EagleView order.
+  if (result.noRoof) {
+    const google = await solarMeasure(input, organizationId, user.id, "covered");
+    if (google.ok) return google;
+    return { ...result, error: `${result.error} Google's aerial data could not measure it either: ${google.error}` };
+  }
   // Only an explicit provider access failure permits automatic fallback.
   // Pending paid orders, plan limits and save failures keep their own state.
-  if (result.providerAccessDenied !== true || result.noRoof || result.stillProcessing) return result;
-  return measureRoofSolar(input);
+  if (result.providerAccessDenied !== true || result.stillProcessing) return result;
+  return solarMeasure(input, organizationId, user.id, "take");
 }
 
 /** Бесплатная реконструкция строила модель — движок удалён. */
