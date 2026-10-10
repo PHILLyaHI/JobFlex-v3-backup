@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { requirePlatformAdmin } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { getStripe, isStripeEnabled } from "@/lib/sdk/stripe";
+import { mirrorStatusFor } from "@/lib/stripeStatus";
 import { discountRef, subscriptionPeriodEndDate } from "@/lib/stripeCompat";
 import { getMonthlyCentsBySlugUpper, getPlanNamesBySlug } from "@/lib/planCatalogServer";
 import { planDisplayName } from "@/lib/planCatalog";
@@ -522,7 +523,7 @@ async function fromStripe(withCards: boolean): Promise<SubscribersData> {
           : "stripe";
 
     // ── the rule ──────────────────────────────────────────────────────
-    const status = sub.status.toUpperCase();
+    const status = mirrorStatusFor(sub);
     const paused = Boolean(sub.pause_collection);
     const mrrExcludedFor: MrrExclusion =
       status !== "ACTIVE"

@@ -300,6 +300,7 @@ export async function getAdminUsersData(): Promise<AdminUsersData> {
         summary.pastDue += 1;
         break;
       case "CANCELED":
+      case "TRIAL_ENDED":
       case "EXPIRED":
       case "UNPAID":
         summary.lapsed += 1;

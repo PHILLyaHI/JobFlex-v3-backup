@@ -974,20 +974,18 @@ function undeliverable(email: string): boolean {
   return /@[^@]*\.local$/i.test(email.trim());
 }
 
-/** Where new-ticket alerts go: an explicit SUPPORT_NOTIFY_EMAIL (comma-
- *  separated) if set, otherwise every flagged platform admin's address. */
+/** New tickets always reach the support inbox, plus configured operators. */
 async function supportRecipients(): Promise<string[]> {
+  const inbox = "app@jobflex.app";
+  const recipients = (extra: string[]) => [...new Set([inbox, ...extra].map((e) => e.trim().toLowerCase()).filter((e) => e && !undeliverable(e)))];
   const override = process.env.SUPPORT_NOTIFY_EMAIL?.trim();
   if (override) {
-    return override
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    return recipients(override.split(","));
   }
   const admins = await db.user.findMany({
     where: { isPlatformAdmin: true },
     select: { email: true },
-  });
+  }).catch(() => []);
   const all = admins.map((a) => a.email).filter((e): e is string => Boolean(e));
   const real = all.filter((e) => !undeliverable(e));
   if (real.length < all.length) {
@@ -995,7 +993,7 @@ async function supportRecipients(): Promise<string[]> {
       `[support] skipped ${all.length - real.length} undeliverable platform-admin address(es) — console principals are logins, not mailboxes.`,
     );
   }
-  return real;
+  return recipients(real);
 }
 
 /** Email the operator that a ticket arrived. Never throws. */

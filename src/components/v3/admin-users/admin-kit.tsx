@@ -331,6 +331,7 @@ export function subTone(status: string): string | false {
       return "st--warn";
     case "UNPAID":
     case "CANCELED":
+    case "TRIAL_ENDED":
     case "EXPIRED":
       return "st--danger";
     default:

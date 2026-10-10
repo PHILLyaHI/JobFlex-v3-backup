@@ -1,0 +1,9 @@
+.results { display: grid; gap: 16px; min-width: 0; }
+.variant { border: 1.5px solid var(--ink); background: var(--paper-deep); padding: 16px; }
+.variant header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.variant h3 { margin: 0; font: 800 18px/1.3 var(--font-sans); }
+.variant header span { color: var(--ink-muted); font: 12px/1.5 var(--font-mono); }
+.variant dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 16px 0; gap: 16px; }
+.variant dt { color: var(--ink-muted); font: 13px/1.4 var(--font-sans); }
+.variant dd { margin: 4px 0 0; font: 800 22px/1.3 var(--font-sans); font-variant-numeric: tabular-nums; }
+.variant p { margin: 0; padding-top: 12px; border-top: 1px solid var(--ink-line); color: var(--ink-soft); font: 12px/1.5 var(--font-sans); }

@@ -1,13 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ArrowDownToLine, ArrowUpRight, ChevronRight, FileText, RefreshCw, SlidersHorizontal, FlaskConical, Info, Users } from "lucide-react";
+import { ArrowDownToLine, ArrowUpRight, ChevronRight, FileText, RefreshCw, SlidersHorizontal, Info, Users } from "lucide-react";
 import { getSignupAttribution, getTrafficDashboard, getTrafficExperimentsAction, getTrafficStageVisitors } from "@/actions/trafficDashboard";
 import { getTrafficExportMarkdown } from "@/actions/trafficExport";
 import { getAdsManagerClicks } from "@/actions/trafficClicks";
 import { downloadText, reportToCsv } from "@/lib/traffic-export";
 import { toast } from "@/components/ui/toast-store";
-import { conversionInterval, pageLabel, percent, staleLabel, type ExperimentResult, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
+import { pageLabel, percent, staleLabel, type SignupAttribution, type StageVisitor, type StageVisitorsReport, type TrafficFilters, type TrafficReport } from "@/lib/traffic-contract";
 import { AdsReconciliation, DailyPeople } from "./daily-tables";
 import { dateInZone, shiftDate } from "@/lib/traffic-query";
 import { Sheet, useMdl } from "@/components/v3/admin-influencers/admin-ui";
@@ -21,7 +22,6 @@ import { DigestToggle } from "./digest-toggle";
 import { SignupLedgerPanel } from "./signup-ledger";
 import { AdLinks } from "./ad-links";
 import type { LiveReport, SignupLedger } from "@/lib/traffic-live";
-import { TRIAL_EXPERIMENT } from "@/lib/trialOffer";
 import s from "./traffic.module.css";
 
 const n = (v: number | null | undefined) => v == null ? "--" : v.toLocaleString("en-US");
@@ -71,14 +71,11 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState("");
   const request = useRef(0);
-  const [tab, setTab] = useState<"pages" | "acquisition" | "experiments">("pages");
+  const [tab, setTab] = useState<"pages" | "acquisition">("pages");
   const [dimension, setDimension] = useState<Dimension>("sources");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"visitors" | "pageviews" | "returningVisitors">("visitors");
   const [pageIndex, setPageIndex] = useState(0);
-  const [experiment, setExperiment] = useState("");
-  const [control, setControl] = useState("");
-  const [experimentRevision, setExperimentRevision] = useState(0);
   const shown = useRef(report);
   useEffect(() => { shown.current = report; }, [report]);
   const filters = report.filters;
@@ -87,7 +84,6 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   // What was last asked for — the retry below asks for it again.
   const wanted = useRef(data.filters);
   function load(next: TrafficFilters) {
-    setExperimentRevision(value => value + 1);
     const id = ++request.current;
     wanted.current = next;
     setError("");
@@ -133,28 +129,10 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
   const pageCount = Math.max(1, Math.ceil(rows.length / 20));
   const visiblePage = Math.min(pageIndex, pageCount - 1);
   const acquisition = report[dimension];
-  // The A/B bench loads when its tab opens, not with the page (2026-10-01).
-  const [exp, setExp] = useState<{ key: string; rows: ExperimentResult[]; failed: boolean; readAt: string } | null>(null);
-  const expKey = JSON.stringify(filters) + ":" + experimentRevision;
-  useEffect(() => {
-    if (tab !== "experiments" || exp?.key === expKey) return;
-    let live = true;
-    getTrafficExperimentsAction({ ...filters }).then(rows => { if (live) setExp({ key: expKey, rows, failed: false, readAt: new Date().toISOString() }); }).catch(() => { if (live) setExp({ key: expKey, rows: [], failed: true, readAt: "" }); });
-    return () => { live = false; };
-  }, [tab, expKey, exp?.key, filters]);
-  const experimentRows = exp?.key === expKey ? exp.rows : [];
-  const experimentsLoading = exp?.key !== expKey;
-  const experimentNames = Array.from(new Set(experimentRows.map(e => e.experiment)));
-  const selectedExperiment = experimentNames.includes(experiment) ? experiment : experimentNames[0] || "";
-  const variants = experimentRows.filter(e => e.experiment === selectedExperiment);
-  const baseline = variants.find(v => v.variant === control) || variants.find(v => v.variant === "control") || variants[0];
-  const variantLabel = (variant: string) => selectedExperiment === TRIAL_EXPERIMENT
-    ? variant === "a" ? "A · 3-day trial" : variant === "b" ? "B · 7-day trial" : variant
-    : variant;
   const funnelEnd = report.funnel.at(-1);
   const stepCoverageDate = report.firstStepAt ? dateInZone(new Date(report.firstStepAt), filters.timezone) : null;
   const coverageIncomplete = !stepCoverageDate || filters.from <= stepCoverageDate;
-  const failed = (name: string) => name === "experiments" ? exp?.key === expKey && exp.failed : report.errors.some(e => e.startsWith(name + ":"));
+  const failed = (name: string) => report.errors.some(e => e.startsWith(name + ":"));
   const today = dateInZone(new Date(), draft.timezone);
 
   // Stage drill-down: who reached a funnel stage, with device, place and source.
@@ -277,7 +255,7 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
 
     <div className={s.sectionLabel}><span>03 / Explore</span><span>Same date &amp; audience filters</span></div>
     <section className={s.card}>
-      <div className={s.exploreTabs} aria-label="Detailed reports">{(["pages", "acquisition", "experiments"] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{key === "pages" ? "Pages & screens" : key === "acquisition" ? "Acquisition" : "A/B experiments"}<span>{key === "pages" ? n(report.pages.length) : key === "acquisition" ? n(report.sources.length) : n(experimentNames.length)}</span></button>)}</div>
+      <div className={s.exploreTabs} aria-label="Detailed reports">{(["pages", "acquisition"] as const).map(key => <button key={key} aria-pressed={tab === key} onClick={() => setTab(key)}>{key === "pages" ? "Pages & screens" : "Acquisition"}<span>{key === "pages" ? n(report.pages.length) : n(report.sources.length)}</span></button>)}<Link className={s.button} href="/admin/ab-testing">A/B testing <ArrowUpRight size={14}/></Link></div>
       {tab === "pages" && <div className={s.exploreBody}>
         <div className={s.exploreHead}><div><h2>Page explorer</h2><p className={s.micro}>Select a row to inspect its audience and daily traffic.</p></div><div className={s.pageTools}><input type="search" aria-label="Find a page" placeholder="Find a page or screen..." value={search} onChange={e => { setSearch(e.target.value); setPageIndex(0); }}/><Select label="Sort by" value={sort} onChange={v => { setSort(v as typeof sort); setPageIndex(0); }}><option value="visitors">Visitors</option><option value="pageviews">Views</option><option value="returningVisitors">Returning</option></Select></div></div>
         <div className={s.pageShortcuts}>{pageKeys.map(p => <button key={p} aria-pressed={filters.page === p} onClick={() => apply({ page: p })}>{pageLabel(p)}</button>)}{filters.page && <button onClick={() => apply({ page: "" })}>Clear page filter</button>}</div>
@@ -301,22 +279,6 @@ export function AdminTrafficContent({ data, deferred = false, signups: initialSi
         <p className={s.footnote}>Signups are verified outcomes within the conversion window after an eligible visit. {coverageIncomplete && "Signup rates are hidden until the selected range has full tracking coverage. "}One visitor can use multiple sources. Browser privacy, consent and blockers can reduce coverage.</p>
       </div>}
 
-      {tab === "experiments" && <div className={s.exploreBody}>
-        <div className={s.exploreHead}><div><h2>A/B experiment bench</h2><p className={s.micro}>Recorded visitors and verified signups. Trial length test: A = 3 days; B = 7 days.</p></div><span className={s.stamp}>{experimentsLoading ? "Loading" : failed("experiments") ? "Unavailable" : experimentNames.length ? `${experimentNames.length} observed` : "No recorded exposures"}</span></div>
-        {experimentsLoading ? <div className={s.empty} role="status">Loading recorded experiment results…</div> : !variants.length ? failed("experiments") ? <div className={s.empty}>Experiment results are unavailable. Refresh to retry. Missing data is not shown as zero conversions.</div> : <div className={s.experimentEmpty}><div className={s.experimentMark}><FlaskConical size={34}/><span>A / B</span></div><div><h3>No experiment exposures recorded in this range.</h3><p>The trial test is active. Results appear after visitors actually see an offer and analytics records the visit. No conversion rate is calculated without recorded exposures.</p><div className={s.experimentSteps}><span>A / 3-day trial</span><span>B / 7-day trial</span></div></div></div> : <>
-          <div className={s.experimentControls}><Select label="Experiment" value={selectedExperiment} onChange={setExperiment}>{experimentNames.map(name => <option key={name} value={name}>{name === TRIAL_EXPERIMENT ? "Trial length · 3 vs 7 days" : name}</option>)}</Select><Select label="Compare against" value={baseline?.variant || ""} onChange={setControl}>{variants.map(v => <option key={v.variant} value={v.variant}>{variantLabel(v.variant)}</option>)}</Select></div>
-          <div className={s.tableScroll}><table className={s.table}><thead><tr><th>Variant</th><th>Exposed visitors</th><th>Attempts</th><th>Attempt rate</th><th>Verified signups</th><th>Signup rate</th><th>Lift</th><th>95% interval</th></tr></thead><tbody>{variants.map(v => {
-            const r = percent(v.completed, v.visitors);
-            const b = baseline ? percent(baseline.completed, baseline.visitors) : null;
-            const ci = conversionInterval(v.completed, v.visitors);
-            return <tr key={v.variant}><td><b>{variantLabel(v.variant)}</b>{v === baseline && <small>Baseline</small>}</td><td>{n(v.visitors)}</td><td>{n(v.attempts)}</td><td>{rate(percent(v.attempts, v.visitors))}</td><td>{n(v.completed)}</td><td><b>{rate(r)}</b></td><td>{v === baseline ? "--" : b && r != null ? `${((r / b - 1) * 100).toFixed(1)}%` : "--"}</td><td>{ci ? `${rate(ci[0])} to ${rate(ci[1])}` : "--"}</td></tr>;
-          })}</tbody></table></div>
-          <p className={s.footnote}>{n(variants.reduce((sum, v) => sum + v.mixedVisitors, 0))} visitors with mixed variant exposures excluded. Page filter does not apply; the experiment defines its tested page. Rates use a {filters.windowDays}-day window after first exposure.</p>
-        </>}
-        {!experimentsLoading && !failed("experiments") && exp?.readAt && <p className={s.footnote}>Experiment data read {when(exp.readAt)}. Refresh reloads this comparison.</p>}
-        {failed("experiments") && <div className={s.notice}>Experiment results could not be loaded. This does not mean no experiments exist.</div>}
-        <div className={s.experimentNote}><Info size={16}/><span>A conversion is a server-verified signup after account creation and Stripe verification. Starting a free trial does not mean a payment was collected. Each recorded visitor counts once per variant; duplicate events do not add conversions. Untracked visits and signups are not estimated. The 95% Wilson interval shows uncertainty, not a winning variant. Let cohorts mature before deciding.</span></div>
-      </div>}
     </section>
     <Sheet mdlRef={sheet.ref} title={drill ? `${drill.label} / who reached it` : "Stage visitors"} titleId="trafficStageVisitors" size="drawer" onClose={sheet.close} error={drillError || null}>
       <div className={s.drill}>

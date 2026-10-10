@@ -25,6 +25,7 @@ import {
 import { planSnapshot, reportPlanChange } from "@/lib/activation-events";
 import { isCardlessTrialLapse, mirrorStatusFor } from "@/lib/stripeStatus";
 import { mirrorSubAtKey, recordMirrorReference } from "@/lib/subscriptionRecord";
+import { patchCardlessRecord, readCardlessRecord } from "@/lib/trialState";
 import { mailChargeback, mailCommissionHeld } from "@/lib/influencerMail";
 import {
   chargeIsInvoiceBacked,
@@ -351,6 +352,17 @@ export async function syncSubscriptionFromStripe(
     });
     reportPlanChange(organizationId, "stripe", planWas);
     await recordMirrorReference(organizationId, subCreatedMs);
+
+    // A card may have been attached through Stripe's subscription/card-update
+    // flow rather than our trial Checkout. The trial meter reads this local
+    // marker, so mirror a payment method only for this exact subscription and
+    // customer. A contractor's separate Stripe Connect account cannot set it.
+    if (sub.status === "trialing" && sub.default_payment_method && customerId) {
+      const trial = await readCardlessRecord(organizationId);
+      if (trial?.subId === externalSubId && trial.customerId === customerId && !trial.cardAt) {
+        await patchCardlessRecord(organizationId, { cardAt: new Date().toISOString() });
+      }
+    }
   }
 
   // The client's attribution — months already counted — moves onto this

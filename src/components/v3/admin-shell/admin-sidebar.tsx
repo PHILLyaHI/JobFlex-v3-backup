@@ -14,7 +14,8 @@
 // (`[data-sb="fold"]` in blueprint-global.css), set on the shell root by
 // admin-shell. Folded, each row's name shows as a hover plate beside the rail.
 
-import { Fragment, useCallback, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { unreadSupportCount } from "@/actions/support";
 import Image from "next/image";
 import Link from "next/link";
 import type { Route } from "next";
@@ -46,7 +47,38 @@ export function AdminSidebar({
   const pathname = usePathname() ?? "";
   const active = activeAdminHref(pathname);
   // Pending-action counts by href, from the (admin) layout via NavRoleProvider.
-  const badges = useNavBadges();
+  const initialBadges = useNavBadges();
+  const [supportCount, setSupportCount] = useState(initialBadges["/admin/support"] ?? 0);
+  const badges: Record<string, number> = { ...initialBadges, "/admin/support": supportCount };
+
+  // Layouts persist across navigation. Refresh the count without refreshing
+  // the whole page or disturbing an admin's open form.
+  useEffect(() => {
+    let disposed = false;
+    let pending = false;
+    const refresh = async () => {
+      if (document.visibilityState !== "visible" || pending) return;
+      pending = true;
+      try {
+        const count = await unreadSupportCount();
+        if (!disposed) setSupportCount(count);
+      } catch {
+        // Keep the last known count when offline; the next poll retries.
+      } finally {
+        pending = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [pathname, initialBadges]);
 
   // HOVER LABELS for the folded rail — the dashboard sidebar's plate, measured
   // against the sidebar itself (not the viewport: the shell root carries a CSS
@@ -111,7 +143,7 @@ export function AdminSidebar({
                 {/* The name in its own span so the folded rail can hide it. */}
                 <span className="sb-lbl">{item.label}</span>
                 {(badges[item.href] ?? 0) > 0 && (
-                  <span className="sb-badge" aria-label={`${badges[item.href]} pending`}>
+                  <span className="sb-badge" aria-live="polite" aria-label={`${badges[item.href]} ${item.href === "/admin/support" ? "unread support tickets" : "pending"}`}>
                     {badges[item.href] > 99 ? "99+" : badges[item.href]}
                   </span>
                 )}
