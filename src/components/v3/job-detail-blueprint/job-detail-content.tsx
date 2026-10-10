@@ -486,7 +486,7 @@ export function JobDetailContent({ record }: { record: JobDetailRecord }) {
               <span className={cx("jd-s")}>{record.loadedAt ? `loaded ${new Date(record.loadedAt).toLocaleDateString("en-US")}` : "what this job needs on the truck"}</span>
               {/* The office's way to the shelf this list reads; the crew has no Inventory page. */}
               {!worker && record.pickTrade && (
-                <Link className={cx("jd-link", "jd-hlink")} href={`/dashboard/inventory?trade=${record.pickTrade}&tab=stock` as Route} data-pick-stock>
+                <Link className={cx("jd-link", "jd-hlink")} href={`/dashboard/${record.pickTrade}-estimator/inventory?tab=stock` as Route} data-pick-stock>
                   Open the stock
                 </Link>
               )}

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireManager, requireOrg } from "@/lib/orgContext";
 import { db } from "@/lib/db";
 import { safeHref } from "@/lib/safeHref";
+import { INVENTORY_PATHS } from "@/lib/inventory";
 import {
   createJobExpense,
   createStockPurchase,
@@ -104,7 +105,8 @@ export async function addStockPurchase(raw: unknown) {
   const data = stockInput.parse(raw);
   const exp = await createStockPurchase({ organizationId, userId: user.id, role }, { ...data, spentAt: dateOf(data.spentAt) });
   refresh(null);
-  revalidatePath("/dashboard/inventory");
+  // The stock tab of every trade's inventory (2026-10-10).
+  for (const p of INVENTORY_PATHS) revalidatePath(p);
   return { id: exp.id };
 }
 

@@ -37,7 +37,8 @@ export function BlueprintHandheldFrame({ children }: { children: React.ReactNode
   // The same per-page `.bp` the desk shell's PAGE_STYLES applies: the roof and
   // fence pages' rules are addressable only under their own module class.
   // HVAC scopes its stylesheet by its own classes and needs nothing here.
-  const pageStyles = pathname?.startsWith("/dashboard/inventory")
+  // A trade's inventory under its estimator (2026-10-10) is the inventory page.
+  const pageStyles = pathname?.startsWith("/dashboard/inventory") || /^\/dashboard\/[a-z]+-estimator\/inventory(?:\/|$)/.test(pathname ?? "")
     ? jobsStyles.bp
     : pathname?.startsWith("/dashboard/roof-estimator")
       ? roofEstimatorStyles.bp

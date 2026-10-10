@@ -12,6 +12,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
+import { INVENTORY_PATH } from "@/lib/inventory";
 import { DEFAULT_RATE_CARD, normalizeRateCard, type HvacRateCard } from "@/lib/hvac/ledger";
 import { SERVICE_MENU, type ServiceOverride } from "@/lib/hvac/serviceMenu";
 import { saveHvacServiceTask } from "@/actions/hvacEstimator";
@@ -26,7 +27,7 @@ async function loadCard(organizationId: string): Promise<HvacRateCard> {
 async function storeCard(organizationId: string, card: HvacRateCard): Promise<void> {
   const rateCardJson = JSON.stringify(card);
   await db.hvacSettings.upsert({ where: { organizationId }, create: { organizationId, rateCardJson }, update: { rateCardJson } });
-  revalidatePath("/dashboard/inventory");
+  revalidatePath(INVENTORY_PATH.hvac);
   revalidatePath("/dashboard/hvac-estimator");
 }
 const fail = (err: unknown): Fail => ({ ok: false, error: err instanceof Error && /no such table|does not exist/i.test(err.message) ? "The settings table isn't in this database yet." : err instanceof Error && err.message ? err.message : "Could not save" });
@@ -150,7 +151,7 @@ export async function deleteHvacServiceTask(id: string): Promise<Ok | Fail> {
 export async function addHvacServiceTask(raw: unknown): Promise<(Ok & { id: string }) | Fail> {
   const res = await saveHvacServiceTask(raw);
   if (!res.ok) return res;
-  revalidatePath("/dashboard/inventory");
+  revalidatePath(INVENTORY_PATH.hvac);
   revalidatePath("/dashboard/hvac-estimator");
   return { ok: true, card: res.card, id: res.id };
 }
@@ -171,6 +172,6 @@ export async function addHvacServiceTaskForm(fd: FormData): Promise<void> {
     partCost: partName ? num("partCost") : undefined,
     brands: brands.length ? brands : undefined,
   });
-  revalidatePath("/dashboard/inventory");
+  revalidatePath(INVENTORY_PATH.hvac);
   revalidatePath("/dashboard/hvac-estimator");
 }

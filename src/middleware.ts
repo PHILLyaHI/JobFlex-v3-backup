@@ -52,16 +52,18 @@ const TRADE_SHORTCUTS: Record<string, string> = {
   "/hvac": "hvac",
 };
 
-/* THE INVENTORY PAGES THAT MOVED (owner, 2026-09-29). One page,
-   /dashboard/inventory, with the trade in the query; the three per-trade
-   boards, the HVAC service menu page and the handheld HVAC preview are gone.
-   308 by exact path, the query string kept (nothing there was ever read). */
+/* THE INVENTORY PAGES THAT MOVED. The per-trade boards, the HVAC service
+   menu page and the handheld HVAC preview went to one shared page on
+   2026-09-29; since 2026-10-10 each trade's inventory is its own page under
+   its estimator (lib/inventory INVENTORY_PATH), so they go straight there.
+   308 by exact path, the query string kept (nothing there was ever read).
+   /dashboard/inventory itself forwards in its page (it needs the org). */
 const MOVED_INVENTORY: Record<string, string> = {
-  "/dashboard/roof-estimator/board": "/dashboard/inventory?trade=roof&tab=stock",
-  "/dashboard/fence-estimator/board": "/dashboard/inventory?trade=fence&tab=stock",
-  "/dashboard/hvac-estimator/board": "/dashboard/inventory?trade=hvac&tab=stock",
-  "/dashboard/hvac-estimator/services": "/dashboard/inventory?trade=hvac&tab=services",
-  "/mobile-hvac-inventory-v1": "/dashboard/inventory?trade=hvac&tab=stock",
+  "/dashboard/roof-estimator/board": "/dashboard/roof-estimator/inventory?tab=stock",
+  "/dashboard/fence-estimator/board": "/dashboard/fence-estimator/inventory?tab=stock",
+  "/dashboard/hvac-estimator/board": "/dashboard/hvac-estimator/inventory?tab=stock",
+  "/dashboard/hvac-estimator/services": "/dashboard/hvac-estimator/inventory?tab=services",
+  "/mobile-hvac-inventory-v1": "/dashboard/hvac-estimator/inventory?tab=stock",
 };
 
 /* THE CLASSIC ROOF PAGE (2026-10-09). /dashboard/advanced-ai/roof prices and
@@ -110,7 +112,9 @@ async function route(req: NextRequest): Promise<NextResponse> {
     const url = req.nextUrl.clone();
     const [path, query] = moved.split("?");
     url.pathname = path;
-    // The old address's own query rides along (?group=…); the trade and the tab are the new page's.
+    // The old address's own query rides along (?group=…); the tab is the new
+    // page's, and the trade is its path now (2026-10-10), never a parameter.
+    url.searchParams.delete("trade");
     for (const [k, v] of new URLSearchParams(query)) url.searchParams.set(k, v);
     return NextResponse.redirect(url, 308);
   }

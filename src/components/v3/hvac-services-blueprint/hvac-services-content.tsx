@@ -54,7 +54,7 @@ function PriceInput({ value, onSave, label, disabled, id }: { value: number; onS
   );
 }
 
-/** `embedded`: a tab of /dashboard/inventory (trade=hvac), which owns the page head. */
+/** `embedded`: a tab of the HVAC inventory (/dashboard/hvac-estimator/inventory), which owns the page head. */
 export function HvacServicesContent({ card: initial, factor, place, embedded }: { card: HvacRateCard; factor: number; place: string; embedded?: boolean }) {
   const [card, setCard] = useState(initial);
   const [pending, start] = useTransition();
@@ -126,7 +126,7 @@ export function HvacServicesContent({ card: initial, factor, place, embedded }: 
           </div>
           <div className={cx("page-actions")}>
             <Link className={cx("btn", "btn-primary")} href={"/dashboard/hvac-estimator" as Route}>Price a visit</Link>
-            <Link className={cx("btn", "btn-ghost")} href={"/dashboard/inventory?trade=hvac&tab=stock" as Route}>HVAC stock</Link>
+            <Link className={cx("btn", "btn-ghost")} href={"/dashboard/hvac-estimator/inventory?tab=stock" as Route}>HVAC stock</Link>
           </div>
         </div>
       )}

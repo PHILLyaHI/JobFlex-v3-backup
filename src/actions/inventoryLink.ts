@@ -15,7 +15,7 @@
 
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { isTradeId, type TradeId } from "@/lib/inventory";
+import { INVENTORY_PATH, isTradeId, type TradeId } from "@/lib/inventory";
 import { inventoryLinkOf, pickForProposal, recordInventoryLink } from "@/lib/inventoryPick";
 import { stockPolicyOf } from "@/lib/inventoryPolicy";
 import { NoOrgError, requireEstimatorOrManager, requireOrg, UnauthorizedError } from "@/lib/orgContext";
@@ -24,8 +24,8 @@ type Fail = { ok: false; error: string };
 const fail = (err: unknown): Fail =>
   err instanceof UnauthorizedError ? { ok: false, error: "Estimator or manager access required" } : err instanceof NoOrgError ? { ok: false, error: "No organization" } : { ok: false, error: err instanceof Error ? err.message : "Could not save" };
 
-// One page since 2026-09-29; revalidated once, whichever trade the proposal is.
-const BOARDS: Record<TradeId, string> = { fence: "/dashboard/inventory", roof: "/dashboard/inventory", hvac: "/dashboard/inventory" };
+// Each trade's inventory under its estimator (2026-10-10).
+const BOARDS: Record<TradeId, string> = INVENTORY_PATH;
 
 export async function inventoryLinkDefault(trade?: string | null): Promise<{ linked: boolean; items: number; /** Of those, bought per job (lib/inventoryPolicy); 0 when the trade is not known. */ perJob: number }> {
   try {

@@ -162,10 +162,12 @@ export async function getBadgeCounts(
     "/dashboard/workers": workersNew,
     "/dashboard/trade": tradeNew,
     "/dashboard/phone": phoneMissed,
-    // Warehouse stock low for the next job (2026-09-20), the three trades
-    // summed on the one Inventory item since 2026-09-29. Cosmetic like every
+    // Warehouse stock low for the next job (2026-09-20), each trade on its own
+    // inventory row under its estimator since 2026-10-10. Cosmetic like every
     // badge: a failure here is a zero, never an error.
-    "/dashboard/inventory": low.fence + low.roof + low.hvac,
+    "/dashboard/roof-estimator/inventory": low.roof,
+    "/dashboard/fence-estimator/inventory": low.fence,
+    "/dashboard/hvac-estimator/inventory": low.hvac,
   };
 }
 

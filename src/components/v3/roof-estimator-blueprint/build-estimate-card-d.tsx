@@ -1008,7 +1008,7 @@ function PackageLedger({
           )}
         </p>
       )}
-      <a className="rbd-text-btn" href="/dashboard/inventory?trade=roof#book">
+      <a className="rbd-text-btn" href="/dashboard/roof-estimator/inventory#book">
         Manage roof types
       </a>
     </div>
@@ -1153,7 +1153,7 @@ function PackageLedger({
                   <Group
                     note={
                       <div className="rbd-g-foot">
-                        <a className="rbd-text-btn" href="/dashboard/inventory?trade=roof#book">
+                        <a className="rbd-text-btn" href="/dashboard/roof-estimator/inventory#book">
                           Manage underlayments
                         </a>
                       </div>
@@ -1844,7 +1844,7 @@ function PackageLedger({
           >
             {saving ? "Saving…" : "Save as defaults"}
           </button>
-          <a className="rbd-btn rbd-btn--sm rbd-btn--ghost" href="/dashboard/inventory?trade=roof#book">
+          <a className="rbd-btn rbd-btn--sm rbd-btn--ghost" href="/dashboard/roof-estimator/inventory#book">
             Price book
           </a>
         </div>

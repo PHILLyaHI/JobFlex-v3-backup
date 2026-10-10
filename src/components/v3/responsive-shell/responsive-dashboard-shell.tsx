@@ -293,6 +293,10 @@ const BLUEPRINT_HANDHELD = new Set([
   // becomes a list of rows that open, the sheet fills the width, and the
   // stock tab is the same responsive workspace it always was.
   "/dashboard/inventory",
+  // …and since 2026-10-10 each trade's own, under its estimator.
+  "/dashboard/roof-estimator/inventory",
+  "/dashboard/fence-estimator/inventory",
+  "/dashboard/hvac-estimator/inventory",
   // The three estimators (2026-10-02). Their pages already carry ≤860px
   // rules and read fine on a phone; what a phone was getting around them was
   // the DESK chrome — the sidebar's topbar with its search box clipped to

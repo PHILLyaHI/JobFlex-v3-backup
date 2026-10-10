@@ -1,11 +1,13 @@
 "use client";
 
-// INVENTORY — the page (owner, second pass, 2026-09-29). One route, three trades.
+// INVENTORY — the page (owner, second pass, 2026-09-29), one trade per page
+// since 2026-10-10: each estimator has its own inventory under it
+// (lib/inventory INVENTORY_PATH) and the page carries no trade switch — a
+// roofer never sees the fence or HVAC buttons.
 //
-// The hierarchy, top down: the head (a mono kicker and the title, the primary
-// action on the right — nothing under the title); one row with the trade
-// switch (one joined segmented control, no card around it) on the left and
-// the secondary actions on the right; the main tabs in the Financials treatment (mono caps, a count
+// The hierarchy, top down: the head (a mono kicker naming the estimator and
+// the trade's title, the primary action on the right — nothing under the
+// title); one row with the secondary actions on the right; the main tabs in the Financials treatment (mono caps, a count
 // chip, a 3px blueprint rule); then the tab — the PRICE BOOK the estimator
 // prices from (a specification schedule), the STOCK (inventory-stock.tsx),
 // and the HVAC SERVICE MENU when the trade is HVAC. Every write goes through
@@ -21,10 +23,10 @@ import { toast } from "@/components/ui/Toast";
 import { saveFenceCatalog } from "@/actions/fenceCatalog";
 import { saveRoofCatalog } from "@/actions/roofCatalog";
 import { clearHvacCatalog, importHvacCatalogCsv, loadUsCatalog, saveHvacCatalogItem, saveHvacRateCard } from "@/actions/hvacEstimator";
-import { deleteHvacCatalogItem, rememberInventoryTrade } from "@/actions/inventoryPage";
+import { deleteHvacCatalogItem } from "@/actions/inventoryPage";
 import { HvacServicesContent } from "@/components/v3/hvac-services-blueprint/hvac-services-content";
 import type { InventoryPageData, InventoryTab, PriceBookData } from "@/lib/inventoryPage";
-import type { TradeId } from "@/lib/inventory";
+import { inventoryHref, TRADES, type TradeId } from "@/lib/inventory";
 import { CATALOG_CSV_COLUMNS, STARTER_CATALOG } from "@/lib/hvac/ledger";
 import { FENCE_TYPES } from "@/lib/fence/catalog";
 import { SERVICE_MENU } from "@/lib/hvac/serviceMenu";
@@ -47,11 +49,9 @@ const FENCE_COLORS = ["#c4914a", "#a86e2d", "#7c5a3a", "#d9d3c4", "#f0ede6", "#5
 
 export type InventoryContentProps = { data: InventoryPageData; canEditBook: boolean; canWriteStock: boolean };
 
-function hrefFor(trade: TradeId, tab: InventoryTab, hash = ""): Route {
-  const q = new URLSearchParams({ trade });
-  if (tab !== "book") q.set("tab", tab);
-  return `/dashboard/inventory?${q.toString()}${hash}` as Route;
-}
+const hrefFor = (trade: TradeId, tab: InventoryTab, hash = ""): Route => inventoryHref(trade, tab, hash) as Route;
+/** The estimator a trade's inventory sits under, for the kicker. */
+const ESTIMATOR_NAME: Record<TradeId, string> = { roof: "Roof estimator", fence: "Fence estimator", hvac: "HVAC estimator" };
 
 const numOr = (v: unknown, d = 0) => { const n = typeof v === "number" ? v : parseFloat(String(v ?? "")); return Number.isFinite(n) ? n : d; };
 const dateOf = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "never");
@@ -71,8 +71,8 @@ export function InventoryContent({ data, canEditBook, canWriteStock }: Inventory
     <>
       <div className={cx("page-head")}>
         <div>
-          <div className={cx("kicker")}>Automation · Inventory</div>
-          <h1 className={cx("page-title")}>Inventory</h1>
+          <div className={cx("kicker")}>{ESTIMATOR_NAME[trade]} · Inventory</div>
+          <h1 className={cx("page-title")}>{TRADES.find((t) => t.id === trade)?.label ?? ""} inventory</h1>
         </div>
         <div className={cx("page-actions")} ref={setPrimarySlot}>
           {tab === "book" && canEditBook && (
@@ -83,12 +83,16 @@ export function InventoryContent({ data, canEditBook, canWriteStock }: Inventory
         </div>
       </div>
 
+      {/* One row (2026-10-10, the trade switch gone): the sections on the
+          left — one joined segmented control, a mono counter after the label —
+          and the secondary actions on the right. */}
       <div className={cx("head2")}>
       <div className={cx("toolbar")}>
-        <nav className={cx("trade")} aria-label="Trade">
-          {data.trades.map((t) => (
-            <Link key={t.id} href={hrefFor(t.id, tab === "services" ? "book" : tab)} className={cx("trade-btn", t.id === trade && "on")} aria-current={t.id === trade ? "true" : undefined} onClick={() => void rememberInventoryTrade(t.id)}>
-              {t.label}
+        <nav className={cx("trade")} aria-label="Inventory sections">
+          {tabs.map((t) => (
+            <Link key={t} href={hrefFor(trade, t)} className={cx("trade-btn", t === tab && "on")} aria-current={t === tab ? "page" : undefined} id={t === "book" ? "book" : undefined}>
+              {TAB_LABEL[t]}
+              {counts[t] !== undefined && (t !== "stock" || counts[t]! > 0) && <b>{counts[t]}</b>}
             </Link>
           ))}
         </nav>
@@ -97,16 +101,6 @@ export function InventoryContent({ data, canEditBook, canWriteStock }: Inventory
           {tab !== "stock" && <Link href={estimatorHref} className={cx("btn", "btn-ghost")}>Open the estimator</Link>}
         </div>
       </div>
-
-      {/* The sections: the same joined control as the trade switch above, a mono counter after the label. */}
-      <nav className={cx("trade")} aria-label="Inventory sections">
-        {tabs.map((t) => (
-          <Link key={t} href={hrefFor(trade, t)} className={cx("trade-btn", t === tab && "on")} aria-current={t === tab ? "page" : undefined} id={t === "book" ? "book" : undefined}>
-            {TAB_LABEL[t]}
-            {counts[t] !== undefined && (t !== "stock" || counts[t]! > 0) && <b>{counts[t]}</b>}
-          </Link>
-        ))}
-      </nav>
       </div>
 
       {tab === "book" && <PriceBook data={data} rows={rows} canEdit={canEditBook} sheet={sheet} setSheet={setSheet} />}

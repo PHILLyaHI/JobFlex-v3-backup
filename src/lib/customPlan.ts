@@ -79,7 +79,8 @@ export const CUSTOM_PAGES: CustomPage[] = [
 /** Addresses under an add-on's prefix that belong to the BASE workspace: the
  *  old Company → Subscription link (a redirect to /dashboard/subscription) and
  *  the team list, which /dashboard/settings/team serves to every plan anyway.
- *  Also the inventory boards the middleware redirects to /dashboard/inventory. */
+ *  Also the old inventory boards, which the middleware redirects to each trade's
+ *  inventory — that page sits under its estimator and is locked with it (2026-10-10). */
 const BASE_EXCEPTIONS = [
   "/dashboard/company/subscription",
   "/dashboard/company/team",

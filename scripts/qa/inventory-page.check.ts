@@ -1,5 +1,5 @@
-// The unified Inventory page (2026-09-29): the price book's rows and writes for
-// the three trades, the company's documents the estimators read, who may
+// The Inventory page (2026-09-29; one page per trade under its estimator since
+// 2026-10-10): the price book's rows and writes for the three trades, the company's documents the estimators read, who may
 // write, and the old URLs answering 308. Since the audit of 2026-09-30 also:
 // what leaves the shelf for a job and at what price, the stock search, the
 // schedule's numbers under 600 rows, the service menu pricing the estimate.
@@ -130,6 +130,7 @@ async function main() {
     head("D · permissions and the URL");
     ok("D OWNER / MANAGER / ESTIMATOR may edit the book", canEditBook("OWNER") && canEditBook("MANAGER") && canEditBook("ESTIMATOR"));
     ok("D INSTALLER and SALES may not (the estimators' own rule)", !canEditBook("INSTALLER") && !canEditBook("SALES"));
+    ok("D each trade's inventory, under its estimator, is allowed to the estimator role (2026-10-10)", ["/dashboard/roof-estimator/inventory", "/dashboard/fence-estimator/inventory", "/dashboard/hvac-estimator/inventory"].every((p) => isPathAllowed(ROLE_ROUTE_GATES.ESTIMATOR, p)));
     ok("D the route is allowed to the estimator role, not to sales or installers", isPathAllowed(ROLE_ROUTE_GATES.ESTIMATOR, "/dashboard/inventory") && !isPathAllowed(ROLE_ROUTE_GATES.SALES, "/dashboard/inventory") && !isPathAllowed(ROLE_ROUTE_GATES.INSTALLER, "/dashboard/inventory"));
     ok("D tab: services only for hvac, book by default", parseTab("services", "hvac") === "services" && parseTab("services", "fence") === "book" && parseTab(undefined, "roof") === "book" && parseTab("stock", "roof") === "stock");
     ok("D an unknown tab and a services tab off hvac fall back to the book", parseTab("cards", "hvac") === "book" && parseTab("services", "roof") === "book");
@@ -204,11 +205,12 @@ async function main() {
     // another project's, which answers 404, not 308.
     const base = process.env.QA_BASE_URL || "";
     const moved: Array<[string, string]> = [
-      ["/dashboard/roof-estimator/board", "/dashboard/inventory?trade=roof&tab=stock"],
-      ["/dashboard/fence-estimator/board", "/dashboard/inventory?trade=fence&tab=stock"],
-      ["/dashboard/hvac-estimator/board", "/dashboard/inventory?trade=hvac&tab=stock"],
-      ["/dashboard/hvac-estimator/services", "/dashboard/inventory?trade=hvac&tab=services"],
-      ["/mobile-hvac-inventory-v1", "/dashboard/inventory?trade=hvac&tab=stock"],
+      // Each trade's own inventory under its estimator since 2026-10-10.
+      ["/dashboard/roof-estimator/board", "/dashboard/roof-estimator/inventory?tab=stock"],
+      ["/dashboard/fence-estimator/board", "/dashboard/fence-estimator/inventory?tab=stock"],
+      ["/dashboard/hvac-estimator/board", "/dashboard/hvac-estimator/inventory?tab=stock"],
+      ["/dashboard/hvac-estimator/services", "/dashboard/hvac-estimator/inventory?tab=services"],
+      ["/mobile-hvac-inventory-v1", "/dashboard/hvac-estimator/inventory?tab=stock"],
     ];
     let up = Boolean(base);
     if (up) { try { await fetch(base + "/auth/login", { redirect: "manual" }); } catch { up = false; } }
@@ -220,7 +222,7 @@ async function main() {
       }
       const r = await fetch(base + "/dashboard/fence-estimator/board?group=ORDER&trade=roof", { redirect: "manual" });
       const loc = r.headers.get("location") ?? "";
-      ok("E the old link's own query rides along; the trade and the tab are the new page's", /group=ORDER/.test(loc) && /trade=fence/.test(loc) && !/trade=roof/.test(loc) && /tab=stock/.test(loc), loc);
+      ok("E the old link's own query rides along; the trade is the new page's path and the tab its own", /group=ORDER/.test(loc) && /\/dashboard\/fence-estimator\/inventory\?/.test(loc) && !/trade=/.test(loc) && /tab=stock/.test(loc), loc);
     }
   } finally {
     await db.fenceCatalog.deleteMany({ where: { organizationId: orgId } });

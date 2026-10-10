@@ -9,7 +9,7 @@ import type { StockFacts, StockMove } from "@/lib/inventoryDashboard";
 import { groupByCategory } from "@/lib/inventoryCategories";
 import { isStocked, pickList, stockMatches, type BuyLine, type StockLine, type StockRow } from "@/lib/inventory";
 
-/** `embedded`: drawn inside /dashboard/inventory, which owns the page head — no back link, no h1. */
+/** `embedded`: drawn inside a trade's inventory page (/dashboard/<trade>-estimator/inventory), which owns the page head — no back link, no h1. */
 export type RoofingInventoryProps = { data: TradeBoardData; facts: StockFacts; canWrite: boolean; embedded?: boolean };
 export type InventoryTab = "stock" | "orders" | "proposals" | "suppliers" | "activity";
 export type StockFilter = "ALL" | "ORDER" | "RESERVED" | "STOCKED" | "IDLE" | "EMPTY" | "PERJOB";

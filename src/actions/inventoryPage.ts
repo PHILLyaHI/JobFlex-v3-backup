@@ -8,7 +8,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { isTradeId } from "@/lib/inventory";
+import { INVENTORY_PATH, isTradeId } from "@/lib/inventory";
 import { requireEstimatorOrManager } from "@/lib/orgContext";
 import { TRADE_COOKIE } from "@/lib/inventoryPage";
 
@@ -27,7 +27,7 @@ export async function deleteHvacCatalogItem(itemId: string): Promise<{ ok: true 
   } catch {
     return { ok: false, error: "Couldn't remove the row." };
   }
-  revalidatePath("/dashboard/inventory");
+  revalidatePath(INVENTORY_PATH.hvac);
   revalidatePath("/dashboard/hvac-estimator");
   return { ok: true };
 }

@@ -483,7 +483,7 @@ export function FenceEstimatorContent({ initialAddress }: { initialAddress?: str
                 {/* Types of your own and the company's defaults are managed on
                     the Inventory page since 2026-09-29; a rate typed here still
                     prices THIS estimate. */}
-                <a className="btn btn-ghost btn--sm" href="/dashboard/inventory?trade=fence#book" id="matBook" title="Add types of your own and set the company's default rates on the Inventory page">
+                <a className="btn btn-ghost btn--sm" href="/dashboard/fence-estimator/inventory#book" id="matBook" title="Add types of your own and set the company's default rates in the Fence inventory">
                   <svg className="ic">
                     <use href="#i-check" />
                   </svg>

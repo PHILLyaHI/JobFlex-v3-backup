@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { isCronAuthorized } from "@/lib/cronAuth";
 import { lowStockCounts } from "@/lib/inventoryBoard";
-import { isTradeId, pickList } from "@/lib/inventory";
+import { inventoryHref, isTradeId, pickList } from "@/lib/inventory";
 import { explodeLines } from "@/lib/inventoryBom";
 import { stockItemsOf } from "@/lib/inventoryPolicy";
 
@@ -16,7 +16,8 @@ export const runtime = "nodejs";
 //                      (lib/inventoryPolicy). Said once per job.
 // Fail-closed cron auth, like the other cron routes. Never throws past one
 // company: a bad org is logged and the rest still run.
-const BOARD: Record<string, string> = { fence: "/dashboard/inventory?trade=fence&tab=stock", roof: "/dashboard/inventory?trade=roof&tab=stock", hvac: "/dashboard/inventory?trade=hvac&tab=stock" };
+// Each trade's stock tab, under its estimator (2026-10-10).
+const BOARD: Record<string, string> = { fence: inventoryHref("fence", "stock"), roof: inventoryHref("roof", "stock"), hvac: inventoryHref("hvac", "stock") };
 const LABEL: Record<string, string> = { fence: "Fence", roof: "Roofing", hvac: "HVAC" };
 
 export async function GET(req: Request) {

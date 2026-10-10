@@ -72,8 +72,9 @@ export const ROLE_ROUTE_GATES: Record<string, RoleRouteGate> = {
       "/dashboard/manual-blueprint",
       "/dashboard/projects",
       "/dashboard/advanced-ai",
-      // The price book and the stock, one page (2026-09-29) — the boards it
-      // reached under the estimator prefixes moved here.
+      // The old shared inventory address: it forwards to a trade's own
+      // inventory under its estimator (2026-10-10), which the estimator
+      // prefixes below already allow.
       "/dashboard/inventory",
       // The blueprint homes of the old /dashboard/advanced-ai/roof and
       // /dashboard/advanced-ai/fence.

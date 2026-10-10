@@ -34,6 +34,31 @@ export function isTradeId(x: string | null | undefined): x is TradeId {
   return x === "fence" || x === "roof" || x === "hvac";
 }
 
+/**
+ * Each trade's inventory lives under its own estimator (owner, 2026-10-10:
+ * "a roofer doesn't have to see the other inventories") — the page that was
+ * one route for the three trades from 2026-09-29. /dashboard/inventory now
+ * only forwards here.
+ */
+export const INVENTORY_PATH: Record<TradeId, string> = {
+  roof: "/dashboard/roof-estimator/inventory",
+  fence: "/dashboard/fence-estimator/inventory",
+  hvac: "/dashboard/hvac-estimator/inventory",
+};
+export const INVENTORY_PATHS: readonly string[] = Object.values(INVENTORY_PATH);
+
+/** The address of a trade's inventory, on a tab ("book" is the default and is left out). */
+export function inventoryHref(trade: TradeId, tab?: "book" | "stock" | "services" | null, hash = ""): string {
+  return `${INVENTORY_PATH[trade]}${tab && tab !== "book" ? `?tab=${tab}` : ""}${hash}`;
+}
+
+/** The trade whose inventory a path is, or null. */
+export function inventoryTradeOf(pathname: string | null | undefined): TradeId | null {
+  const path = (pathname ?? "").split("?")[0];
+  for (const t of ["roof", "fence", "hvac"] as const) if (path === INVENTORY_PATH[t]) return t;
+  return null;
+}
+
 /** A proposal's material line as the stock reads it. */
 export type StockLine = { name: string; quantity: number; unit?: string | null };
 

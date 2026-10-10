@@ -108,6 +108,9 @@ const PAGE_STYLES: Record<string, string> = {
 function pageKey(pathname: string): string {
   const rest = pathname.replace(/^\/dashboard\/?/, "");
   if (!rest) return "dashboard";
+  // A trade's inventory sits under its estimator since 2026-10-10 but is the
+  // inventory page, with the inventory's styles — not the estimator's.
+  if (/^[a-z]+-estimator\/inventory(?:\/|$)/.test(rest)) return "inventory";
   return rest.split("/")[0];
 }
 
