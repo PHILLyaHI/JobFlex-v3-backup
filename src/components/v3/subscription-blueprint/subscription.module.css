@@ -849,6 +849,11 @@
   color: rgba(242,240,235,.55); margin-bottom: 5px; }
 :global(.jf-blueprint) .sub-hero-facts b { font-size: 14px; font-weight: 800; letter-spacing: .02em;
   font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* The card-less trial's "Add a card" under its Card fact (2026-10-09). */
+:global(.jf-blueprint) .sub-hero-link { display: block; width: fit-content; margin-top: 4px; font-size: 12px; font-weight: 700;
+  color: var(--paper); text-decoration: underline; text-underline-offset: 3px; }
+:global(.jf-blueprint) .sub-hero-link:hover { color: #fff; }
+:global(.jf-blueprint) .sub-hero-link:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
 
 :global(.jf-blueprint) .spec { display: grid; grid-template-columns: repeat(4, 1fr); }
 :global(.jf-blueprint) .spec-cell { position: relative; padding: 20px 22px 22px; border-right: 1.5px solid var(--ink); }

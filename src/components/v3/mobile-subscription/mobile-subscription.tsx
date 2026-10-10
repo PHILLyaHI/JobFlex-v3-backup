@@ -74,6 +74,8 @@
 // in the house style, with the shared swipe-to-dismiss hook.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import type { Route } from "next";
 import { MobileNav } from "@/components/v3/mobile-shell/mobile-nav";
 import { money, longDate } from "@/lib/format";
 import {
@@ -177,6 +179,7 @@ export function MobileSubscription({
   nextCharge,
   referral,
   customPages,
+  trialCard,
   checkoutReady,
   customOffered,
   sandbox,
@@ -451,6 +454,21 @@ export function MobileSubscription({
                 </span>
               </div>
             </div>
+            {/* A card-less trial's card (lib/trialCardLine, 2026-10-09): one
+                more pressed band, the way to add one at its right. */}
+            {trialCard ? (
+              <div className="jfms-heroFacts jfms-heroCard" data-trial-card>
+                <div className="jfms-heroFact">
+                  <span className="jfms-heroFactL">Card</span>
+                  <span className="jfms-heroFactV">{trialCard.value}</span>
+                </div>
+                {trialCard.addHref ? (
+                  <Link className="jfms-heroCardLink" href={trialCard.addHref as Route}>
+                    Add a card
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
           </section>
 
           {/* ============ USAGE ============ */}

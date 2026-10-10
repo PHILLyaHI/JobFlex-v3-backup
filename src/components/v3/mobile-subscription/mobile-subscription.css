@@ -572,6 +572,22 @@ body:has(.jf-mobile-subscription) div:has(> nav[aria-label="Primary"]) { display
   border-right: 1.5px solid rgba(242, 240, 235, 0.25);
 }
 .jf-mobile-subscription .jfms-heroFact:last-child { border-right: none; }
+/* The card-less trial's Card band (2026-10-09): the fact, then its link. */
+.jf-mobile-subscription .jfms-heroCard { align-items: center; }
+.jf-mobile-subscription .jfms-heroCard .jfms-heroFact { border-right: none; }
+.jf-mobile-subscription .jfms-heroCardLink {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--card-pad);
+  color: var(--paper);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.jf-mobile-subscription .jfms-heroCardLink:focus-visible { outline: 2px solid var(--paper); outline-offset: -4px; }
 .jf-mobile-subscription .jfms-heroFactL {
   display: block;
   font-family: var(--font-mono);

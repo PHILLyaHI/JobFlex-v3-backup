@@ -32,6 +32,7 @@ import type { SubscriptionInvoice } from "@/actions/billing";
 import { readPlanGrant } from "@/lib/planGrant";
 import { readAccessSubscription } from "@/lib/subscriptionAccess";
 import { planLapsed } from "@/lib/planStatus";
+import { trialCardLine, type TrialCardLine } from "@/lib/trialCardLine";
 
 // The result shape. These interfaces lived in ./subscription-view.tsx until
 // 2026-08-13, when that desktop view was superseded by the blueprint page at
@@ -80,6 +81,9 @@ export interface SubscriptionViewProps {
   /** The next charge and what the org's referrals take off it; null when
    *  nothing is going to be billed (no subscription, no priced plan). */
   nextCharge: NextCharge | null;
+  /** A card-less trial's card (lib/trialCardLine): "None yet" with the way to
+   *  add one, or the card on file. Null for every other organization. */
+  trialCard?: TrialCardLine | null;
   /** Pages a CUSTOM-plan org owns (lib/customPlan ids); [] otherwise. */
   customPages?: string[];
   /** What the embedded plan cards need to offer checkout (owner-only page). */
@@ -147,12 +151,13 @@ function referralsBehind(rewardsNewestFirst: number[], balanceCents: number, spe
 export async function loadSubscriptionData(
   organizationId: string,
 ): Promise<SubscriptionViewProps> {
-  const [sub, planContext, plans, limitOverview, code] = await Promise.all([
+  const [sub, planContext, plans, limitOverview, code, trialCard] = await Promise.all([
     readAccessSubscription(organizationId),
     getOrgPlanContext(organizationId),
     getPlanCatalog(),
     getOrgLimitOverview(organizationId),
     getOrCreateMyReferralCode(),
+    trialCardLine(organizationId).catch(() => null),
   ]);
   // No meters for a platform admin in their own organization: the card says
   // "Unlimited · platform admin" instead of counting what is not capped.
@@ -316,6 +321,7 @@ export async function loadSubscriptionData(
     invoices: invoiceResult,
     nextCharge,
     customPages,
+    trialCard,
     checkoutReady: isStripeEnabled(),
     customOffered: customPlanOffered(),
     sandbox: stripeMode === "test",

@@ -306,6 +306,19 @@ export function SubscriptionContent(props: SubscriptionViewProps) {
                 </div>
               </>
             )}
+            {/* A card-less trial's card (lib/trialCardLine, 2026-10-09): the
+                place the welcome email points to. Nobody else gets the line. */}
+            {props.trialCard ? (
+              <div data-trial-card>
+                <span>Card</span>
+                <b>{props.trialCard.value}</b>
+                {props.trialCard.addHref ? (
+                  <Link className={cx("sub-hero-link")} href={props.trialCard.addHref as Route}>
+                    Add a card
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
