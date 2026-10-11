@@ -332,7 +332,7 @@ export interface DeckPhoto {
   /** Where the deck's elevation was placed on it: the ground line's left end and its width, as fractions of the picture. */
   placed: { x: number; y: number; w: number } | null;
   /** What the smart fit found on it (lib/deck/photoFit), kept so the studio can say it after a reload; null or absent when placed by hand. */
-  fit?: { by: "door" | "eave" | "none"; pxPerFt: number; wallFt: number | null; suggestedHeightIn: number | null; door: boolean; windows: number; jog: boolean; confidence: number; notes: string[]; offer: JogOffer | null; read: WallRead | null } | null;
+  fit?: { by: "line" | "door" | "eave" | "none"; pxPerFt: number; wallFt: number | null; suggestedHeightIn: number | null; door: boolean; windows: number; jog: boolean; confidence: number; notes: string[]; offer: JogOffer | null; read: WallRead | null; hand?: boolean } | null;
 }
 
 export interface DeckDesign {
@@ -976,7 +976,7 @@ function normalizePhoto(raw: unknown): DeckPhoto | null {
   const fit =
     r.fit && typeof f.pxPerFt === "number"
       ? {
-          by: f.by === "door" ? ("door" as const) : f.by === "eave" ? ("eave" as const) : ("none" as const),
+          by: f.by === "door" ? ("door" as const) : f.by === "eave" ? ("eave" as const) : f.by === "line" ? ("line" as const) : ("none" as const),
           pxPerFt: clamp(num(f.pxPerFt, 0), 0, 10000),
           wallFt: typeof f.wallFt === "number" && Number.isFinite(f.wallFt) ? Math.round(clamp(f.wallFt, 0, 500)) : null,
           suggestedHeightIn: typeof f.suggestedHeightIn === "number" && Number.isFinite(f.suggestedHeightIn) ? Math.round(clamp(f.suggestedHeightIn, 0, 360)) : null,
@@ -987,6 +987,7 @@ function normalizePhoto(raw: unknown): DeckPhoto | null {
           notes: (Array.isArray(f.notes) ? f.notes : []).filter((n): n is string => typeof n === "string").map((n) => n.slice(0, 240)).slice(0, 7),
           offer: offerOf(f.offer),
           read: parseWallRead(f.read),
+          hand: f.hand === true,
         }
       : null;
   return { url: r.url, w, h, placed, fit };

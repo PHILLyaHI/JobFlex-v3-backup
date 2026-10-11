@@ -89,7 +89,7 @@ import { deckElevation, defaultPlacement } from "@/lib/deck/elevation";
 import { BOM_STEP_LABEL, type BomStep } from "@/lib/deck/takeoff";
 import { DECK_RATES, DECK_RATE_GROUP_LABEL, deckRate, sanitizeDeckRateBook, type DeckRateBook, type DeckRateGroup } from "@/lib/deck/rates";
 import { convertDeckEstimateToProposal, deckPhotoHref, deleteDeckDraft, listDeckDrafts, loadDeckDraft, readDeckPhoto, readDeckSite, saveDeckDraft, saveDeckRateBook, uploadDeckPhoto, type DeckDraftRow } from "@/actions/deckEstimator";
-import { fitPhoto, fitSummary, shapeWithOffer, type FitDeck, type PhotoFit, type WallRead } from "@/lib/deck/photoFit";
+import { addDoor, addJog, addScaleLine, blankRead, fitPhoto, fitSummary, markedRead, removeDoor, removeJog, removeScaleLine, setJog, setScaleLength, shapeWithOffer, type FitDeck, type PhotoFit, type WallRead } from "@/lib/deck/photoFit";
 import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
 import type { DeckBackdrop, DeckEdit, DeckPick } from "@/components/estimator/deck/DeckModel3D";
 import { DeckPlan, type PlanEdgeHit } from "./deck-plan";
@@ -663,12 +663,25 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
     };
   }, [design.photo?.url, photoHref]);
   // THE PHOTO AS THE WALL in the 3D (owner, 2026-10-10): the same picture, placement and scale the photo view uses.
+  // On the house (a ledger, or a roof on the wall) it IS the wall; a detached gazebo keeps it as a backdrop a yard back.
   const [showHouse, setShowHouse] = React.useState(true);
   const backdrop = React.useMemo<DeckBackdrop | null>(() => {
     const p = design.photo;
     if (!showHouse || !p?.placed || !photoHref) return null;
-    return { href: photoHref, w: p.w, h: p.h, placed: p.placed, elevWidthFt: elevation.widthFt, elevLeftFt: elevation.leftFt, jogs: (p.fit?.read?.jogs ?? []).map((j) => ({ x: j.x, dir: j.dir, depthFt: j.depthFt })) };
-  }, [design.photo, photoHref, elevation.widthFt, elevation.leftFt, showHouse]);
+    return { href: photoHref, w: p.w, h: p.h, placed: p.placed, elevWidthFt: elevation.widthFt, elevLeftFt: elevation.leftFt, jogs: (p.fit?.read?.jogs ?? []).map((j) => ({ x: j.x, dir: j.dir, depthFt: j.depthFt })), standoffFt: scene.house ? 0 : 16 };
+  }, [design.photo, photoHref, elevation.widthFt, elevation.leftFt, showHouse, scene.house]);
+  // MARK THE WALL (owner, 2026-10-10: "start drawing the lines right on that picture — the house wall where the deck
+  // is supposed to be — kind of measures"): the read's base, door, measure and steps as handles on the picture; every
+  // change fits the deck again, from the marks, with no model.
+  const [marking, setMarking] = React.useState(false);
+  const markRead: WallRead = design.photo?.fit?.read ?? blankRead();
+  const applyRead = (read: WallRead) => {
+    const p = design.photo;
+    if (!p) return;
+    const marked = markedRead(read);
+    const fit = fitPhoto(marked, fitDeck, design.heightIn, p.w, p.h, { recrop: false, fallback: p.placed ?? defaultPlacement(), hand: true });
+    patch({ photo: { ...p, placed: fit.placed, fit: fitSummary(fit, marked, true) } });
+  };
   const suggestedHeight = design.photo?.fit?.suggestedHeightIn ?? null;
   const heightOffer = suggestedHeight !== null && Math.abs(suggestedHeight - design.heightIn) >= 2 ? suggestedHeight : null;
   const refreshPhoto = async () => {
@@ -882,7 +895,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
                 ) : null}
               </div>
             ) : design.photo ? (
-              <DeckPhotoView photo={design.photo} href={photoHref} elevation={elevation} onPlace={(placed) => patch({ photo: { ...design.photo!, placed } })} onRefresh={refreshPhoto} />
+              <DeckPhotoView photo={design.photo} href={photoHref} elevation={elevation} onPlace={(placed) => patch({ photo: { ...design.photo!, placed } })} onRefresh={refreshPhoto} marking={marking} read={marking ? markRead : null} onRead={applyRead} />
             ) : (
               <div className={s.photoEmpty} data-deck-photo="empty">
                 <p>Take a picture of the back of the house from the yard, square on. The {what.toLowerCase()} is drawn over it, and the client sees their own house with it in place.</p>
@@ -947,6 +960,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
               <div className={s.photoRow}>
                 <span className={s.mono}>{design.photo.fit ? "Fitted to the wall — drag to adjust, pull the handle to size · the client sees it placed like this" : "Drag the outline to the wall · pull the handle to size it · the client sees it placed like this"}</span>
                 <button type="button" className={cx(s.btn, s.btnSm, s.btnPrimary)} onClick={refitPhoto} disabled={photoBusy} data-deck-photo-refit>{photoBusy ? (photoStage ?? "Working…") : "Fit to the wall"}</button>
+                <button type="button" className={cx(s.btn, s.btnSm, marking && s.btnOn)} aria-pressed={marking} onClick={() => setMarking((m) => !m)} data-deck-photo-mark>{marking ? "Marking the wall" : "Mark the wall"}</button>
                 {design.photo.fit?.read ? <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => void readPhotoAgain()} disabled={photoBusy} data-deck-photo-reread>Read the picture again</button> : null}
                 {design.photo.fit?.offer ? (
                   <button type="button" className={cx(s.btn, s.btnSm)} onClick={applyOffer} data-deck-photo-offer>
@@ -960,6 +974,39 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
                 <button type="button" className={cx(s.btn, s.btnSm)} onClick={pickPhoto} disabled={photoBusy}>Another photo</button>
                 <button type="button" className={cx(s.btn, s.btnSm)} onClick={removePhoto}>Remove</button>
               </div>
+              {marking ? (
+                <div className={s.photoTools} data-deck-photo-tools>
+                  <span className={s.mono}>Drag the yellow ends to where the wall meets the ground · the door&apos;s bottom to its threshold, its top to the frame · a step where the wall jogs · a measure along anything you know the size of</span>
+                  {markRead.door ? (
+                    <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => applyRead(removeDoor(markRead))} data-deck-mark-door="remove">Remove the door</button>
+                  ) : (
+                    <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => applyRead(addDoor(markRead, design.photo!.w, design.photo!.h))} data-deck-mark-door="add">Add the door</button>
+                  )}
+                  {markRead.scaleLine ? (
+                    <>
+                      <label className={s.markField}>
+                        <span className={s.mono}>The measure is</span>
+                        <NumberInput label="Length of the measure, inches" value={markRead.scaleLine.lengthIn} parse={parseInches} format={(n2) => String(Math.round(n2))} min={6} max={600} onCommit={(n2) => applyRead(setScaleLength(markRead, n2))} />
+                        <span className={s.mono}>in.</span>
+                      </label>
+                      <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => applyRead(removeScaleLine(markRead))} data-deck-mark-measure="remove">Remove the measure</button>
+                    </>
+                  ) : (
+                    <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => applyRead(addScaleLine(markRead))} data-deck-mark-measure="add">Add a measure</button>
+                  )}
+                  <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => applyRead(addJog(markRead))} disabled={markRead.jogs.length >= 4} data-deck-mark-step="add">Add a step</button>
+                  {markRead.jogs.map((j, i) => (
+                    <span key={i} className={s.markField} data-deck-mark-jog={i}>
+                      <span className={s.mono}>step {i + 1} · the part to its right</span>
+                      <Seg small label={`Step ${i + 1} goes`} value={j.dir} onChange={(dir: "toward" | "away") => applyRead(setJog(markRead, i, { dir }))} options={[{ value: "toward", label: "comes out" }, { value: "away", label: "steps back" }]} />
+                      <NumberInput label={`Step ${i + 1} depth, feet`} value={j.depthFt ?? 2} parse={parseFeet} format={feetText} min={0.5} max={40} onCommit={(n2) => applyRead(setJog(markRead, i, { depthFt: n2 }))} />
+                      <span className={s.mono}>ft</span>
+                      <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => applyRead(removeJog(markRead, i))} aria-label={`Remove step ${i + 1}`}>×</button>
+                    </span>
+                  ))}
+                  <button type="button" className={cx(s.btn, s.btnSm, s.btnPrimary)} onClick={() => setMarking(false)} data-deck-mark-done>Done</button>
+                </div>
+              ) : null}
               {design.photo.fit?.notes.length || photoNote ? (
                 <ul className={s.photoNotes} data-deck-photo-fit aria-label="What the picture showed">
                   {photoNote ? <li className={s.photoNoteBad}>{photoNote}</li> : null}
@@ -988,6 +1035,18 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
                 </button>
               ))}
             </div>
+            {/* WHERE IT STANDS (owner, 2026-10-10): from the very start, a plain site or the house's own wall from a photo. */}
+            <Field label="Where it stands" wide>
+              <div className={s.chips} role="group" aria-label="Where it stands">
+                <button type="button" className={cx(s.chip, !design.photo && s.chipOn)} aria-pressed={!design.photo} onClick={() => { if (design.photo) removePhoto(); }} data-deck-site="plain">
+                  A plain site<span>the drawn house</span>
+                </button>
+                <button type="button" className={cx(s.chip, !!design.photo && s.chipOn)} aria-pressed={!!design.photo} onClick={() => (design.photo ? setView("photo") : pickPhoto())} disabled={photoBusy} data-deck-site="photo">
+                  {design.photo ? "The photo of the house" : "A photo of the house"}<span>{design.photo ? (design.photo.fit?.hand ? "marked by hand" : design.photo.fit ? "fitted to the wall" : "placed by hand") : photoBusy ? (photoStage ?? "working…") : "upload one — the wall is read off it"}</span>
+                </button>
+              </div>
+              <p className={s.hint}>With a photo the wall, the door and its steps are read off the picture — or marked by hand — and the {what.toLowerCase()} is set against the real wall, in the 3D too. A gazebo that stands on its own keeps the house behind it.</p>
+            </Field>
             {design.structure === "gazebo" || design.structure === "pergola" ? (
               <Field label="It stands" wide>
                 <Seg small label="It stands" value={design.floor} onChange={(f: Floor) => patch({ floor: f })} options={(["deck", "slab", "ground"] as const).map((f) => ({ value: f, label: FLOOR_LABEL[f] }))} />

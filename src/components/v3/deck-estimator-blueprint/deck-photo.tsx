@@ -14,31 +14,46 @@
 import * as React from "react";
 import type { DeckPhoto } from "@/lib/deck/design";
 import { defaultPlacement, elevationOverlay, type Elevation } from "@/lib/deck/elevation";
-import { letterboxRows, type Crop } from "@/lib/deck/photoFit";
+import { letterboxRows, moveMark, type Crop, type MarkId, type WallRead } from "@/lib/deck/photoFit";
 import s from "./deck-studio.module.css";
 
 type Placed = NonNullable<DeckPhoto["placed"]>;
 const ROOF_LAYERS = new Set(["roof-post", "header", "ridge", "rafter", "roofing", "trim", "gutter"]);
+const pct = (f: number) => `${(f * 100).toFixed(2)}%`;
+const inchesWords = (n: number) => (n < 24 ? `${n} in.` : n % 12 === 0 ? `${n / 12} ft` : `${Math.floor(n / 12)}'-${n % 12}"`);
 
-export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh }: { photo: DeckPhoto; href: string | null; elevation: Elevation; onPlace: (placed: Placed) => void; onRefresh: () => void }) {
+/**
+ * The photo with the deck's outline over it, and — when marking — the wall's
+ * own lines as handles: the base's two ends, the door's threshold and top,
+ * a measure's ends, each step. The lines live in the SVG (strokes keep
+ * their width under its stretch); the handles and their labels are HTML,
+ * placed by percent, so they stay round and readable whatever the
+ * picture's shape. A handle's drag edits the read (lib/deck/photoFit
+ * moveMark) and hands it back on release.
+ */
+export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh, marking = false, read = null, onRead }: { photo: DeckPhoto; href: string | null; elevation: Elevation; onPlace: (placed: Placed) => void; onRefresh: () => void; marking?: boolean; read?: WallRead | null; onRead?: (read: WallRead) => void }) {
   const placed = photo.placed ?? defaultPlacement();
   const [draft, setDraft] = React.useState<Placed | null>(null);
+  const [readDraft, setReadDraft] = React.useState<WallRead | null>(null);
   const live = draft ?? placed;
+  const marks = marking ? (readDraft ?? read) : null;
   const svgRef = React.useRef<SVGSVGElement>(null);
-  const drag = React.useRef<{ mode: "move" | "scale"; startX: number; startY: number; from: Placed; w: number; h: number } | null>(null);
+  const drag = React.useRef<{ mode: "move" | "scale" | "mark"; mark: MarkId | null; startX: number; startY: number; from: Placed; fromRead: WallRead | null; left: number; top: number; w: number; h: number } | null>(null);
   const polys = React.useMemo(() => elevationOverlay(elevation, live, photo.w, photo.h), [elevation, live, photo.w, photo.h]);
   const groundY = live.y * 1000;
   const groundX0 = live.x * 1000;
   const groundX1 = live.x * 1000 + live.w * 1000;
 
-  // One set of handlers on the SVG: a press on the handle scales, anywhere else moves. The SVG itself
+  // One set of handlers: a press on a mark drags that mark, on the handle scales, anywhere else moves. The SVG
   // takes the pointer capture, so the move and the release reach it wherever the finger goes.
-  const begin = (e: React.PointerEvent<SVGSVGElement>) => {
+  const begin = (e: React.PointerEvent<Element>) => {
     const svg = svgRef.current;
     if (!svg) return;
-    const onHandle = e.target instanceof Element && e.target.hasAttribute("data-deck-photo-handle");
+    const el = e.target instanceof Element ? e.target : null;
+    const mark = (el?.closest("[data-mark]")?.getAttribute("data-mark") ?? null) as MarkId | null;
+    const onHandle = !!el?.hasAttribute("data-deck-photo-handle");
     const box = svg.getBoundingClientRect();
-    drag.current = { mode: onHandle ? "scale" : "move", startX: e.clientX, startY: e.clientY, from: live, w: box.width || 1, h: box.height || 1 };
+    drag.current = { mode: mark && marks ? "mark" : onHandle ? "scale" : "move", mark, startX: e.clientX, startY: e.clientY, from: live, fromRead: marks, left: box.left, top: box.top, w: box.width || 1, h: box.height || 1 };
     try {
       svg.setPointerCapture(e.pointerId);
     } catch {
@@ -49,14 +64,24 @@ export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh }: { 
   const move = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
+    if (d.mode === "mark") {
+      if (d.mark && d.fromRead) setReadDraft(moveMark(d.fromRead, d.mark, { x: (e.clientX - d.left) / d.w, y: (e.clientY - d.top) / d.h }));
+      return;
+    }
     const dx = (e.clientX - d.startX) / d.w;
     const dy = (e.clientY - d.startY) / d.h;
     if (d.mode === "move") setDraft({ x: d.from.x + dx, y: d.from.y + dy, w: d.from.w });
     else setDraft({ x: d.from.x, y: d.from.y, w: Math.max(0.08, Math.min(3, d.from.w + dx)) });
   };
   const end = () => {
-    if (!drag.current) return;
+    const d = drag.current;
+    if (!d) return;
     drag.current = null;
+    if (d.mode === "mark") {
+      if (readDraft && onRead) onRead(readDraft);
+      setReadDraft(null);
+      return;
+    }
     if (draft) onPlace(draft);
     setDraft(null);
   };
@@ -65,15 +90,19 @@ export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh }: { 
     const next = { x: live.x + (live.w * (1 - k)) / 2, y: live.y, w: Math.max(0.08, Math.min(3, live.w * k)) };
     onPlace(next);
   };
+  const handle = (id: MarkId, x: number, y: number, label: string) => (
+    <button key={id} type="button" className={s.markHandle} data-mark={id} style={{ left: pct(x), top: pct(y) }} aria-label={label} onPointerDown={begin} />
+  );
+  const doorCx = marks?.door ? (marks.door.x0 + marks.door.x1) / 2 : 0;
 
   return (
-    <div className={s.photoWrap} data-deck-photo="placed">
+    <div className={s.photoWrap} data-deck-photo="placed" data-deck-marking={marking || undefined}>
       <div className={s.photoStage}>
         {href ? (
           // eslint-disable-next-line @next/next/no-img-element -- a private file behind this app's own signed link
           <img src={href} alt="The back of the house" width={photo.w} height={photo.h} draggable={false} onError={onRefresh} />
         ) : null}
-        <svg ref={svgRef} className={s.photoSvg} viewBox="0 0 1000 1000" preserveAspectRatio="none" role="img" aria-label="The deck's outline on the photo — drag to move, pull the handle to size" onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onWheel={wheel}>
+        <svg ref={svgRef} className={s.photoSvg} viewBox="0 0 1000 1000" preserveAspectRatio="none" role="img" aria-label={marks ? "The wall's lines on the photo — drag a handle to move it" : "The deck's outline on the photo — drag to move, pull the handle to size"} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onWheel={wheel}>
           <g className={s.elevDeck}>
             {polys.filter((p) => !ROOF_LAYERS.has(p.layer)).map((p, i) => (
               <polygon key={`d${i}`} points={p.points} />
@@ -87,7 +116,36 @@ export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh }: { 
           <line className={s.elevGround} x1={groundX0} y1={groundY} x2={groundX1} y2={groundY} />
           {/* The handle stays inside the picture even when the outline's end is dragged past its edge, so it can always be found. */}
           <circle className={s.photoHandle} cx={Math.min(986, Math.max(14, groundX1))} cy={Math.min(986, Math.max(14, groundY))} r={14} data-deck-photo-handle />
+          {marks ? (
+            <g className={s.marks} aria-hidden="true">
+              <line className={s.markBase} x1={marks.base.left.x * 1000} y1={marks.base.left.y * 1000} x2={marks.base.right.x * 1000} y2={marks.base.right.y * 1000} />
+              {marks.door ? <rect className={s.markDoor} x={marks.door.x0 * 1000} y={marks.door.top * 1000} width={(marks.door.x1 - marks.door.x0) * 1000} height={(marks.door.bottom - marks.door.top) * 1000} /> : null}
+              {marks.scaleLine ? <line className={s.markScale} x1={marks.scaleLine.a.x * 1000} y1={marks.scaleLine.a.y * 1000} x2={marks.scaleLine.b.x * 1000} y2={marks.scaleLine.b.y * 1000} /> : null}
+              {marks.jogs.map((j, i) => (
+                <line key={i} className={s.markJog} x1={j.x * 1000} y1={j.y * 1000 - 120} x2={j.x * 1000} y2={j.y * 1000 + 40} />
+              ))}
+            </g>
+          ) : null}
         </svg>
+        {marks ? (
+          <>
+            {handle("base-left", marks.base.left.x, marks.base.left.y, "The wall's base, left end")}
+            {handle("base-right", marks.base.right.x, marks.base.right.y, "The wall's base, right end")}
+            {marks.door ? handle("door-bottom", doorCx, marks.door.bottom, "The door's threshold") : null}
+            {marks.door ? handle("door-top", doorCx, marks.door.top, "The top of the door") : null}
+            {marks.door ? <span className={s.markTag} style={{ left: pct(doorCx), top: pct(marks.door.bottom) }}>{"door · 6'-8\""}</span> : null}
+            {marks.scaleLine ? handle("scale-a", marks.scaleLine.a.x, marks.scaleLine.a.y, "The measure's first end") : null}
+            {marks.scaleLine ? handle("scale-b", marks.scaleLine.b.x, marks.scaleLine.b.y, "The measure's second end") : null}
+            {marks.scaleLine ? <span className={s.markTag} style={{ left: pct((marks.scaleLine.a.x + marks.scaleLine.b.x) / 2), top: pct(Math.max(marks.scaleLine.a.y, marks.scaleLine.b.y)) }}>measure · {inchesWords(marks.scaleLine.lengthIn)}</span> : null}
+            {marks.jogs.map((j, i) => (
+              <React.Fragment key={i}>
+                {handle(`jog-${i}`, j.x, j.y, `Step ${i + 1} in the wall`)}
+                <span className={s.markTag} style={{ left: pct(j.x), top: pct(j.y) }}>step · {j.dir === "toward" ? "comes out" : "steps back"} {j.depthFt ?? 2} ft</span>
+              </React.Fragment>
+            ))}
+            <span className={s.markTag} style={{ left: pct(marks.base.left.x), top: pct(marks.base.left.y) }}>wall meets the ground</span>
+          </>
+        ) : null}
       </div>
     </div>
   );

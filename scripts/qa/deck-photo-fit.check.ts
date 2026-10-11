@@ -23,6 +23,16 @@ import {
   scaleFromRead,
   shapeWithOffer,
   wallSegments,
+  addDoor,
+  addJog,
+  addScaleLine,
+  blankRead,
+  markedRead,
+  moveMark,
+  removeDoor,
+  removeJog,
+  setJog,
+  setScaleLength,
   type FitDeck,
 } from "../../src/lib/deck/photoFit";
 
@@ -47,6 +57,7 @@ const RAW = {
     { x0: 0.71875, x1: 0.8125, sill: 0.5417, head: 0.4167 },
   ],
   patio: null,
+  scaleLine: null,
   bars: { top: 0, bottom: 0 },
   confidence: 0.86,
   note: null,
@@ -171,6 +182,38 @@ check("fitted again on the cropped picture from the kept read: the same placemen
 const again24 = fitPhoto(summary.read!, wide24, 36, Math.round(fit.crop.w * W), Math.round(fit.crop.h * H), { recrop: false });
 check("…and a wider deck on the kept read gets the same offer", again24.offer?.kind === "notch" && again24.offer.corner === "back-right" && again24.offer.widthFt === 2.5, JSON.stringify(again24.offer));
 check("fitSummary on a whole picture keeps the read as is", fitSummary(again, summary.read!).read === summary.read);
+
+
+// ── the wall marked by hand
+const blank = blankRead();
+check("a blank read is a base and nothing else, sure of itself", blank.door === null && blank.jogs.length === 0 && blank.confidence === 1 && blank.base.right.x > blank.base.left.x);
+check("marking makes a read sure and cuts no bands", markedRead(parseWallRead({ ...RAW, confidence: 0.2, bars: { top: 0.2, bottom: 0.1 } })!).confidence === 1 && markedRead(read).bars.top === 0);
+const movedBase = moveMark(read, "base-left", { x: 0.2, y: 0.85 });
+check("the base's left end moves, and never past the right end", movedBase.base.left.x === 0.2 && movedBase.base.left.y === 0.85 && moveMark(read, "base-left", { x: 0.95, y: 0.8 }).base.left.x === 0.875 - 0.05);
+const movedDoor = moveMark(read, "door-bottom", { x: 0.6, y: 0.75 });
+check("the door's threshold drags the whole door, keeping its size", near((movedDoor.door!.x0 + movedDoor.door!.x1) / 2, 0.6, 1e-3) && near(movedDoor.door!.bottom, 0.75, 1e-3) && near(movedDoor.door!.bottom - movedDoor.door!.top, 0.6979 - 0.4271, 1e-3));
+check("the door's top sets its height and stays above the threshold", moveMark(read, "door-top", { x: 0.4, y: 0.5 }).door!.top === 0.5 && moveMark(read, "door-top", { x: 0.4, y: 0.9 }).door!.top === +(0.6979 - 0.03).toFixed(3));
+const withLine = addScaleLine(read, 48);
+check("a measure appears in the middle, 48 in. as asked", withLine.scaleLine?.lengthIn === 48 && withLine.scaleLine.a.x === 0.5);
+const lineScale = scaleFromRead(setScaleLength(moveMark(moveMark(withLine, "scale-a", { x: 0.5, y: 0.5 }), "scale-b", { x: 0.5, y: 0.75 }), 60), W, H);
+check("the measure beats the door for the scale: 240 px for 60 in. = 48 px/ft", lineScale.by === "line" && near(lineScale.pxPerFt, 48, 0.1), `${lineScale.by} ${lineScale.pxPerFt.toFixed(1)}`);
+const noDoorRead = removeDoor(read);
+const doorBack = addDoor(noDoorRead, W, H);
+check("a door added on the base's middle stands 80 in. tall at the wall's scale (the eave's, with no door to measure by)", noDoorRead.door === null && near((doorBack.door!.x0 + doorBack.door!.x1) / 2, 0.5, 1e-3) && near(doorBack.door!.bottom, 0.8125, 1e-3) && near((doorBack.door!.bottom - doorBack.door!.top) * H, (80 / 12) * sEave.pxPerFt, 3), `${((doorBack.door!.bottom - doorBack.door!.top) * H).toFixed(0)} px`);
+const noScale = addDoor(parseWallRead({ ...RAW, door: null, eave: null })!, W, H);
+check("…and a fifth of the picture tall when nothing gives a scale", near(noScale.door!.bottom - noScale.door!.top, 0.2, 1e-3));
+const stepped = addJog(read, 0.3);
+check("a step added at 0.3 sits on the base, comes out 2 ft, and sorts before the one at 0.625", stepped.jogs.length === 2 && stepped.jogs[0].x === 0.3 && stepped.jogs[0].dir === "toward" && stepped.jogs[0].depthFt === 2 && stepped.jogs[1].x === 0.625);
+check("a step is set and removed", setJog(stepped, 0, { dir: "away", depthFt: 3 }).jogs[0].dir === "away" && setJog(stepped, 0, { depthFt: 3 }).jogs[0].depthFt === 3 && removeJog(stepped, 0).jogs.length === 1);
+check("a dragged step stays between the base's ends", moveMark(stepped, "jog-0", { x: 0.01, y: 0.2 }).jogs[0].x === +(0.125 + 0.02).toFixed(3));
+check("no more than four steps", addJog(addJog(addJog(addJog(stepped))))!.jogs.length === 4);
+const handFit = fitPhoto(markedRead(blank), rect, 36, 1440, 660, { recrop: false, fallback: { x: 0.2, y: 0.9, w: 0.433 }, hand: true });
+check("a hand-marked wall with no scale keeps the outline's width and sets it on the base's middle", near(handFit.placed.w, 0.433, 1e-3) && near(handFit.placed.y, 0.8, 1e-3) && near(handFit.placed.x + handFit.placed.w / 2, 0.5, 1e-3) && /^The wall as you marked it: the wall — scale from the picture: none/.test(handFit.notes[0]), handFit.notes[0]);
+const handDoor = fitPhoto(markedRead(addDoor(moveMark(blank, "base-left", { x: 0.1, y: 0.8 }), 1440, 660)), rect, 36, 1440, 660, { recrop: false, hand: true });
+check("…with a door added, the scale is the door's and the deck is centred on it", handDoor.scale.by === "door" && handDoor.anchor === "door" && near(handDoor.placed.x + handDoor.placed.w / 2, 0.5, 0.01) && /scale from the door \(80 in\.\)/.test(handDoor.notes[0]));
+check("the summary says it was marked by hand", fitSummary(handDoor, markedRead(blank), true).hand === true && fitSummary(fit, read).hand === false);
+const lineRead = parseWallRead({ ...RAW, scaleLine: { a: { x: 0.5, y: 0.5 }, b: { x: 0.5, y: 0.75 }, lengthIn: 60 } })!;
+check("a measure line parses and rides through the crop", lineRead.scaleLine?.lengthIn === 60 && near(readInCrop(lineRead, crop).scaleLine!.a.y, (0.5 - crop.y) / crop.h, 1e-3));
 
 // ── the black bands of a screenshot
 const rows = (n: number, top: number, bottom: number) => Array.from({ length: n }, (_, i) => (i < top || i >= n - bottom ? 8 : 140));

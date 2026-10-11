@@ -104,6 +104,8 @@ export interface DeckBackdrop {
   elevLeftFt: number;
   /** Where the wall steps, as fractions of the picture's width; "toward" brings the part to the right nearer by `depthFt`. */
   jogs: Array<{ x: number; dir: "toward" | "away"; depthFt: number | null }>;
+  /** How far behind the house line the wall stands, ft: 0 for a structure on the house, a yard's worth for a detached one kept as a backdrop. */
+  standoffFt?: number;
 }
 /** A step in the wall the read could not size. */
 const JOG_DEFAULT_FT = 2;
@@ -1096,7 +1098,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
           const centreFrac = (s.widthFt / 2 - leftX) / wFt;
           let mine = 0;
           for (let i = 0; i + 1 < xs.length; i++) if (centreFrac >= xs[i] && centreFrac <= xs[i + 1]) mine = i;
-          const shift = depths[mine];
+          const shift = depths[mine] + (bd.standoffFt ?? 0);
           const height = zTop - zBottom;
           const yMid = (zTop + zBottom) / 2;
           for (let i = 0; i + 1 < xs.length; i++) {

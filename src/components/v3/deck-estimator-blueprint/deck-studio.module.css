@@ -339,6 +339,22 @@
 :global(.jf-blueprint .content) .photoNotes { list-style: none; margin: 0; padding: 8px 16px 10px; display: grid; gap: 4px; border-bottom: 1.5px solid var(--hair-soft); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--ink-soft); }
 :global(.jf-blueprint .content) .photoNotes li::before { content: "— "; color: var(--muted); }
 :global(.jf-blueprint .content) .photoNotes .photoNoteBad { color: var(--danger); font-weight: 700; }
+:global(.jf-blueprint .content) .marks line, :global(.jf-blueprint .content) .marks rect { vector-effect: non-scaling-stroke; }
+:global(.jf-blueprint .content) .markBase { stroke: #ffd166; stroke-width: 2.5; stroke-dasharray: 10 6; }
+:global(.jf-blueprint .content) .markDoor { fill: rgba(255,209,102,0.16); stroke: #ffd166; stroke-width: 2; }
+:global(.jf-blueprint .content) .markScale { stroke: #7cf0c4; stroke-width: 2.5; }
+:global(.jf-blueprint .content) .markJog { stroke: #ff9f6b; stroke-width: 2.5; stroke-dasharray: 4 4; }
+:global(.jf-blueprint .content) .markHandle { position: absolute; z-index: 3; width: 22px; height: 22px; margin: -11px 0 0 -11px; padding: 0; border: 2px solid #1b1d21; border-radius: 50%; background: #ffd166; cursor: grab; touch-action: none; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+:global(.jf-blueprint .content) .markHandle[data-mark^="base"], :global(.jf-blueprint .content) .markHandle[data-mark^="jog"] { border-radius: 4px; }
+:global(.jf-blueprint .content) .markHandle[data-mark^="scale"] { background: #7cf0c4; }
+:global(.jf-blueprint .content) .markHandle[data-mark^="jog"] { background: #ff9f6b; }
+:global(.jf-blueprint .content) .markHandle:active { cursor: grabbing; }
+:global(.jf-blueprint .content) .markHandle:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+:global(.jf-blueprint .content) .markTag { position: absolute; z-index: 2; transform: translate(-50%, 10px); padding: 2px 6px; border-radius: 4px; background: rgba(27,29,33,0.84); color: #fff; font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; line-height: 1.3; white-space: nowrap; pointer-events: none; }
+:global(.jf-blueprint .content) .photoTools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px; border-bottom: 1.5px solid var(--hair-soft); background: var(--paper); }
+:global(.jf-blueprint .content) .photoTools > .mono { flex: 1 1 100%; }
+:global(.jf-blueprint .content) .markField { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+:global(.jf-blueprint .content) .markField .in { width: 72px; min-height: 34px; padding: 4px 8px; }
 :global(.jf-blueprint .content) .fileHidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
 @media (max-width: 768px) {
   :global(.jf-blueprint .content) .structure { grid-template-columns: repeat(2, minmax(0, 1fr)); }
