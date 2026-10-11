@@ -1399,7 +1399,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     };
     const hoverHandle = (h: SceneHandle) => {
       clearHover();
-      const now = h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in.`;
+      const now = h.kind === "pitch" ? `${Math.round(h.value)}:12` : h.perUnit === 1 ? `${Math.round(h.value * 2) / 2} ft` : `${Math.round(h.value)} in.`;
       pickRef.current?.({ legend: { role: h.label, nominal: now, lengthFt: 0, count: 1, note: "Drag the knob, or press the arrow keys." }, layer: null, point: [h.x, h.y, h.z], mount: "deck" }, "hover");
     };
     const knobKey = (e: KeyboardEvent, h: SceneHandle) => {

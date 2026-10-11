@@ -92,6 +92,7 @@ import { DECK_RATES, DECK_RATE_GROUP_LABEL, deckRate, sanitizeDeckRateBook, type
 import { convertDeckEstimateToProposal, deckPhotoHref, deleteDeckDraft, listDeckDrafts, loadDeckDraft, readDeckPhoto, readDeckSite, saveDeckDraft, saveDeckRateBook, uploadDeckPhoto, type DeckDraftRow } from "@/actions/deckEstimator";
 import { addDoor, addJog, addScaleLine, blankRead, fitPhoto, fitSummary, markedRead, removeDoor, removeJog, removeScaleLine, setJog, setScaleLength, shapeWithOffer, type FitDeck, type PhotoFit, type WallRead, rectifyPlan, transformPlaced, transformRead, wallQuadFromRead, type Placed, type Quad } from "@/lib/deck/photoFit";
 import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
+import { resizes, roofResizes, settleDesign } from "@/lib/deck/settle";
 import type { DeckBackdrop, DeckEdit, DeckPick } from "@/components/estimator/deck/DeckModel3D";
 import { DeckPlan, type PlanEdgeHit } from "./deck-plan";
 import { DeckPhotoView, cropPhoto, shrinkPhoto, straightenPhoto, trimLetterbox } from "./deck-photo";
@@ -203,9 +204,15 @@ function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (
   );
 }
 
+/** The steps' colours: one hue, lighter at the top and darker down the list (owner, 2026-10-10: "a different colour on each step, a very smooth transition from light to darker, so the contractor isn't confused by so many things to fill out"). */
+function stepTone(n: number): React.CSSProperties {
+  const light = Math.max(34, 90 - (n - 1) * 7);
+  return { "--step-c": `hsl(212 58% ${light}%)`, "--step-ink": light < 62 ? "#fff" : "var(--ink)" } as React.CSSProperties;
+}
+
 function Step({ n, title, summary, children, id }: { n: number; title: string; summary: string; children: React.ReactNode; id?: string }) {
   return (
-    <details className={s.step} open id={id}>
+    <details className={s.step} open id={id} style={stepTone(n)} data-step={n}>
       <summary className={s.stepHead}>
         <span className={s.stepN}>{n}</span>
         <span className={s.stepTitle}>{title}</span>
@@ -291,16 +298,44 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
   /** The design changed since it was opened: the auto-save starts. */
   const dirty = React.useRef(false);
 
-  const patch = React.useCallback((p: DeckPatch, keys: string[] = []) => {
-    for (const k of keys) touched.current.add(k);
-    dirty.current = true;
-    setDesign((d) => applyDeckPatch(d, p));
+  // SETTLING (owner, 2026-10-10: "when I change the sizes, make sure it reads the codes and rebuilds the material —
+  // beams, support, everything"): a size change re-runs the tables (lib/deck/settle) and applies the member-sizing
+  // fixes the checks would offer, so what stands on screen is never a frame the tables refuse. The fixes' labels show
+  // under the verdict until the next resize.
+  const bookRef = React.useRef(book);
+  const marketRef = React.useRef(market);
+  React.useEffect(() => {
+    bookRef.current = book;
+    marketRef.current = market;
+  }, [book, market]);
+  const [autoNotes, setAutoNotes] = React.useState<string[]>([]);
+  const settle = React.useCallback((next: DeckDesign): DeckDesign => {
+    const settled = settleDesign(next, { rates: bookRef.current, market: marketRef.current });
+    queueMicrotask(() => setAutoNotes(settled.fixes));
+    return settled.design;
   }, []);
+  const patch = React.useCallback(
+    (p: DeckPatch, keys: string[] = []) => {
+      for (const k of keys) touched.current.add(k);
+      dirty.current = true;
+      setDesign((d) => {
+        const next = applyDeckPatch(d, p);
+        return resizes(p) ? settle(next) : next;
+      });
+    },
+    [settle],
+  );
   /** A change to the roof: the whole roof object goes in, so nothing nested is lost. */
-  const rp = React.useCallback((p: Partial<RoofDesign>) => {
-    dirty.current = true;
-    setDesign((d) => applyDeckPatch(d, { roof: { ...d.roof, ...p } }));
-  }, []);
+  const rp = React.useCallback(
+    (p: Partial<RoofDesign>) => {
+      dirty.current = true;
+      setDesign((d) => {
+        const next = applyDeckPatch(d, { roof: { ...d.roof, ...p } });
+        return roofResizes(p) ? settle(next) : next;
+      });
+    },
+    [settle],
+  );
   const setStairs = React.useCallback((fn: (list: StairDesign[]) => StairDesign[]) => {
     dirty.current = true;
     setDesign((d) => applyDeckPatch(d, { stairs: fn(d.stairs) }));
@@ -403,6 +438,12 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
         case "stair":
           setStairs((list) => list.map((st) => (st.id === e.id ? { ...st, atFt: Math.max(st.widthFt / 2, toHalfFt(e.value)) } : st)));
           break;
+        case "pitch": {
+          // The knob at the peak: whole pitches only, from the list the studio offers.
+          const v = Math.min(ROOF_LIMITS.pitch.max, Math.max(ROOF_LIMITS.pitch.min, Math.round(e.value)));
+          rp({ pitch: PITCHES.reduce((a, b) => (Math.abs(b - v) < Math.abs(a - v) ? b : a)) });
+          break;
+        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `polygon` is derived from `design` below; the latest design is what matters.
@@ -862,6 +903,42 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
   const polygon = r.plan.shape === "hexagon" || r.plan.shape === "octagon" || r.plan.shape === "round";
   const planShapes: RoofPlanShape[] = design.structure === "pergola" ? (withDeck ? ["follows-deck", "square", "rect"] : ["square", "rect"]) : design.structure === "covered-deck" ? ["follows-deck", "square", "rect"] : withDeck ? ["follows-deck", "square", "rect", "hexagon", "octagon", "round"] : ["square", "rect", "hexagon", "octagon", "round"];
   const canAttach = (withDeck ? design.placement !== "detached" : true) && !polygon && r.kind !== "pyramid" && r.kind !== "double-tier" && r.kind !== "gambrel" && r.kind !== "dutch-gable" && r.kind !== "pergola";
+  // The roof's outline and size — in the Roof step over a deck; the "Footprint" step for a gazebo or pergola on its own floor.
+  const outlineBlock = (
+    <>
+      <Field label="Outline" wide>
+        <Seg small label="Roof outline" value={r.plan.shape} onChange={(sh: RoofPlanShape) => rp({ plan: { ...r.plan, shape: sh } })} options={planShapes.map((sh) => ({ value: sh, label: ROOF_PLAN_LABEL[sh] }))} />
+      </Field>
+      {r.plan.shape !== "follows-deck" ? (
+        <div className={s.grid2}>
+          {polygon ? (
+            <Field label="Across the flats" aside="ft">
+              <NumberInput label="Across the flats, feet" value={r.plan.acrossFt} parse={parseFeet} format={feetText} min={ROOF_LIMITS.acrossFt.min} max={ROOF_LIMITS.acrossFt.max} onCommit={(n2) => rp({ plan: { ...r.plan, acrossFt: n2 } })} />
+            </Field>
+          ) : (
+            <>
+              <Field label={r.plan.shape === "square" ? "Across" : "Along the house"} aside="ft">
+                <NumberInput label="Roof width, feet" value={r.plan.widthFt} parse={parseFeet} format={feetText} min={ROOF_LIMITS.planFt.min} max={ROOF_LIMITS.planFt.max} onCommit={(n2) => rp({ plan: { ...r.plan, widthFt: n2, depthFt: r.plan.shape === "square" ? n2 : r.plan.depthFt } })} />
+              </Field>
+              {r.plan.shape === "rect" ? (
+                <Field label="Out from the house" aside="ft">
+                  <NumberInput label="Roof depth, feet" value={r.plan.depthFt} parse={parseFeet} format={feetText} min={ROOF_LIMITS.planFt.min} max={ROOF_LIMITS.planFt.max} onCommit={(n2) => rp({ plan: { ...r.plan, depthFt: n2 } })} />
+                </Field>
+              ) : null}
+            </>
+          )}
+          {withDeck ? (
+            <Field label="Shift along the house" aside="ft · 0 = centred">
+              <NumberInput label="Shift along the house, feet" value={r.plan.offsetFt} parse={(t) => (t.trim() === "" ? null : Number(t))} format={(n2) => String(Math.round(n2 * 10) / 10)} min={ROOF_LIMITS.offsetFt.min} max={ROOF_LIMITS.offsetFt.max} onCommit={(n2) => rp({ plan: { ...r.plan, offsetFt: n2 } })} />
+            </Field>
+          ) : null}
+        </div>
+      ) : null}
+      {roof ? (
+        <p className={s.hint}>{Math.round(roof.footprintSqFt)} sq ft under the eaves · {roof.posts.length} posts{roof.attach === "wall" ? " and the house wall" : ""}{roof.kind !== "pergola" ? ` · ${Math.round(roof.roofAreaSqFt)} sq ft of roof, ${roof.squares} squares` : ""}{roof.engineered ? " · engineered beam where the sawn tables stop" : ""}</p>
+      ) : null}
+    </>
+  );
   const metalRoof = r.roofing === "metal-panel" || r.roofing === "standing-seam";
   const front = design.shape.kind === "rect" ? design.shape.front : undefined;
   const woodRail = design.rail.type === "treated" || design.rail.type === "cedar";
@@ -944,7 +1021,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
                 <DeckModel3D scene={scene} built={built} xray={xray} backdrop={backdrop} night={night} connections={connections} placing={placing?.kind === "fixture"} edit={editing} onEdit={onEdit} resetToken={resetToken} focus={focus} onPick={onPick} className={s.canvas} label={`The ${what.toLowerCase()} in 3D: ${scene.facts}`} />
                 {editing && !placing ? (
                   <div className={s.placeBanner} data-deck-editing>
-                    <span>Drag the blue knobs: the deck&apos;s width, depth and height, the roof&apos;s height, the lower level, each stair along its edge. Everything re-frames and re-prices as you drag.</span>
+                    <span>Drag the blue knobs: the deck&apos;s width, depth and height, the roof&apos;s height and its pitch at the peak, the lower level, each stair along its edge. Everything re-frames and re-prices as you drag.</span>
                     <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => setEditing(false)}>Done</button>
                   </div>
                 ) : null}
@@ -1115,6 +1192,11 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
             <span className={s.verdictText}>{issues[0] ? `${issues[0].part}: ${issues[0].text}` : `${summary.pass} checks pass — every number names its table.`}</span>
             <span className={s.verdictTotal}>{money(pkg.subtotal)}</span>
           </a>
+          {autoNotes.length ? (
+            <p className={s.autoNote} role="status" data-deck-autofix>
+              Re-sized to the tables: {autoNotes.join(" · ")}.
+            </p>
+          ) : null}
         </section>
 
         {/* ── the steps ──────────────────────────────────────────── */}
@@ -1147,6 +1229,12 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
             ) : null}
             {!withDeck ? <p className={s.hint}>{design.floor === "slab" ? "A new 4-in. slab a foot wider than the posts goes in the price; the posts sit on anchored bases." : "Each post gets its own poured footing, sized for what it carries."}</p> : null}
           </Step>
+
+          {!withDeck ? (
+            <Step n={next()} title={design.structure === "pergola" ? "The pergola's footprint" : "The gazebo's footprint"} summary={sizeWords(design)} id="step-footprint">
+              {outlineBlock}
+            </Step>
+          ) : null}
 
           {withDeck ? (
             <Step n={next()} title={design.structure === "gazebo" || design.structure === "pergola" ? "The deck under it" : "Shape"} summary={shapeSummary} id="step-shape">
@@ -1448,35 +1536,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
                   <Seg small label="On the house or free" value={r.attach} onChange={(a) => rp({ attach: a })} options={[{ value: "wall", label: "On the house wall" }, { value: "free", label: "Free-standing" }]} />
                 </Field>
               ) : null}
-              <Field label="Outline" wide>
-                <Seg small label="Roof outline" value={r.plan.shape} onChange={(sh: RoofPlanShape) => rp({ plan: { ...r.plan, shape: sh } })} options={planShapes.map((sh) => ({ value: sh, label: ROOF_PLAN_LABEL[sh] }))} />
-              </Field>
-              {r.plan.shape !== "follows-deck" ? (
-                <div className={s.grid2}>
-                  {polygon ? (
-                    <Field label="Across the flats" aside="ft">
-                      <NumberInput label="Across the flats, feet" value={r.plan.acrossFt} parse={parseFeet} format={feetText} min={ROOF_LIMITS.acrossFt.min} max={ROOF_LIMITS.acrossFt.max} onCommit={(n2) => rp({ plan: { ...r.plan, acrossFt: n2 } })} />
-                    </Field>
-                  ) : (
-                    <>
-                      <Field label={r.plan.shape === "square" ? "Across" : "Along the house"} aside="ft">
-                        <NumberInput label="Roof width, feet" value={r.plan.widthFt} parse={parseFeet} format={feetText} min={ROOF_LIMITS.planFt.min} max={ROOF_LIMITS.planFt.max} onCommit={(n2) => rp({ plan: { ...r.plan, widthFt: n2, depthFt: r.plan.shape === "square" ? n2 : r.plan.depthFt } })} />
-                      </Field>
-                      {r.plan.shape === "rect" ? (
-                        <Field label="Out from the house" aside="ft">
-                          <NumberInput label="Roof depth, feet" value={r.plan.depthFt} parse={parseFeet} format={feetText} min={ROOF_LIMITS.planFt.min} max={ROOF_LIMITS.planFt.max} onCommit={(n2) => rp({ plan: { ...r.plan, depthFt: n2 } })} />
-                        </Field>
-                      ) : null}
-                    </>
-                  )}
-                  {withDeck ? (
-                    <Field label="Shift along the house" aside="ft · 0 = centred">
-                      <NumberInput label="Shift along the house, feet" value={r.plan.offsetFt} parse={(t) => (t.trim() === "" ? null : Number(t))} format={(n2) => String(Math.round(n2 * 10) / 10)} min={ROOF_LIMITS.offsetFt.min} max={ROOF_LIMITS.offsetFt.max} onCommit={(n2) => rp({ plan: { ...r.plan, offsetFt: n2 } })} />
-                    </Field>
-                  ) : null}
-                </div>
-              ) : null}
-              <p className={s.hint}>{Math.round(roof.footprintSqFt)} sq ft under the eaves · {roof.posts.length} posts{roof.attach === "wall" ? " and the house wall" : ""}{roof.kind !== "pergola" ? ` · ${Math.round(roof.roofAreaSqFt)} sq ft of roof, ${roof.squares} squares` : ""}{roof.engineered ? " · engineered beam where the sawn tables stop" : ""}</p>
+              {withDeck ? outlineBlock : null}
 
               <div className={s.sub}>
                 <div className={s.subTitle}>Posts and headers</div>

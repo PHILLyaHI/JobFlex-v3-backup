@@ -457,7 +457,8 @@ export function defaultRoofDesign(structure: Structure = "covered-deck"): RoofDe
   return {
     kind: pergola ? "pergola" : gazebo ? "pyramid" : "gable",
     attach: gazebo || pergola ? "free" : "wall",
-    plan: { shape: gazebo ? "square" : "follows-deck", widthFt: 12, depthFt: 12, acrossFt: 12, offsetFt: 0 },
+    // Over a deck the roof follows the deck (a gazebo typed 20 ft wide IS 20 ft wide); on its own floor it is a 12 ft square (gazebo) or rectangle.
+    plan: { shape: "follows-deck", widthFt: 12, depthFt: 12, acrossFt: 12, offsetFt: 0 },
     pitch: gazebo ? 6 : pergola ? 0 : 4,
     eaveHeightIn: 96,
     overhangIn: 12,
@@ -612,7 +613,9 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   const structure = oneOf(r.structure, STRUCTURES, d.structure);
   // A deck and a covered deck stand on the deck; a gazebo or a pergola on whatever was chosen.
   const floor: Floor = structure === "deck" || structure === "covered-deck" ? "deck" : oneOf(r.floor, FLOORS, d.floor);
-  const roof = normalizeRoof(r.roof, structure, floor, placement);
+  // The deck's own shape first: the roof follows it, or carries its size off the deck.
+  const shape = normalizeShape(r.shape, d.shape);
+  const roof = normalizeRoof(r.roof, structure, floor, placement, shape);
   const photo = normalizePhoto(r.photo);
 
   const beamKind = oneOf(f.beamKind, ["solid", "built-up"] as const, d.framing.beamKind);
@@ -620,7 +623,6 @@ export function normalizeDeckDesign(raw: unknown, opts: { state?: string | null;
   const beam: BeamSize | "auto" = beamKind === "solid" ? (isSolidBeam(beamRaw) ? beamRaw : "auto") : (BUILT_UP_CHOICES as readonly string[]).includes(beamRaw) ? (beamRaw as BuiltUpBeam) : "auto";
   const overhangFt = f.overhangFt === "auto" || f.overhangFt === undefined ? "auto" : toInch(clamp(num(f.overhangFt, 0), DECK_LIMITS.overhangFt.min, DECK_LIMITS.overhangFt.max));
   const railFt = ex.railFt === "auto" || ex.railFt === undefined ? "auto" : Math.round(clamp(num(ex.railFt, 0), DECK_LIMITS.railFt.min, DECK_LIMITS.railFt.max) * 10) / 10;
-  const shape = normalizeShape(r.shape, d.shape);
   const heightIn = Math.round(clamp(num(r.heightIn, d.heightIn), DECK_LIMITS.heightIn.min, DECK_LIMITS.heightIn.max) * 4) / 4;
   const lower = normalizeLower(r.lower, shape, heightIn);
   // A v2 design carried the rail as an allowance in `extras` and the stairs as a count of flights.
@@ -724,7 +726,7 @@ function normalizeElectrical(raw: unknown, rail: RailDesign, legacyRoof: Record<
  * shed; a polygon is roofed as a pyramid; a roof can hang on the wall only
  * where the deck meets the house.
  */
-export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, placement: Placement): RoofDesign {
+export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, placement: Placement, deckShape?: DeckShape): RoofDesign {
   // A bare deck keeps a covered deck's roof in the drawer, so switching to one later starts from the usual.
   const d = defaultRoofDesign(structure === "deck" ? "covered-deck" : structure);
   const r = obj(raw);
@@ -737,7 +739,12 @@ export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, 
   else if (kind === "pergola") kind = d.kind;
   if (structure === "gazebo" && kind === "shed") kind = "hip";
   let shape = oneOf(pl.shape, ROOF_PLAN_SHAPES, d.plan.shape);
-  if (floor !== "deck" && shape === "follows-deck") shape = "rect";
+  // Off the deck there is no deck to follow: a gazebo becomes a square, anything else a rectangle, the size the deck had.
+  let carried: { widthFt: number; depthFt: number } | null = null;
+  if (floor !== "deck" && shape === "follows-deck") {
+    shape = structure === "gazebo" ? "square" : "rect";
+    if (deckShape) carried = structure === "gazebo" ? { widthFt: Math.min(deckShape.widthFt, deckShape.depthFt), depthFt: Math.min(deckShape.widthFt, deckShape.depthFt) } : { widthFt: deckShape.widthFt, depthFt: deckShape.depthFt };
+  }
   if (isPolygonShape(shape) && kind !== "pyramid" && kind !== "double-tier" && kind !== "pergola") kind = "pyramid";
   if (kind === "pyramid" && shape === "rect") shape = "square";
   if (kind === "shed" && shape !== "follows-deck") shape = shape === "square" ? "square" : "rect";
@@ -748,8 +755,8 @@ export function normalizeRoof(raw: unknown, structure: Structure, floor: Floor, 
   if (floor === "deck" && placement === "detached") attach = "free";
   if (isPolygonShape(shape)) attach = "free";
   if (kind === "pyramid" || kind === "double-tier" || kind === "gambrel" || kind === "dutch-gable") attach = "free";
-  const widthFt = toInch(clamp(num(pl.widthFt, d.plan.widthFt), ROOF_LIMITS.planFt.min, ROOF_LIMITS.planFt.max));
-  const depthFt = shape === "square" ? widthFt : toInch(clamp(num(pl.depthFt, d.plan.depthFt), ROOF_LIMITS.planFt.min, ROOF_LIMITS.planFt.max));
+  const widthFt = toInch(clamp(num(carried?.widthFt ?? pl.widthFt, d.plan.widthFt), ROOF_LIMITS.planFt.min, ROOF_LIMITS.planFt.max));
+  const depthFt = shape === "square" ? widthFt : toInch(clamp(num(carried?.depthFt ?? pl.depthFt, d.plan.depthFt), ROOF_LIMITS.planFt.min, ROOF_LIMITS.planFt.max));
   const roofing = structure === "pergola" ? "none" : (oneOf(r.roofing, ROOFINGS, d.roofing) === "none" ? d.roofing : oneOf(r.roofing, ROOFINGS, d.roofing));
   const metal = roofing === "metal-panel" || roofing === "standing-seam";
   const rafterRaw = r.rafter === "auto" ? "auto" : oneOf(r.rafter, JOIST_SIZES, "auto" as JoistSize | "auto");
