@@ -713,11 +713,12 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
     setBusy(true);
     setError(null);
     try {
+      // Every text inside the proposal's caps (lib/deck/convertSchema): a big design never fails convert over a long sentence.
       const res = await convertDeckEstimateToProposal({
-        title,
-        scope: deckScope(pkg, address || null).join("\n"),
-        assumptions: deckNotes(pkg),
-        lines: pkg.lines.map((l) => ({ name: l.name, description: l.description, quantity: l.quantity, unit: l.unit, materialCost: l.materialCost, laborCost: l.laborCost })),
+        title: title.slice(0, 200),
+        scope: deckScope(pkg, address || null).join("\n").slice(0, 6000),
+        assumptions: deckNotes(pkg).slice(0, 20).map((n) => n.slice(0, 600)),
+        lines: pkg.lines.map((l) => ({ name: l.name.slice(0, 200), description: l.description?.slice(0, 400), quantity: l.quantity, unit: l.unit, materialCost: l.materialCost, laborCost: l.laborCost })),
         address: address || null,
         plan: { design, scene },
         clientId: clientId ?? null,

@@ -702,13 +702,14 @@ function normalizeElectrical(raw: unknown, rail: RailDesign, legacyRoof: Record<
     out.push({ id, kind, supply: oneOf(f.supply, ["we", "client"] as const, "we"), qty: Math.round(clamp(num(f.qty, 1), ELECTRICAL_LIMITS.qty.min, ELECTRICAL_LIMITS.qty.max)), at, volts240: kind === "heater" && f.volts240 === true });
   });
   // Older designs said "lit post caps" on the rail and a fan or lights on the roof: they become fixtures.
-  if (rail.lighting !== "none" && !out.some((f) => f.kind === "post-cap")) out.push({ id: "e-caps", kind: "post-cap", supply: "we", qty: 1, at: null });
-  if (rail.lighting === "post-caps-risers" && !out.some((f) => f.kind === "step-light")) out.push({ id: "e-steps", kind: "step-light", supply: "we", qty: 1, at: null });
+  if (rail.lighting !== "none" && !out.some((f) => f.kind === "post-cap")) out.push({ id: "e-caps", kind: "post-cap", supply: "we", qty: 1, at: null, volts240: false });
+  if (rail.lighting === "post-caps-risers" && !out.some((f) => f.kind === "step-light")) out.push({ id: "e-steps", kind: "step-light", supply: "we", qty: 1, at: null, volts240: false });
   const lx = obj(legacyRoof.extras);
-  if (lx.fan === true && !out.some((f) => f.kind === "fan")) out.push({ id: "e-fan", kind: "fan", supply: "we", qty: 1, at: null });
-  if (num(lx.lights, 0) > 0 && !out.some((f) => f.kind === "ceiling-light")) out.push({ id: "e-lights", kind: "ceiling-light", supply: "we", qty: Math.round(clamp(num(lx.lights, 0), 1, 12)), at: null });
+  if (lx.fan === true && !out.some((f) => f.kind === "fan")) out.push({ id: "e-fan", kind: "fan", supply: "we", qty: 1, at: null, volts240: false });
+  if (num(lx.lights, 0) > 0 && !out.some((f) => f.kind === "ceiling-light")) out.push({ id: "e-lights", kind: "ceiling-light", supply: "we", qty: Math.round(clamp(num(lx.lights, 0), 1, 12)), at: null, volts240: false });
   return {
-    fixtures: out,
+    // The cap holds after the legacy fixtures too, so a design at the limit reads back the same every time.
+    fixtures: out.slice(0, ELECTRICAL_LIMITS.fixtures),
     feedFt: Math.round(clamp(num(r.feedFt, d.feedFt), ELECTRICAL_LIMITS.feedFt.min, ELECTRICAL_LIMITS.feedFt.max)),
     panelSide: oneOf(r.panelSide, ["left", "right"] as const, d.panelSide),
     timer: r.timer === true,

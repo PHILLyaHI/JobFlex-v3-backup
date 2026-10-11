@@ -366,10 +366,14 @@ export function deckScene(s: DeckStructure): DeckScene {
   };
   const box = (name: SceneLayer, cx: number, cy: number, cz: number, sx: number, sy: number, sz: number, tag: number, lean = 0, yaw = 0, tilt = 0) => {
     if (boxes.length >= SCENE_MAX_BOXES) return;
+    // A part with no size (a ridge of no length on a square hip, a strip along a degenerate header) would make the
+    // whole scene unreadable — parseDeckScene wants every size above zero — so such a part is simply not drawn.
+    const [ax, ay, az] = [r3(sx), r3(sy), r3(sz)];
+    if (!(ax > 0 && ay > 0 && az > 0) || ![cx, cy, cz].every(Number.isFinite)) return;
     const yw = r4(yaw);
     const tl = r4(tilt);
-    if (yw === 0 && tl === 0) boxes.push([layer(name), r3(cx), r3(cy), r3(cz), r3(sx), r3(sy), r3(sz), lean]);
-    else boxes.push([layer(name), r3(cx), r3(cy), r3(cz), r3(sx), r3(sy), r3(sz), lean, yw, tl]);
+    if (yw === 0 && tl === 0) boxes.push([layer(name), r3(cx), r3(cy), r3(cz), ax, ay, az, lean]);
+    else boxes.push([layer(name), r3(cx), r3(cy), r3(cz), ax, ay, az, lean, yw, tl]);
     tags.push(tag);
   };
   const poly = (name: SceneLayer, ring: number[], tag = -1) => {
