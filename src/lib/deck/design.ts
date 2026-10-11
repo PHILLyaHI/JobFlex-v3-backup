@@ -333,6 +333,8 @@ export interface DeckPhoto {
   placed: { x: number; y: number; w: number } | null;
   /** What the smart fit found on it (lib/deck/photoFit), kept so the studio can say it after a reload; null or absent when placed by hand. */
   fit?: { by: "line" | "door" | "eave" | "none"; pxPerFt: number; wallFt: number | null; suggestedHeightIn: number | null; door: boolean; windows: number; jog: boolean; confidence: number; notes: string[]; offer: JogOffer | null; read: WallRead | null; hand?: boolean } | null;
+  /** The picture straightened from four corners (2026-10-11): the corners used, on the picture before, and that picture with its own placement and read, so it can be undone. */
+  straightened?: { quad: Array<{ x: number; y: number }>; before: { url: string; w: number; h: number; placed: { x: number; y: number; w: number } | null; fit: DeckPhoto["fit"] } } | null;
 }
 
 export interface DeckDesign {
@@ -965,7 +967,8 @@ function offerOf(raw: unknown): JogOffer | null {
   return null;
 }
 
-function normalizePhoto(raw: unknown): DeckPhoto | null {
+/** The picture, its size, its placement and its read — shared by the photo and the one it was straightened from. */
+function photoCore(raw: unknown): Omit<DeckPhoto, "straightened"> | null {
   const r = obj(raw);
   if (typeof r.url !== "string" || !r.url || r.url.length > 2000) return null;
   const w = Math.round(clamp(num(r.w, 0), 0, 20000));
@@ -985,13 +988,24 @@ function normalizePhoto(raw: unknown): DeckPhoto | null {
           windows: Math.round(clamp(num(f.windows, 0), 0, 12)),
           jog: f.jog === true,
           confidence: clamp(num(f.confidence, 0), 0, 1),
-          notes: (Array.isArray(f.notes) ? f.notes : []).filter((n): n is string => typeof n === "string").map((n) => n.slice(0, 240)).slice(0, 7),
+          notes: (Array.isArray(f.notes) ? f.notes : []).filter((n): n is string => typeof n === "string").map((n) => n.slice(0, 240)).slice(0, 8),
           offer: offerOf(f.offer),
           read: parseWallRead(f.read),
           hand: f.hand === true,
         }
       : null;
   return { url: r.url, w, h, placed, fit };
+}
+
+function normalizePhoto(raw: unknown): DeckPhoto | null {
+  const core = photoCore(raw);
+  if (!core) return null;
+  const st = obj(obj(raw).straightened);
+  const quad = (Array.isArray(st.quad) ? st.quad : [])
+    .map((q) => { const o = obj(q); return typeof o.x === "number" && typeof o.y === "number" && Number.isFinite(o.x) && Number.isFinite(o.y) ? { x: clamp(o.x, -0.5, 1.5), y: clamp(o.y, -0.5, 1.5) } : null; })
+    .filter((q): q is { x: number; y: number } => !!q);
+  const before = photoCore(st.before);
+  return { ...core, straightened: quad.length === 4 && before ? { quad, before: { url: before.url, w: before.w, h: before.h, placed: before.placed, fit: before.fit ?? null } } : null };
 }
 
 /** True when the design has a deck frame under it (a bare or covered deck, or a gazebo/pergola standing on a deck). */

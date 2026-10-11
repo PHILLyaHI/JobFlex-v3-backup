@@ -77,6 +77,7 @@ import {
   type RoofPlanShape,
   type StairDesign,
   type Structure,
+  type DeckPhoto,
 } from "@/lib/deck/design";
 import { priceDeck, deckNotes, deckScope, type DeckPackage } from "@/lib/deck/pricing";
 import { roofWords } from "@/lib/deck/roof";
@@ -89,11 +90,11 @@ import { deckElevation, defaultPlacement } from "@/lib/deck/elevation";
 import { BOM_STEP_LABEL, type BomStep } from "@/lib/deck/takeoff";
 import { DECK_RATES, DECK_RATE_GROUP_LABEL, deckRate, sanitizeDeckRateBook, type DeckRateBook, type DeckRateGroup } from "@/lib/deck/rates";
 import { convertDeckEstimateToProposal, deckPhotoHref, deleteDeckDraft, listDeckDrafts, loadDeckDraft, readDeckPhoto, readDeckSite, saveDeckDraft, saveDeckRateBook, uploadDeckPhoto, type DeckDraftRow } from "@/actions/deckEstimator";
-import { addDoor, addJog, addScaleLine, blankRead, fitPhoto, fitSummary, markedRead, removeDoor, removeJog, removeScaleLine, setJog, setScaleLength, shapeWithOffer, type FitDeck, type PhotoFit, type WallRead } from "@/lib/deck/photoFit";
+import { addDoor, addJog, addScaleLine, blankRead, fitPhoto, fitSummary, markedRead, removeDoor, removeJog, removeScaleLine, setJog, setScaleLength, shapeWithOffer, type FitDeck, type PhotoFit, type WallRead, rectifyPlan, transformPlaced, transformRead, wallQuadFromRead, type Placed, type Quad } from "@/lib/deck/photoFit";
 import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
 import type { DeckBackdrop, DeckEdit, DeckPick } from "@/components/estimator/deck/DeckModel3D";
 import { DeckPlan, type PlanEdgeHit } from "./deck-plan";
-import { DeckPhotoView, cropPhoto, shrinkPhoto, trimLetterbox } from "./deck-photo";
+import { DeckPhotoView, cropPhoto, shrinkPhoto, straightenPhoto, trimLetterbox } from "./deck-photo";
 import s from "./deck-studio.module.css";
 
 const DeckModel3D = dynamic(() => import("@/components/estimator/deck/DeckModel3D").then((m) => m.DeckModel3D), {
@@ -682,6 +683,81 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
     const fit = fitPhoto(marked, fitDeck, design.heightIn, p.w, p.h, { recrop: false, fallback: p.placed ?? defaultPlacement(), hand: true });
     patch({ photo: { ...p, placed: fit.placed, fit: fitSummary(fit, marked, true) } });
   };
+  // STRAIGHTEN THE PICTURE (owner, 2026-10-11: an angled shot of the house "still can't work and build the deck with
+  // this pic"): four corners put on the wall, and the picture is warped so the wall stands square — then the read,
+  // the fit and the 3D take it as any square-on photo (lib/deck/photoFit rectifyPlan). The picture before is kept
+  // in the design, so it can be undone.
+  const [straightening, setStraightening] = React.useState(false);
+  const [corners, setCorners] = React.useState<Quad | null>(null);
+  const [wallWidthFt, setWallWidthFt] = React.useState<number | null>(null);
+  const startStraighten = () => {
+    if (!design.photo) return;
+    setCorners(wallQuadFromRead(design.photo.fit?.read ?? null));
+    setMarking(false);
+    setStraightening(true);
+    setView("photo");
+  };
+  const cancelStraighten = () => {
+    setStraightening(false);
+    setCorners(null);
+  };
+  const straightenNow = async () => {
+    const p = design.photo;
+    if (!p || !corners || photoBusy) return;
+    const read = p.fit?.read ?? null;
+    const plan = rectifyPlan(corners, read, p.w, p.h, { wallWidthFt });
+    if (!plan) {
+      setPhotoError("The four corners do not make a wall: the two top corners above the two bottom ones, left of right, each a little apart.");
+      return;
+    }
+    setPhotoBusy(true);
+    setPhotoError(null);
+    setPhotoNote(null);
+    try {
+      setPhotoStage("Straightening the picture…");
+      const href = photoHref ?? (await deckPhotoHref(p.url).catch(() => null));
+      const blob = href ? await fetch(href).then((r) => (r.ok ? r.blob() : null)).catch(() => null) : null;
+      if (!blob) throw new Error("The picture could not be fetched to straighten it — try again.");
+      const warped = await straightenPhoto(new File([blob], "house.jpg", { type: blob.type || "image/jpeg" }), plan.H, { w: plan.w, h: plan.h }, { w: p.w, h: p.h });
+      if (!warped) throw new Error("The picture could not be straightened.");
+      setPhotoStage("Saving the picture…");
+      const form = new FormData();
+      form.set("file", warped.file);
+      form.set("w", String(warped.w));
+      form.set("h", String(warped.h));
+      const res = await uploadDeckPhoto(form);
+      if (!res.ok) {
+        setPhotoError(res.error);
+        return;
+      }
+      const read2 = read ? transformRead(read, plan.H, p.w, p.h, warped.w, warped.h) : null;
+      let placed: Placed = p.placed ? transformPlaced(p.placed, plan.H, p.w, p.h, warped.w, warped.h) : defaultPlacement();
+      let fit: DeckPhoto["fit"] = null;
+      if (read2) {
+        const f = fitPhoto(read2, fitDeck, design.heightIn, warped.w, warped.h, { recrop: false, fallback: placed, hand: p.fit?.hand });
+        placed = f.placed;
+        fit = fitSummary(f, read2, p.fit?.hand ?? false);
+      }
+      setPhotoHref(res.href);
+      patch({ photo: { url: res.url, w: res.w, h: res.h, placed, fit, straightened: { quad: corners, before: { url: p.url, w: p.w, h: p.h, placed: p.placed, fit: p.fit ?? null } } } });
+      setStraightening(false);
+      setCorners(null);
+      setPhotoNote(plan.by === "edges" ? `Straightened from the corners alone (the shot was ${plan.obliquePct}% off square). For the exact width, go back to the original, type the wall's width or draw a measure across it, and straighten again.` : plan.by === "width" ? "Straightened to the width you typed." : "Straightened to the measure you drew.");
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : "The picture could not be straightened.");
+    } finally {
+      setPhotoBusy(false);
+      setPhotoStage(null);
+    }
+  };
+  /** Back to the picture as it was taken, with its own placement and read. */
+  const unstraighten = () => {
+    const st = design.photo?.straightened;
+    if (!st) return;
+    patch({ photo: { ...st.before, straightened: null } });
+    setPhotoHref(null);
+    setPhotoNote(null);
+  };
   const suggestedHeight = design.photo?.fit?.suggestedHeightIn ?? null;
   const heightOffer = suggestedHeight !== null && Math.abs(suggestedHeight - design.heightIn) >= 2 ? suggestedHeight : null;
   const refreshPhoto = async () => {
@@ -896,7 +972,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
                 ) : null}
               </div>
             ) : design.photo ? (
-              <DeckPhotoView photo={design.photo} href={photoHref} elevation={elevation} onPlace={(placed) => patch({ photo: { ...design.photo!, placed } })} onRefresh={refreshPhoto} marking={marking} read={marking ? markRead : null} onRead={applyRead} />
+              <DeckPhotoView photo={design.photo} href={photoHref} elevation={elevation} onPlace={(placed) => patch({ photo: { ...design.photo!, placed } })} onRefresh={refreshPhoto} marking={marking} read={marking ? markRead : (design.photo.fit?.read ?? null)} onRead={applyRead} corners={straightening ? corners : null} onCorners={setCorners} />
             ) : (
               <div className={s.photoEmpty} data-deck-photo="empty">
                 <p>Take a picture of the back of the house from the yard, square on. The {what.toLowerCase()} is drawn over it, and the client sees their own house with it in place.</p>
@@ -961,7 +1037,11 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
               <div className={s.photoRow}>
                 <span className={s.mono}>{design.photo.fit ? "Fitted to the wall — drag to adjust, pull the handle to size · the client sees it placed like this" : "Drag the outline to the wall · pull the handle to size it · the client sees it placed like this"}</span>
                 <button type="button" className={cx(s.btn, s.btnSm, s.btnPrimary)} onClick={refitPhoto} disabled={photoBusy} data-deck-photo-refit>{photoBusy ? (photoStage ?? "Working…") : "Fit to the wall"}</button>
-                <button type="button" className={cx(s.btn, s.btnSm, marking && s.btnOn)} aria-pressed={marking} onClick={() => setMarking((m) => !m)} data-deck-photo-mark>{marking ? "Marking the wall" : "Mark the wall"}</button>
+                <button type="button" className={cx(s.btn, s.btnSm, marking && s.btnOn)} aria-pressed={marking} onClick={() => { setStraightening(false); setCorners(null); setMarking((m) => !m); }} data-deck-photo-mark>{marking ? "Marking the wall" : "Mark the wall"}</button>
+                <button type="button" className={cx(s.btn, s.btnSm, straightening && s.btnOn)} aria-pressed={straightening} onClick={() => (straightening ? cancelStraighten() : startStraighten())} disabled={photoBusy} data-deck-photo-straighten>{straightening ? "Straightening" : "Straighten the picture"}</button>
+                {design.photo.straightened ? (
+                  <button type="button" className={cx(s.btn, s.btnSm)} onClick={unstraighten} disabled={photoBusy} data-deck-photo-unstraighten>Original picture</button>
+                ) : null}
                 {design.photo.fit?.read ? <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => void readPhotoAgain()} disabled={photoBusy} data-deck-photo-reread>Read the picture again</button> : null}
                 {design.photo.fit?.offer ? (
                   <button type="button" className={cx(s.btn, s.btnSm)} onClick={applyOffer} data-deck-photo-offer>
@@ -975,6 +1055,18 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
                 <button type="button" className={cx(s.btn, s.btnSm)} onClick={pickPhoto} disabled={photoBusy}>Another photo</button>
                 <button type="button" className={cx(s.btn, s.btnSm)} onClick={removePhoto}>Remove</button>
               </div>
+              {straightening ? (
+                <div className={s.photoTools} data-deck-photo-straighten-tools>
+                  <span className={s.mono}>Drag the four white corners onto the wall — where it meets the ground at the left and the right, and the top of the wall above each. The picture is then warped so the wall stands square: an angled shot becomes a true elevation.</span>
+                  <label className={s.markField}>
+                    <span className={s.mono}>The wall between the corners is</span>
+                    <NumberInput label="Width of the wall between the corners, feet" value={wallWidthFt ?? 0} parse={parseFeet} format={(n2) => (n2 > 0 ? feetText(n2) : "")} min={0} max={200} onCommit={(n2) => setWallWidthFt(n2 > 0 ? n2 : null)} />
+                    <span className={s.mono}>ft wide — optional, it sets the exact width</span>
+                  </label>
+                  <button type="button" className={cx(s.btn, s.btnSm, s.btnPrimary)} onClick={() => void straightenNow()} disabled={photoBusy} data-deck-photo-straighten-go>{photoBusy ? (photoStage ?? "Working…") : "Straighten it"}</button>
+                  <button type="button" className={cx(s.btn, s.btnSm)} onClick={cancelStraighten} disabled={photoBusy}>Cancel</button>
+                </div>
+              ) : null}
               {marking ? (
                 <div className={s.photoTools} data-deck-photo-tools>
                   <span className={s.mono}>Drag the yellow ends to where the wall meets the ground · the door&apos;s bottom to its threshold, its top to the frame · a step where the wall jogs · a measure along anything you know the size of</span>
@@ -1043,7 +1135,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
                   A plain site<span>the drawn house</span>
                 </button>
                 <button type="button" className={cx(s.chip, !!design.photo && s.chipOn)} aria-pressed={!!design.photo} onClick={() => (design.photo ? setView("photo") : pickPhoto())} disabled={photoBusy} data-deck-site="photo">
-                  {design.photo ? "The photo of the house" : "A photo of the house"}<span>{design.photo ? (design.photo.fit?.hand ? "marked by hand" : design.photo.fit ? "fitted to the wall" : "placed by hand") : photoBusy ? (photoStage ?? "working…") : "upload one — the wall is read off it"}</span>
+                  {design.photo ? "The photo of the house" : "A photo of the house"}<span>{design.photo ? `${design.photo.straightened ? "straightened · " : ""}${design.photo.fit?.hand ? "marked by hand" : design.photo.fit ? "fitted to the wall" : "placed by hand"}` : photoBusy ? (photoStage ?? "working…") : "upload one — the wall is read off it"}</span>
                 </button>
               </div>
               <p className={s.hint}>With a photo the wall, the door and its steps are read off the picture — or marked by hand — and the {what.toLowerCase()} is set against the real wall, in the 3D too. A gazebo that stands on its own keeps the house behind it.</p>

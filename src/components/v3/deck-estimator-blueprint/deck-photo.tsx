@@ -14,7 +14,7 @@
 import * as React from "react";
 import type { DeckPhoto } from "@/lib/deck/design";
 import { defaultPlacement, elevationOverlay, type Elevation } from "@/lib/deck/elevation";
-import { letterboxRows, moveMark, type Crop, type MarkId, type WallRead } from "@/lib/deck/photoFit";
+import { applyHomography, invertHomography, letterboxRows, moveMark, type Crop, type MarkId, type Pt, type Quad, type WallRead } from "@/lib/deck/photoFit";
 import s from "./deck-studio.module.css";
 
 type Placed = NonNullable<DeckPhoto["placed"]>;
@@ -31,14 +31,18 @@ const inchesWords = (n: number) => (n < 24 ? `${n} in.` : n % 12 === 0 ? `${n / 
  * picture's shape. A handle's drag edits the read (lib/deck/photoFit
  * moveMark) and hands it back on release.
  */
-export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh, marking = false, read = null, onRead }: { photo: DeckPhoto; href: string | null; elevation: Elevation; onPlace: (placed: Placed) => void; onRefresh: () => void; marking?: boolean; read?: WallRead | null; onRead?: (read: WallRead) => void }) {
+export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh, marking = false, read = null, onRead, corners = null, onCorners }: { photo: DeckPhoto; href: string | null; elevation: Elevation; onPlace: (placed: Placed) => void; onRefresh: () => void; marking?: boolean; read?: WallRead | null; onRead?: (read: WallRead) => void; /** Straightening: the four corners of the wall to drag (top-left, top-right, bottom-right, bottom-left). */ corners?: Quad | null; onCorners?: (quad: Quad) => void }) {
   const placed = photo.placed ?? defaultPlacement();
   const [draft, setDraft] = React.useState<Placed | null>(null);
   const [readDraft, setReadDraft] = React.useState<WallRead | null>(null);
   const live = draft ?? placed;
   const marks = marking ? (readDraft ?? read) : null;
+  /** The read's lines shown faintly whenever there is one and nothing is being marked, so what was read is seen before it is trusted. */
+  const shown = !marking && read ? read : null;
+  const [cornerDraft, setCornerDraft] = React.useState<Quad | null>(null);
+  const quad = corners ? (cornerDraft ?? corners) : null;
   const svgRef = React.useRef<SVGSVGElement>(null);
-  const drag = React.useRef<{ mode: "move" | "scale" | "mark"; mark: MarkId | null; startX: number; startY: number; from: Placed; fromRead: WallRead | null; left: number; top: number; w: number; h: number } | null>(null);
+  const drag = React.useRef<{ mode: "move" | "scale" | "mark" | "corner"; mark: MarkId | null; corner: number; startX: number; startY: number; from: Placed; fromRead: WallRead | null; fromQuad: Quad | null; left: number; top: number; w: number; h: number } | null>(null);
   const polys = React.useMemo(() => elevationOverlay(elevation, live, photo.w, photo.h), [elevation, live, photo.w, photo.h]);
   const groundY = live.y * 1000;
   const groundX0 = live.x * 1000;
@@ -52,8 +56,12 @@ export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh, mark
     const el = e.target instanceof Element ? e.target : null;
     const mark = (el?.closest("[data-mark]")?.getAttribute("data-mark") ?? null) as MarkId | null;
     const onHandle = !!el?.hasAttribute("data-deck-photo-handle");
+    const cornerAttr = el?.closest("[data-corner]")?.getAttribute("data-corner") ?? null;
+    const corner = cornerAttr === null ? -1 : Number(cornerAttr);
+    // While the corners are out, only they move: a press anywhere else is nothing.
+    if (quad && corner < 0) return;
     const box = svg.getBoundingClientRect();
-    drag.current = { mode: mark && marks ? "mark" : onHandle ? "scale" : "move", mark, startX: e.clientX, startY: e.clientY, from: live, fromRead: marks, left: box.left, top: box.top, w: box.width || 1, h: box.height || 1 };
+    drag.current = { mode: quad && corner >= 0 ? "corner" : mark && marks ? "mark" : onHandle ? "scale" : "move", mark, corner, startX: e.clientX, startY: e.clientY, from: live, fromRead: marks, fromQuad: quad, left: box.left, top: box.top, w: box.width || 1, h: box.height || 1 };
     try {
       svg.setPointerCapture(e.pointerId);
     } catch {
@@ -64,6 +72,14 @@ export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh, mark
   const move = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
+    if (d.mode === "corner") {
+      if (d.fromQuad) {
+        const x = Math.min(1.2, Math.max(-0.2, (e.clientX - d.left) / d.w));
+        const y = Math.min(1.2, Math.max(-0.2, (e.clientY - d.top) / d.h));
+        setCornerDraft(d.fromQuad.map((q, i) => (i === d.corner ? { x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000 } : q)) as Quad);
+      }
+      return;
+    }
     if (d.mode === "mark") {
       if (d.mark && d.fromRead) setReadDraft(moveMark(d.fromRead, d.mark, { x: (e.clientX - d.left) / d.w, y: (e.clientY - d.top) / d.h }));
       return;
@@ -77,6 +93,11 @@ export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh, mark
     const d = drag.current;
     if (!d) return;
     drag.current = null;
+    if (d.mode === "corner") {
+      if (cornerDraft && onCorners) onCorners(cornerDraft);
+      setCornerDraft(null);
+      return;
+    }
     if (d.mode === "mark") {
       if (readDraft && onRead) onRead(readDraft);
       setReadDraft(null);
@@ -94,6 +115,18 @@ export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh, mark
     <button key={id} type="button" className={s.markHandle} data-mark={id} style={{ left: pct(x), top: pct(y) }} aria-label={label} onPointerDown={begin} />
   );
   const doorCx = marks?.door ? (marks.door.x0 + marks.door.x1) / 2 : 0;
+  const linesOf = (r: WallRead) => (
+    <>
+      <line className={s.markBase} x1={r.base.left.x * 1000} y1={r.base.left.y * 1000} x2={r.base.right.x * 1000} y2={r.base.right.y * 1000} />
+      {r.eave ? <line className={s.markBase} x1={r.eave.left.x * 1000} y1={r.eave.left.y * 1000} x2={r.eave.right.x * 1000} y2={r.eave.right.y * 1000} /> : null}
+      {r.door ? <rect className={s.markDoor} x={r.door.x0 * 1000} y={r.door.top * 1000} width={(r.door.x1 - r.door.x0) * 1000} height={(r.door.bottom - r.door.top) * 1000} /> : null}
+      {r.scaleLine ? <line className={s.markScale} x1={r.scaleLine.a.x * 1000} y1={r.scaleLine.a.y * 1000} x2={r.scaleLine.b.x * 1000} y2={r.scaleLine.b.y * 1000} /> : null}
+      {r.jogs.map((j, i) => (
+        <line key={i} className={s.markJog} x1={j.x * 1000} y1={j.y * 1000 - 120} x2={j.x * 1000} y2={j.y * 1000 + 40} />
+      ))}
+    </>
+  );
+  const CORNER_LABEL = ["The top of the wall, left", "The top of the wall, right", "Where the wall meets the ground, right", "Where the wall meets the ground, left"];
 
   return (
     <div className={s.photoWrap} data-deck-photo="placed" data-deck-marking={marking || undefined}>
@@ -118,15 +151,21 @@ export function DeckPhotoView({ photo, href, elevation, onPlace, onRefresh, mark
           <circle className={s.photoHandle} cx={Math.min(986, Math.max(14, groundX1))} cy={Math.min(986, Math.max(14, groundY))} r={14} data-deck-photo-handle />
           {marks ? (
             <g className={s.marks} aria-hidden="true">
-              <line className={s.markBase} x1={marks.base.left.x * 1000} y1={marks.base.left.y * 1000} x2={marks.base.right.x * 1000} y2={marks.base.right.y * 1000} />
-              {marks.door ? <rect className={s.markDoor} x={marks.door.x0 * 1000} y={marks.door.top * 1000} width={(marks.door.x1 - marks.door.x0) * 1000} height={(marks.door.bottom - marks.door.top) * 1000} /> : null}
-              {marks.scaleLine ? <line className={s.markScale} x1={marks.scaleLine.a.x * 1000} y1={marks.scaleLine.a.y * 1000} x2={marks.scaleLine.b.x * 1000} y2={marks.scaleLine.b.y * 1000} /> : null}
-              {marks.jogs.map((j, i) => (
-                <line key={i} className={s.markJog} x1={j.x * 1000} y1={j.y * 1000 - 120} x2={j.x * 1000} y2={j.y * 1000 + 40} />
-              ))}
+              {linesOf(marks)}
+            </g>
+          ) : shown ? (
+            <g className={`${s.marks} ${s.marksFaint}`} aria-hidden="true" data-deck-read-lines>
+              {linesOf(shown)}
             </g>
           ) : null}
+          {quad ? <polygon className={s.cornerQuad} points={quad.map((q) => `${q.x * 1000},${q.y * 1000}`).join(" ")} data-deck-corner-quad /> : null}
         </svg>
+        {quad
+          ? quad.map((q, i) => (
+              <button key={i} type="button" className={s.markHandle} data-corner={i} style={{ left: pct(q.x), top: pct(q.y) }} aria-label={CORNER_LABEL[i]} onPointerDown={begin} />
+            ))
+          : null}
+        {quad ? <span className={s.markTag} style={{ left: pct((quad[2].x + quad[3].x) / 2), top: pct(Math.max(quad[2].y, quad[3].y)) }}>the wall meets the ground</span> : null}
         {marks ? (
           <>
             {handle("base-left", marks.base.left.x, marks.base.left.y, "The wall's base, left end")}
@@ -211,6 +250,93 @@ export async function trimLetterbox(file: File, w: number, h: number): Promise<{
     g.drawImage(img, 0, top, w, h2, 0, 0, w, h2);
     const out = await canvasFile(canvas, file.name);
     return out ? { file: out, w, h: h2, cut: { top, bottom } } : none;
+  } finally {
+    release();
+  }
+}
+
+/**
+ * THE PICTURE STRAIGHTENED (2026-10-11): warped so four corners of the wall
+ * become the corners of an `out.w × out.h` picture — `H` takes the saved
+ * picture's pixels (`from`) to the output's (lib/deck/photoFit rectifyPlan).
+ * Drawn as a mesh of small triangles, each an affine piece of the warp, so
+ * it runs on the 2D canvas every phone has; each clip reaches a hair past
+ * its triangle so no seam shows. What lies outside the picture is a plain
+ * grey. Null when the canvas or the warp is not to be had.
+ */
+export async function straightenPhoto(file: File, H: readonly number[], out: { w: number; h: number }, from: { w: number; h: number }): Promise<{ file: File; w: number; h: number } | null> {
+  const Hinv = invertHomography(H);
+  if (!Hinv || !(out.w > 0 && out.h > 0)) return null;
+  const { img, release } = await loadImage(file);
+  try {
+    const kx = img.naturalWidth / (from.w || img.naturalWidth);
+    const ky = img.naturalHeight / (from.h || img.naturalHeight);
+    const canvas = document.createElement("canvas");
+    canvas.width = out.w;
+    canvas.height = out.h;
+    const g = canvas.getContext("2d");
+    if (!g) return null;
+    g.fillStyle = "#8d969e";
+    g.fillRect(0, 0, out.w, out.h);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "high";
+    const cell = 32;
+    const nx = Math.max(1, Math.ceil(out.w / cell));
+    const ny = Math.max(1, Math.ceil(out.h / cell));
+    const src = (x: number, y: number): Pt => {
+      const q = applyHomography(Hinv, { x, y });
+      return { x: q.x * kx, y: q.y * ky };
+    };
+    const tri = (s0: Pt, s1: Pt, s2: Pt, d0: Pt, d1: Pt, d2: Pt) => {
+      const den = (s1.x - s0.x) * (s2.y - s0.y) - (s2.x - s0.x) * (s1.y - s0.y);
+      if (!Number.isFinite(den) || Math.abs(den) < 1e-9) return;
+      const a = ((d1.x - d0.x) * (s2.y - s0.y) - (d2.x - d0.x) * (s1.y - s0.y)) / den;
+      const b = ((d1.y - d0.y) * (s2.y - s0.y) - (d2.y - d0.y) * (s1.y - s0.y)) / den;
+      const c = ((d2.x - d0.x) * (s1.x - s0.x) - (d1.x - d0.x) * (s2.x - s0.x)) / den;
+      const d = ((d2.y - d0.y) * (s1.x - s0.x) - (d1.y - d0.y) * (s2.x - s0.x)) / den;
+      const e = d0.x - a * s0.x - c * s0.y;
+      const f = d0.y - b * s0.x - d * s0.y;
+      if (![a, b, c, d, e, f].every(Number.isFinite)) return;
+      const cx = (d0.x + d1.x + d2.x) / 3;
+      const cy = (d0.y + d1.y + d2.y) / 3;
+      const grow = (q: Pt): Pt => {
+        const dx = q.x - cx;
+        const dy = q.y - cy;
+        const L = Math.hypot(dx, dy) || 1;
+        return { x: q.x + (dx / L) * 0.7, y: q.y + (dy / L) * 0.7 };
+      };
+      const [g0, g1, g2] = [grow(d0), grow(d1), grow(d2)];
+      g.save();
+      g.beginPath();
+      g.moveTo(g0.x, g0.y);
+      g.lineTo(g1.x, g1.y);
+      g.lineTo(g2.x, g2.y);
+      g.closePath();
+      g.clip();
+      g.transform(a, b, c, d, e, f);
+      g.drawImage(img, 0, 0);
+      g.restore();
+    };
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const x0 = i * cell;
+        const y0 = j * cell;
+        const x1 = Math.min(out.w, x0 + cell);
+        const y1 = Math.min(out.h, y0 + cell);
+        const d00 = { x: x0, y: y0 };
+        const d10 = { x: x1, y: y0 };
+        const d11 = { x: x1, y: y1 };
+        const d01 = { x: x0, y: y1 };
+        const s00 = src(x0, y0);
+        const s10 = src(x1, y0);
+        const s11 = src(x1, y1);
+        const s01 = src(x0, y1);
+        tri(s00, s10, s11, d00, d10, d11);
+        tri(s00, s11, s01, d00, d11, d01);
+      }
+    }
+    const outFile = await canvasFile(canvas, file.name);
+    return outFile ? { file: outFile, w: out.w, h: out.h } : null;
   } finally {
     release();
   }
