@@ -129,16 +129,17 @@ export async function trimLetterbox(file: File, w: number, h: number): Promise<{
     if (!pg) return none;
     pg.drawImage(img, 0, 0, 48, rows);
     const data = pg.getImageData(0, 0, 48, rows).data;
-    const mean = new Array<number>(rows);
+    // Each row's MEDIAN brightness: a status bar's white glyphs on black must still read as the black band they sit in.
+    const bright = new Array<number>(rows);
+    const lumas = new Array<number>(48);
     for (let r = 0; r < rows; r++) {
-      let sum = 0;
       for (let c = 0; c < 48; c++) {
         const i = (r * 48 + c) * 4;
-        sum += (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
+        lumas[c] = (data[i] * 299 + data[i + 1] * 587 + data[i + 2] * 114) / 1000;
       }
-      mean[r] = sum / 48;
+      bright[r] = [...lumas].sort((a, b) => a - b)[24];
     }
-    const cut = letterboxRows(mean);
+    const cut = letterboxRows(bright);
     if (!cut.top && !cut.bottom) return none;
     const top = Math.round((cut.top / rows) * h);
     const bottom = Math.round((cut.bottom / rows) * h);

@@ -77,7 +77,37 @@ export interface DeckModel3DProps {
   edit?: boolean;
   /** A handle moved: the design number it stands for, and its new value. */
   onEdit?: (edit: DeckEdit) => void;
+  /** The house's own wall from the contractor's photo, standing where the house is (null: the drawn house). */
+  backdrop?: DeckBackdrop | null;
 }
+
+/**
+ * THE PHOTO AS THE WALL (2026-10-10). Owner: "make that picture turnable like
+ * a 3D — on the 3D page, when the picture is adapted, let me work with this
+ * wall when I'm building the deck." The photo the studio placed the
+ * elevation on stands in the scene as the house: the same scale and ground
+ * line the placement used (lib/deck/elevation elevationOverlay), so the deck
+ * meets the wall exactly where the photo view shows it. Where the wall
+ * steps (the read's jogs), the picture is cut at the step and each part
+ * stands at its own depth, with a plain return wall between them.
+ */
+export interface DeckBackdrop {
+  /** The picture's read link. */
+  href: string;
+  /** Its pixels. */
+  w: number;
+  h: number;
+  /** Where the deck's elevation was placed on it: the ground line's left end and its width, as fractions of the picture. */
+  placed: { x: number; y: number; w: number };
+  /** The elevation that placement was made for: its width, and where the deck's x = 0 lands in it, ft. */
+  elevWidthFt: number;
+  elevLeftFt: number;
+  /** Where the wall steps, as fractions of the picture's width; "toward" brings the part to the right nearer by `depthFt`. */
+  jogs: Array<{ x: number; dir: "toward" | "away"; depthFt: number | null }>;
+}
+/** A step in the wall the read could not size. */
+const JOG_DEFAULT_FT = 2;
+const RETURN_WALL = 0xb9b3a8;
 
 const LAYER_COUNT = SCENE_LAYERS.length;
 const layerIndex = (name: SceneLayer) => SCENE_LAYERS.indexOf(name);
@@ -313,10 +343,11 @@ interface Built {
   dispose: () => void;
 }
 
-export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = false, night = false, connections = false, placing = false, className, label, resetToken = 0, onPick, focus = null, edit = false, onEdit }: DeckModel3DProps) {
+export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = false, night = false, connections = false, placing = false, className, label, resetToken = 0, onPick, focus = null, edit = false, onEdit, backdrop = null }: DeckModel3DProps) {
   const mountRef = React.useRef<HTMLDivElement>(null);
   const [supported] = React.useState(webglSupported);
   const sceneRef = React.useRef(scene);
+  const backdropRef = React.useRef(backdrop);
   const builtRef = React.useRef(built);
   const xrayRef = React.useRef(xray);
   const nightRef = React.useRef(night);
@@ -335,6 +366,13 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
   React.useEffect(() => {
     if (resetToken) api.current?.reset();
   }, [resetToken]);
+  // Rebuilt when the picture, its placement or a step changes — by value, so a parent's fresh object alone does not.
+  const backdropKey = backdrop ? JSON.stringify(backdrop) : "";
+  React.useEffect(() => {
+    backdropRef.current = backdrop;
+    api.current?.rebuild();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is the backdrop's value
+  }, [backdropKey]);
   React.useEffect(() => {
     if (focus) api.current?.flyTo(focus, 4);
   }, [focus]);
@@ -458,6 +496,40 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
     let focusedKnob: string | null = null;
     let span = 20;
     let fitted: { w: number; d: number; h: number } | null = null;
+
+    // The photo of the house as a texture, loaded once per link; a failed load leaves the wall plain.
+    const textures = new Map<string, THREE.Texture>();
+    const photoMats: THREE.MeshBasicMaterial[] = [];
+    const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin("anonymous");
+    const photoTexture = (href: string): THREE.Texture => {
+      const hit = textures.get(href);
+      if (hit) return hit;
+      mount.dataset.deck3dBackdrop = "loading";
+      const tex = loader.load(
+        href,
+        () => {
+          mount.dataset.deck3dBackdrop = "loaded";
+          dirty = true;
+        },
+        undefined,
+        () => {
+          mount.dataset.deck3dBackdrop = "failed";
+          for (const m of photoMats) {
+            if (m.map === tex) {
+              m.map = null;
+              m.color.set(SIDING);
+              m.needsUpdate = true;
+            }
+          }
+          dirty = true;
+        },
+      );
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+      textures.set(href, tex);
+      return tex;
+    };
 
     /** The camera's first view for this deck, or the same angle refitted to a new size. */
     const frame = (reset: boolean) => {
@@ -828,8 +900,10 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         polys[L] = { mesh, ends, polyIdx: mine };
       }
 
-      // The house: wall, foundation band, a roof slab, a door onto the deck and a window each side.
-      if (s.house) {
+      // The house: wall, foundation band, a roof slab, a door onto the deck and a window each side — unless the photo stands for it.
+      const bd = backdropRef.current;
+      if (!bd) mount.dataset.deck3dBackdrop = "none";
+      if (s.house && !bd) {
         const wallMat = new THREE.MeshStandardMaterial({ color: SIDING, roughness: 0.95, map: siding });
         const baseMat = new THREE.MeshStandardMaterial({ color: FOUNDATION, roughness: 1, map: concrete });
         const roofMat = new THREE.MeshStandardMaterial({ color: ROOF, roughness: 0.9 });
@@ -998,6 +1072,57 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
         knobs.push(knob);
         if (focusedKnob === key && editRef.current) queueMicrotask(() => knob.focus({ preventScroll: true }));
       });
+
+      // THE PHOTO AS THE WALL: the picture the elevation was placed on, standing on the house line at the placement's scale.
+      if (bd && bd.placed.w > 0 && bd.elevWidthFt > 0 && bd.w > 0 && bd.h > 0) {
+        const pxPerFt = (bd.placed.w * bd.w) / bd.elevWidthFt;
+        const wFt = bd.w / pxPerFt;
+        const hFt = bd.h / pxPerFt;
+        const leftX = -bd.placed.x * wFt - bd.elevLeftFt;
+        const zTop = bd.placed.y * hFt;
+        const zBottom = Math.max(0, (bd.placed.y - 1) * hFt);
+        const v0 = 1 - Math.min(1, Math.max(0, bd.placed.y));
+        if (zTop - zBottom > 0.2 && wFt > 0.5) {
+          const tex = photoTexture(bd.href);
+          const photoMat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, toneMapped: false });
+          const returnMat = new THREE.MeshStandardMaterial({ color: RETURN_WALL, roughness: 0.95, side: THREE.DoubleSide });
+          owned.push(photoMat, returnMat);
+          photoMats.push(photoMat);
+          // The wall's parts between its steps, each at its depth; the part under the deck's middle stands on the house line.
+          const jogs = [...bd.jogs].filter((j) => j.x > 0.005 && j.x < 0.995).sort((a, b) => a.x - b.x);
+          const xs = [0, ...jogs.map((j) => j.x), 1];
+          const depths: number[] = [0];
+          for (const j of jogs) depths.push(depths[depths.length - 1] + (j.dir === "toward" ? 1 : -1) * (j.depthFt ?? JOG_DEFAULT_FT));
+          const centreFrac = (s.widthFt / 2 - leftX) / wFt;
+          let mine = 0;
+          for (let i = 0; i + 1 < xs.length; i++) if (centreFrac >= xs[i] && centreFrac <= xs[i + 1]) mine = i;
+          const shift = depths[mine];
+          const height = zTop - zBottom;
+          const yMid = (zTop + zBottom) / 2;
+          for (let i = 0; i + 1 < xs.length; i++) {
+            const u0 = xs[i];
+            const u1 = xs[i + 1];
+            if (u1 - u0 < 0.002) continue;
+            const geo = new THREE.PlaneGeometry((u1 - u0) * wFt, height);
+            geo.setAttribute("uv", new THREE.Float32BufferAttribute([u0, 1, u1, 1, u0, v0, u1, v0], 2));
+            owned.push(geo);
+            const plane = new THREE.Mesh(geo, photoMat);
+            plane.position.set(leftX + ((u0 + u1) / 2) * wFt - ox, yMid, depths[i] - shift - oz - 0.05);
+            group.add(plane);
+          }
+          // The return walls at each step.
+          for (let i = 1; i + 1 < xs.length; i++) {
+            const run = depths[i] - depths[i - 1];
+            if (Math.abs(run) < 0.05) continue;
+            const geo = new THREE.PlaneGeometry(Math.abs(run), height);
+            owned.push(geo);
+            const wall = new THREE.Mesh(geo, returnMat);
+            wall.rotation.y = Math.PI / 2;
+            wall.position.set(leftX + xs[i] * wFt - ox, yMid, (depths[i] + depths[i - 1]) / 2 - shift - oz - 0.05);
+            group.add(wall);
+          }
+        }
+      }
 
       // The overall dimensions, drawn on the ground a little outside the deck, and the height at the corner.
       const lineMat = new THREE.LineBasicMaterial({ color: INK });
@@ -1431,6 +1556,7 @@ export function DeckModel3D({ scene, built = Number.POSITIVE_INFINITY, xray = fa
       unitBox.dispose();
       unitCyl.dispose();
       siding.dispose();
+      for (const t of textures.values()) t.dispose();
       grain.dispose();
       shingles.dispose();
       ribs.dispose();

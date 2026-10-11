@@ -89,9 +89,9 @@ import { deckElevation, defaultPlacement } from "@/lib/deck/elevation";
 import { BOM_STEP_LABEL, type BomStep } from "@/lib/deck/takeoff";
 import { DECK_RATES, DECK_RATE_GROUP_LABEL, deckRate, sanitizeDeckRateBook, type DeckRateBook, type DeckRateGroup } from "@/lib/deck/rates";
 import { convertDeckEstimateToProposal, deckPhotoHref, deleteDeckDraft, listDeckDrafts, loadDeckDraft, readDeckPhoto, readDeckSite, saveDeckDraft, saveDeckRateBook, uploadDeckPhoto, type DeckDraftRow } from "@/actions/deckEstimator";
-import { fitPhoto, fitSummary, type FitDeck, type PhotoFit } from "@/lib/deck/photoFit";
+import { fitPhoto, fitSummary, shapeWithOffer, type FitDeck, type PhotoFit, type WallRead } from "@/lib/deck/photoFit";
 import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
-import type { DeckEdit, DeckPick } from "@/components/estimator/deck/DeckModel3D";
+import type { DeckBackdrop, DeckEdit, DeckPick } from "@/components/estimator/deck/DeckModel3D";
 import { DeckPlan, type PlanEdgeHit } from "./deck-plan";
 import { DeckPhotoView, cropPhoto, shrinkPhoto, trimLetterbox } from "./deck-photo";
 import s from "./deck-studio.module.css";
@@ -553,7 +553,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
   const [photoNote, setPhotoNote] = React.useState<string | null>(null);
   /** The last picture chosen, so "Fit to the wall" can read it again at full size. */
   const lastFile = React.useRef<File | null>(null);
-  const fitDeck = React.useMemo<FitDeck>(() => ({ shape: design.shape, elevWidthFt: elevation.widthFt, elevHeightFt: elevation.heightFt, elevLeftFt: elevation.leftFt }), [design.shape, elevation]);
+  const fitDeck = React.useMemo<FitDeck>(() => ({ shape: design.shape, depthFt: design.shape.depthFt, elevWidthFt: elevation.widthFt, elevHeightFt: elevation.heightFt, elevLeftFt: elevation.leftFt }), [design.shape, elevation]);
   // THE SMART FIT (owner, 2026-10-10): the picture is shrunk, its black bands
   // cut, read once by the vision model (actions readDeckPhoto), cropped to
   // the wall and placed by the read (lib/deck/photoFit) — then saved. A read
@@ -574,7 +574,9 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
       let toUpload: { file: File; w: number; h: number } = clean;
       let placed = defaultPlacement();
       let fit: PhotoFit | null = null;
+      let wallRead: WallRead | null = null;
       if (read.ok) {
+        wallRead = read.read;
         fit = fitPhoto(read.read, fitDeck, design.heightIn, clean.w, clean.h);
         toUpload = await cropPhoto(clean.file, fit.crop, clean.w, clean.h);
         placed = fit.placed;
@@ -590,7 +592,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
         return;
       }
       setPhotoHref(res.href);
-      patch({ photo: { url: res.url, w: res.w, h: res.h, placed, fit: fit ? fitSummary(fit) : null } });
+      patch({ photo: { url: res.url, w: res.w, h: res.h, placed, fit: fit && wallRead ? fitSummary(fit, wallRead) : null } });
       setView("photo");
     } catch (err) {
       setPhotoError(err instanceof Error ? err.message : "The picture could not be read.");
@@ -603,8 +605,8 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
   const onPhotoFile = (file: File | null) => {
     if (file) void placePhoto(file);
   };
-  /** The fit again — on the picture as chosen when it is still here, else on the saved one. */
-  const refitPhoto = async () => {
+  /** The model's read again — on the picture as chosen when it is still here, else on the saved one. */
+  const readPhotoAgain = async () => {
     if (!design.photo || photoBusy) return;
     let file = lastFile.current;
     if (!file) {
@@ -620,6 +622,53 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
     }
     await placePhoto(file);
   };
+  /** The fit again, from the read the picture carries — no second look by the model. */
+  const refitPhoto = () => {
+    const p = design.photo;
+    if (!p || photoBusy) return;
+    const read = p.fit?.read;
+    if (!read) {
+      void readPhotoAgain();
+      return;
+    }
+    const fit = fitPhoto(read, fitDeck, design.heightIn, p.w, p.h, { recrop: false });
+    patch({ photo: { ...p, placed: fit.placed, fit: fitSummary(fit, read) } });
+  };
+  /** The house's step taken into the deck's shape — then the deck is set on it again once the new shape's elevation is in. */
+  const refitAfter = React.useRef(false);
+  const applyOffer = () => {
+    const offer = design.photo?.fit?.offer;
+    if (!offer) return;
+    refitAfter.current = true;
+    patch({ shape: shapeWithOffer(design.shape, offer) });
+  };
+  React.useEffect(() => {
+    if (!refitAfter.current) return;
+    refitAfter.current = false;
+    queueMicrotask(refitPhoto);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once for the shape the offer set
+  }, [fitDeck]);
+  // A design that already holds a photo (a reopened estimate) needs its read link.
+  React.useEffect(() => {
+    const url = design.photo?.url;
+    if (!url || photoHref) return;
+    let gone = false;
+    deckPhotoHref(url)
+      .then((href) => {
+        if (!gone && href) setPhotoHref(href);
+      })
+      .catch(() => null);
+    return () => {
+      gone = true;
+    };
+  }, [design.photo?.url, photoHref]);
+  // THE PHOTO AS THE WALL in the 3D (owner, 2026-10-10): the same picture, placement and scale the photo view uses.
+  const [showHouse, setShowHouse] = React.useState(true);
+  const backdrop = React.useMemo<DeckBackdrop | null>(() => {
+    const p = design.photo;
+    if (!showHouse || !p?.placed || !photoHref) return null;
+    return { href: photoHref, w: p.w, h: p.h, placed: p.placed, elevWidthFt: elevation.widthFt, elevLeftFt: elevation.leftFt, jogs: (p.fit?.read?.jogs ?? []).map((j) => ({ x: j.x, dir: j.dir, depthFt: j.depthFt })) };
+  }, [design.photo, photoHref, elevation.widthFt, elevation.leftFt, showHouse]);
   const suggestedHeight = design.photo?.fit?.suggestedHeightIn ?? null;
   const heightOffer = suggestedHeight !== null && Math.abs(suggestedHeight - design.heightIn) >= 2 ? suggestedHeight : null;
   const refreshPhoto = async () => {
@@ -802,7 +851,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
           <div className={s.viewBox}>
             {view === "3d" ? (
               <>
-                <DeckModel3D scene={scene} built={built} xray={xray} night={night} connections={connections} placing={placing?.kind === "fixture"} edit={editing} onEdit={onEdit} resetToken={resetToken} focus={focus} onPick={onPick} className={s.canvas} label={`The ${what.toLowerCase()} in 3D: ${scene.facts}`} />
+                <DeckModel3D scene={scene} built={built} xray={xray} backdrop={backdrop} night={night} connections={connections} placing={placing?.kind === "fixture"} edit={editing} onEdit={onEdit} resetToken={resetToken} focus={focus} onPick={onPick} className={s.canvas} label={`The ${what.toLowerCase()} in 3D: ${scene.facts}`} />
                 {editing && !placing ? (
                   <div className={s.placeBanner} data-deck-editing>
                     <span>Drag the blue knobs: the deck&apos;s width, depth and height, the roof&apos;s height, the lower level, each stair along its edge. Everything re-frames and re-prices as you drag.</span>
@@ -857,6 +906,11 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
                 <button type="button" className={cx(s.btn, s.btnSm, xray && s.btnOn)} aria-pressed={xray} onClick={() => setXray((x) => !x)}>
                   X-ray
                 </button>
+                {design.photo?.placed ? (
+                  <button type="button" className={cx(s.btn, s.btnSm, showHouse && s.btnOn)} aria-pressed={showHouse} onClick={() => setShowHouse((v) => !v)} data-deck-house-toggle>
+                    House photo
+                  </button>
+                ) : null}
                 <button type="button" className={cx(s.btn, s.btnSm, connections && s.btnOn)} aria-pressed={connections} onClick={() => setConnections((c) => !c)} data-deck-connections>
                   Connections
                 </button>
@@ -892,7 +946,13 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
             <>
               <div className={s.photoRow}>
                 <span className={s.mono}>{design.photo.fit ? "Fitted to the wall — drag to adjust, pull the handle to size · the client sees it placed like this" : "Drag the outline to the wall · pull the handle to size it · the client sees it placed like this"}</span>
-                <button type="button" className={cx(s.btn, s.btnSm, s.btnPrimary)} onClick={() => void refitPhoto()} disabled={photoBusy} data-deck-photo-refit>{photoBusy ? (photoStage ?? "Working…") : "Fit to the wall"}</button>
+                <button type="button" className={cx(s.btn, s.btnSm, s.btnPrimary)} onClick={refitPhoto} disabled={photoBusy} data-deck-photo-refit>{photoBusy ? (photoStage ?? "Working…") : "Fit to the wall"}</button>
+                {design.photo.fit?.read ? <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => void readPhotoAgain()} disabled={photoBusy} data-deck-photo-reread>Read the picture again</button> : null}
+                {design.photo.fit?.offer ? (
+                  <button type="button" className={cx(s.btn, s.btnSm)} onClick={applyOffer} data-deck-photo-offer>
+                    {design.photo.fit.offer.kind === "notch" ? "Notch the deck around the step" : `Fit the deck into the ${design.photo.fit.offer.widthFt} ft recess`}
+                  </button>
+                ) : null}
                 {heightOffer !== null ? (
                   <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => patch({ heightIn: heightOffer })} data-deck-photo-height>Use {heightOffer} in. height</button>
                 ) : null}

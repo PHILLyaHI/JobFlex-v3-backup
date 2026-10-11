@@ -14,6 +14,7 @@
 // inside their rails, a choice that the wall or the species rules out moved
 // to the nearest one that stands. It never throws.
 
+import { parseWallRead, type JogOffer, type WallRead } from "./photoFit";
 import { LOADS, POST_SIZES, SOILS, SOLID_BEAMS, SPACINGS, JOIST_SIZES, type BuiltUpBeam, type JoistSize, type LedgerFastener, type LoadPsf, type PostSize, type SoilPsf, type SolidBeam, type SpacingIn } from "./codeTables";
 import { DECKING, FRAMING_SPECIES, RAIL_TYPES, WALL_TYPES, defaultDecking, defaultFramingSpecies, wallType, type FramingSpeciesId, type RailTypeId, type WallTypeId } from "./catalog";
 import { SLOPE_LIMITS, flatSlope, type SiteSlope, type TermiteHazard } from "./site";
@@ -331,7 +332,7 @@ export interface DeckPhoto {
   /** Where the deck's elevation was placed on it: the ground line's left end and its width, as fractions of the picture. */
   placed: { x: number; y: number; w: number } | null;
   /** What the smart fit found on it (lib/deck/photoFit), kept so the studio can say it after a reload; null or absent when placed by hand. */
-  fit?: { by: "door" | "eave" | "none"; pxPerFt: number; wallFt: number | null; suggestedHeightIn: number | null; door: boolean; windows: number; jog: boolean; confidence: number; notes: string[] } | null;
+  fit?: { by: "door" | "eave" | "none"; pxPerFt: number; wallFt: number | null; suggestedHeightIn: number | null; door: boolean; windows: number; jog: boolean; confidence: number; notes: string[]; offer: JogOffer | null; read: WallRead | null } | null;
 }
 
 export interface DeckDesign {
@@ -952,6 +953,17 @@ export function frontEdgeLengthIn(shape: DeckShape): number {
   return 2 * R * Math.asin(Math.min(1, half / R));
 }
 
+function offerOf(raw: unknown): JogOffer | null {
+  const o = obj(raw);
+  if (typeof o.text !== "string" || typeof o.widthFt !== "number" || !Number.isFinite(o.widthFt)) return null;
+  const text = o.text.slice(0, 240);
+  if (o.kind === "recess") return { kind: "recess", widthFt: clamp(o.widthFt, 0, 60), text };
+  if (o.kind === "notch" && (o.corner === "back-left" || o.corner === "back-right") && typeof o.depthFt === "number" && Number.isFinite(o.depthFt)) {
+    return { kind: "notch", corner: o.corner, widthFt: clamp(o.widthFt, 0, 60), depthFt: clamp(o.depthFt, 0, 40), text };
+  }
+  return null;
+}
+
 function normalizePhoto(raw: unknown): DeckPhoto | null {
   const r = obj(raw);
   if (typeof r.url !== "string" || !r.url || r.url.length > 2000) return null;
@@ -972,7 +984,9 @@ function normalizePhoto(raw: unknown): DeckPhoto | null {
           windows: Math.round(clamp(num(f.windows, 0), 0, 12)),
           jog: f.jog === true,
           confidence: clamp(num(f.confidence, 0), 0, 1),
-          notes: (Array.isArray(f.notes) ? f.notes : []).filter((n): n is string => typeof n === "string").map((n) => n.slice(0, 240)).slice(0, 6),
+          notes: (Array.isArray(f.notes) ? f.notes : []).filter((n): n is string => typeof n === "string").map((n) => n.slice(0, 240)).slice(0, 7),
+          offer: offerOf(f.offer),
+          read: parseWallRead(f.read),
         }
       : null;
   return { url: r.url, w, h, placed, fit };
