@@ -28,6 +28,9 @@ import { stateFromAddress, stateTaxRate } from "@/lib/pricing/salesTax";
 import { applyMemberDiscount } from "@/lib/servicePlanBook";
 import { recordInventoryLink } from "@/lib/inventoryPick";
 import { logServerError } from "@/lib/server-events";
+import { runVisionJson } from "@/lib/sdk/openaiVision";
+import { friendlyAIError, isOpenAIEnabled } from "@/lib/sdk/openai";
+import { parseWallRead, WALL_READ_PROMPT, type WallRead } from "@/lib/deck/photoFit";
 import { logActivity, TRAIL_KINDS } from "@/lib/activityLog";
 import { sanitizeDeckRateBook, type DeckRateBook } from "@/lib/deck/rates";
 import { deckBookKey as bookKey } from "@/lib/deck/rateBookStore";
@@ -97,6 +100,37 @@ export async function uploadDeckPhoto(form: FormData): Promise<DeckPhotoResult> 
   } catch (err) {
     logServerError("deck-photo", err, { kind: "action", organizationId: g.organizationId });
     return { ok: false, error: "The picture could not be saved. Try again in a moment." };
+  }
+}
+
+export type DeckPhotoRead = { ok: true; read: WallRead } | { ok: false; error: string; configured: boolean };
+
+/**
+ * THE SMART FIT'S READ (2026-10-10): the vision model looks at the picture
+ * once and says where the wall meets the ground, its eave, any jog, the
+ * back door, the windows and any black bars (lib/deck/photoFit
+ * WALL_READ_PROMPT). The studio does the arithmetic — scale, crop,
+ * placement — in the browser from this read, so nothing is stored here but
+ * what the design keeps. Owner: "the deck should find by itself where it's
+ * supposed to be, that wall on the picture."
+ */
+export async function readDeckPhoto(form: FormData): Promise<DeckPhotoRead> {
+  const g = await gate();
+  if (!g.ok) return { ok: false, error: g.error, configured: true };
+  const file = form.get("file");
+  if (!(file instanceof File)) return { ok: false, error: "No picture was sent.", configured: true };
+  if (!PHOTO_TYPES.has(file.type)) return { ok: false, error: "Use a JPEG, PNG or WebP picture.", configured: true };
+  if (file.size > PHOTO_MAX_BYTES) return { ok: false, error: "That picture is too big — the studio should have shrunk it. Try again.", configured: true };
+  if (!isOpenAIEnabled()) return { ok: false, error: "Reading the picture needs the AI key on the server — drag the outline to the wall instead.", configured: false };
+  try {
+    const dataUrl = `data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString("base64")}`;
+    const raw = await runVisionJson<unknown>({ systemPrompt: WALL_READ_PROMPT, userPrompt: "Read this photo of the house and answer with the JSON.", imageUrl: dataUrl, detail: "high" });
+    const read = parseWallRead(raw);
+    if (!read) return { ok: false, error: "The wall could not be found in that picture — drag the outline to it, or take the picture square on from the yard.", configured: true };
+    return { ok: true, read };
+  } catch (err) {
+    logServerError("deck-photo-read", err, { kind: "action", organizationId: g.organizationId });
+    return { ok: false, error: friendlyAIError(err, "deck-photo-read"), configured: true };
   }
 }
 

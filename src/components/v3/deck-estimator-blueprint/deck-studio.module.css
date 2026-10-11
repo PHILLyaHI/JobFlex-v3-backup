@@ -336,6 +336,9 @@
 :global(.jf-blueprint .content) .photoEmpty p { margin: 0; max-width: 46ch; font-size: 13px; line-height: 1.5; color: var(--muted); }
 :global(.jf-blueprint .content) .photoRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1.5px solid var(--hair-soft); }
 :global(.jf-blueprint .content) .photoRow .mono { flex: 1 1 200px; min-width: 0; }
+:global(.jf-blueprint .content) .photoNotes { list-style: none; margin: 0; padding: 8px 16px 10px; display: grid; gap: 4px; border-bottom: 1.5px solid var(--hair-soft); font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--ink-soft); }
+:global(.jf-blueprint .content) .photoNotes li::before { content: "— "; color: var(--muted); }
+:global(.jf-blueprint .content) .photoNotes .photoNoteBad { color: var(--danger); font-weight: 700; }
 :global(.jf-blueprint .content) .fileHidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
 @media (max-width: 768px) {
   :global(.jf-blueprint .content) .structure { grid-template-columns: repeat(2, minmax(0, 1fr)); }

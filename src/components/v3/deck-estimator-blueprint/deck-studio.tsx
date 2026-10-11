@@ -60,10 +60,11 @@ import { deckScene, sceneBuildLayers, SCENE_LAYER_LABEL } from "@/lib/deck/scene
 import { deckElevation, defaultPlacement } from "@/lib/deck/elevation";
 import { BOM_STEP_LABEL, type BomStep } from "@/lib/deck/takeoff";
 import { DECK_RATES, DECK_RATE_GROUP_LABEL, deckRate, sanitizeDeckRateBook, type DeckRateBook, type DeckRateGroup } from "@/lib/deck/rates";
-import { convertDeckEstimateToProposal, deckPhotoHref, saveDeckRateBook, uploadDeckPhoto } from "@/actions/deckEstimator";
+import { convertDeckEstimateToProposal, deckPhotoHref, readDeckPhoto, saveDeckRateBook, uploadDeckPhoto } from "@/actions/deckEstimator";
+import { fitPhoto, fitSummary, type FitDeck, type PhotoFit } from "@/lib/deck/photoFit";
 import { reportPlanLimitResult } from "@/stores/usePlanLimitStore";
 import { DeckPlan } from "./deck-plan";
-import { DeckPhotoView, shrinkPhoto } from "./deck-photo";
+import { DeckPhotoView, cropPhoto, shrinkPhoto, trimLetterbox } from "./deck-photo";
 import s from "./deck-studio.module.css";
 
 const DeckModel3D = dynamic(() => import("@/components/estimator/deck/DeckModel3D").then((m) => m.DeckModel3D), {
@@ -312,31 +313,81 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
   const [photoError, setPhotoError] = React.useState<string | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
   const pickPhoto = () => fileRef.current?.click();
-  const onPhotoFile = async (file: File | null) => {
-    if (!file) return;
+  /** What the studio is doing with the picture right now, for the buttons. */
+  const [photoStage, setPhotoStage] = React.useState<string | null>(null);
+  /** The read's own trouble (no key, no wall seen): the picture still goes up, placed by hand. */
+  const [photoNote, setPhotoNote] = React.useState<string | null>(null);
+  /** The last picture chosen, so "Fit to the wall" can read it again at full size. */
+  const lastFile = React.useRef<File | null>(null);
+  const fitDeck = React.useMemo<FitDeck>(() => ({ shape: design.shape, elevWidthFt: elevation.widthFt, elevHeightFt: elevation.heightFt, elevLeftFt: elevation.leftFt }), [design.shape, elevation]);
+  // THE SMART FIT (owner, 2026-10-10): the picture is shrunk, its black bands
+  // cut, read once by the vision model (actions readDeckPhoto), cropped to
+  // the wall and placed by the read (lib/deck/photoFit) — then saved. A read
+  // that fails still saves the picture, centred, and says why.
+  const placePhoto = async (file: File) => {
     setPhotoBusy(true);
     setPhotoError(null);
+    setPhotoNote(null);
     try {
+      lastFile.current = file;
+      setPhotoStage("Reading the picture…");
       const small = await shrinkPhoto(file);
+      const clean = await trimLetterbox(small.file, small.w, small.h);
+      setPhotoStage("Finding the wall…");
+      const readForm = new FormData();
+      readForm.set("file", clean.file);
+      const read = await readDeckPhoto(readForm);
+      let toUpload: { file: File; w: number; h: number } = clean;
+      let placed = defaultPlacement();
+      let fit: PhotoFit | null = null;
+      if (read.ok) {
+        fit = fitPhoto(read.read, fitDeck, design.heightIn, clean.w, clean.h);
+        toUpload = await cropPhoto(clean.file, fit.crop, clean.w, clean.h);
+        placed = fit.placed;
+      } else setPhotoNote(read.error);
+      setPhotoStage("Saving the picture…");
       const form = new FormData();
-      form.set("file", small.file);
-      form.set("w", String(small.w));
-      form.set("h", String(small.h));
+      form.set("file", toUpload.file);
+      form.set("w", String(toUpload.w));
+      form.set("h", String(toUpload.h));
       const res = await uploadDeckPhoto(form);
       if (!res.ok) {
         setPhotoError(res.error);
         return;
       }
       setPhotoHref(res.href);
-      patch({ photo: { url: res.url, w: res.w, h: res.h, placed: defaultPlacement() } });
+      patch({ photo: { url: res.url, w: res.w, h: res.h, placed, fit: fit ? fitSummary(fit) : null } });
       setView("photo");
     } catch (err) {
       setPhotoError(err instanceof Error ? err.message : "The picture could not be read.");
     } finally {
       setPhotoBusy(false);
+      setPhotoStage(null);
       if (fileRef.current) fileRef.current.value = "";
     }
   };
+  const onPhotoFile = (file: File | null) => {
+    if (file) void placePhoto(file);
+  };
+  /** The fit again — on the picture as chosen when it is still here, else on the saved one. */
+  const refitPhoto = async () => {
+    if (!design.photo || photoBusy) return;
+    let file = lastFile.current;
+    if (!file) {
+      const href = photoHref ?? (await deckPhotoHref(design.photo.url).catch(() => null));
+      if (!href) return;
+      try {
+        const blob = await fetch(href).then((r) => (r.ok ? r.blob() : null));
+        if (!blob) return;
+        file = new File([blob], "house.jpg", { type: blob.type || "image/jpeg" });
+      } catch {
+        return;
+      }
+    }
+    await placePhoto(file);
+  };
+  const suggestedHeight = design.photo?.fit?.suggestedHeightIn ?? null;
+  const heightOffer = suggestedHeight !== null && Math.abs(suggestedHeight - design.heightIn) >= 2 ? suggestedHeight : null;
   const refreshPhoto = async () => {
     if (!design.photo) return;
     const href = await deckPhotoHref(design.photo.url).catch(() => null);
@@ -401,7 +452,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
   const surfaceSummary = frame ? frame.decking.label : "";
   const roofSummary = roof ? roofWords(roof) : "";
   const extrasSummary = [pkg.railFt ? `${Math.round(pkg.railFt)} ft rail` : null, pkg.stairSteps ? `${pkg.stairSteps} steps` : null].filter(Boolean).join(" · ") || "None yet";
-  const photoSummary = design.photo ? (design.photo.placed ? "Placed on the photo" : "Photo added — place it") : "No photo yet";
+  const photoSummary = design.photo ? (design.photo.fit && !design.photo.fit.notes[0]?.startsWith("The wall could not") ? (design.photo.fit.door ? "Fitted to the wall, at the door" : "Fitted to the wall") : design.photo.placed ? "Placed on the photo" : "Photo added — place it") : "No photo yet";
 
   const bomByStep = React.useMemo(() => {
     const out = new Map<BomStep, typeof pkg.bom>();
@@ -479,7 +530,7 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
               <div className={s.photoEmpty} data-deck-photo="empty">
                 <p>Take a picture of the back of the house from the yard, square on. The {what.toLowerCase()} is drawn over it, and the client sees their own house with it in place.</p>
                 <button type="button" className={cx(s.btn, s.btnPrimary)} onClick={pickPhoto} disabled={photoBusy}>
-                  {photoBusy ? "Saving the picture…" : "Add a photo of the house"}
+                  {photoBusy ? (photoStage ?? "Saving the picture…") : "Add a photo of the house"}
                 </button>
                 {photoError ? <p className={cx(s.call, s.callBad)} role="alert">{photoError}</p> : null}
               </div>
@@ -502,12 +553,24 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
               </button>
             </div>
           ) : view === "photo" && design.photo ? (
-            <div className={s.photoRow}>
-              <span className={s.mono}>Drag the outline to the wall · pull the handle to size it · the client sees it placed like this</span>
-              <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => patch({ photo: { ...design.photo!, placed: defaultPlacement() } })}>Centre it</button>
-              <button type="button" className={cx(s.btn, s.btnSm)} onClick={pickPhoto} disabled={photoBusy}>{photoBusy ? "Saving…" : "Another photo"}</button>
-              <button type="button" className={cx(s.btn, s.btnSm)} onClick={removePhoto}>Remove</button>
-            </div>
+            <>
+              <div className={s.photoRow}>
+                <span className={s.mono}>{design.photo.fit ? "Fitted to the wall — drag to adjust, pull the handle to size · the client sees it placed like this" : "Drag the outline to the wall · pull the handle to size it · the client sees it placed like this"}</span>
+                <button type="button" className={cx(s.btn, s.btnSm, s.btnPrimary)} onClick={() => void refitPhoto()} disabled={photoBusy} data-deck-photo-refit>{photoBusy ? (photoStage ?? "Working…") : "Fit to the wall"}</button>
+                {heightOffer !== null ? (
+                  <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => patch({ heightIn: heightOffer })} data-deck-photo-height>Use {heightOffer} in. height</button>
+                ) : null}
+                <button type="button" className={cx(s.btn, s.btnSm)} onClick={() => patch({ photo: { ...design.photo!, placed: defaultPlacement() } })}>Centre it</button>
+                <button type="button" className={cx(s.btn, s.btnSm)} onClick={pickPhoto} disabled={photoBusy}>Another photo</button>
+                <button type="button" className={cx(s.btn, s.btnSm)} onClick={removePhoto}>Remove</button>
+              </div>
+              {design.photo.fit?.notes.length || photoNote ? (
+                <ul className={s.photoNotes} data-deck-photo-fit aria-label="What the picture showed">
+                  {photoNote ? <li className={s.photoNoteBad}>{photoNote}</li> : null}
+                  {(design.photo.fit?.notes ?? []).map((n, i) => <li key={i}>{n}</li>)}
+                </ul>
+              ) : null}
+            </>
           ) : null}
           <input ref={fileRef} className={s.fileHidden} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" aria-label="Photo of the house" onChange={(e) => void onPhotoFile(e.target.files?.[0] ?? null)} />
           <a className={s.verdict} href="#deck-checks">
@@ -981,10 +1044,10 @@ export function DeckStudio({ initialBook, homeState, initialAddress, clientId, a
           ) : null}
 
           <Step n={next()} title="Photo of the house" summary={photoSummary} id="step-photo">
-            <p className={s.hint}>A picture of the back of the house, taken square on from the yard. The {what.toLowerCase()} is drawn over it where you place it, and the client&apos;s page shows their own house with it in place.</p>
+            <p className={s.hint}>A picture of the back of the house, taken square on from the yard. The studio finds the wall, the door and the windows, cuts the picture to the wall and sets the {what.toLowerCase()} against it at the right size — then you drag it if it should sit elsewhere. It is drawn over the picture where you place it, and the client&apos;s page shows their own house with it in place.</p>
             <div className={s.chips}>
               <button type="button" className={cx(s.btn, s.btnSm, !design.photo && s.btnPrimary)} onClick={pickPhoto} disabled={photoBusy} data-deck-photo-add>
-                {photoBusy ? "Saving the picture…" : design.photo ? "Another photo" : "Add a photo"}
+                {photoBusy ? (photoStage ?? "Saving the picture…") : design.photo ? "Another photo" : "Add a photo"}
               </button>
               {design.photo ? (
                 <>

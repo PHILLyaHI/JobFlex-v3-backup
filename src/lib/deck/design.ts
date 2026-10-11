@@ -176,6 +176,8 @@ export interface DeckPhoto {
   h: number;
   /** Where the deck's elevation was placed on it: the ground line's left end and its width, as fractions of the picture. */
   placed: { x: number; y: number; w: number } | null;
+  /** What the smart fit found on it (lib/deck/photoFit), kept so the studio can say it after a reload; null or absent when placed by hand. */
+  fit?: { by: "door" | "eave" | "none"; pxPerFt: number; wallFt: number | null; suggestedHeightIn: number | null; door: boolean; windows: number; jog: boolean; confidence: number; notes: string[] } | null;
 }
 
 export interface DeckDesign {
@@ -540,7 +542,22 @@ function normalizePhoto(raw: unknown): DeckPhoto | null {
   if (w < 16 || h < 16) return null;
   const p = obj(r.placed);
   const placed = typeof p.x === "number" && typeof p.y === "number" && typeof p.w === "number" ? { x: clamp(num(p.x, 0.1), -0.5, 1.5), y: clamp(num(p.y, 0.9), 0, 1.5), w: clamp(num(p.w, 0.8), 0.05, 3) } : null;
-  return { url: r.url, w, h, placed };
+  const f = obj(r.fit);
+  const fit =
+    r.fit && typeof f.pxPerFt === "number"
+      ? {
+          by: f.by === "door" ? ("door" as const) : f.by === "eave" ? ("eave" as const) : ("none" as const),
+          pxPerFt: clamp(num(f.pxPerFt, 0), 0, 10000),
+          wallFt: typeof f.wallFt === "number" && Number.isFinite(f.wallFt) ? Math.round(clamp(f.wallFt, 0, 500)) : null,
+          suggestedHeightIn: typeof f.suggestedHeightIn === "number" && Number.isFinite(f.suggestedHeightIn) ? Math.round(clamp(f.suggestedHeightIn, 0, 360)) : null,
+          door: f.door === true,
+          windows: Math.round(clamp(num(f.windows, 0), 0, 12)),
+          jog: f.jog === true,
+          confidence: clamp(num(f.confidence, 0), 0, 1),
+          notes: (Array.isArray(f.notes) ? f.notes : []).filter((n): n is string => typeof n === "string").map((n) => n.slice(0, 240)).slice(0, 6),
+        }
+      : null;
+  return { url: r.url, w, h, placed, fit };
 }
 
 /** True when the design has a deck frame under it (a bare or covered deck, or a gazebo/pergola standing on a deck). */
